@@ -162,7 +162,12 @@ export function useConversationApp() {
         if (cfg || resume) await pushConfig(merged);
         else setConfig(merged);
         if (cancelled) return;
-        if (!resume) setFirstDraft(merged.seed_prompt || "");
+        if (!resume) {
+          const skipped =
+            typeof localStorage !== "undefined" &&
+            !!localStorage.getItem(SKIP_RESUME_KEY);
+          setFirstDraft(skipped ? "" : merged.seed_prompt || "");
+        }
 
         if (resume) {
           await api.loadTranscript({
