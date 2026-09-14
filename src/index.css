@@ -1,22 +1,22 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-/* Darker stage, brighter ink. Contrast goes up — the UI is not dimmed.
-   No violet wash. Orange only for live. */
+/* Darker chrome on the same canvas as the transcript.
+   White primaries stay. Orange only for live. No violet. */
 
 :root {
-  --bg: #151515;
-  --bg-soft: #1c1c1c;
-  --panel: rgba(40, 40, 40, 0.78);
-  --panel-2: rgba(52, 52, 52, 0.64);
-  --elev: rgba(58, 58, 58, 0.84);
-  --line: rgba(255, 255, 255, 0.12);
-  --line-2: rgba(255, 255, 255, 0.2);
-  --text: #f4f4f4;
-  --text-2: #dcdcdc;
-  --mute: #a3a3a3;
-  --faint: #737373;
-  --accent: #f7f7f7;
+  --bg: #141414;
+  --bg-soft: #181818;
+  --panel: rgba(28, 28, 28, 0.72);
+  --panel-2: rgba(34, 34, 34, 0.58);
+  --elev: rgba(38, 38, 38, 0.78);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  --text: #ececec;
+  --text-2: #c8c8c8;
+  --mute: #8f8f8f;
+  --faint: #6a6a6a;
+  --accent: #f2f2f2;
   --accent-2: #ffffff;
   --live: #f54e00;
   --danger: #ff5f57;
@@ -28,13 +28,13 @@
   --font-read: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --hairline: 1px solid var(--line);
-  --glass: rgba(255, 255, 255, 0.12);
-  --glass-strong: rgba(28, 28, 28, 0.84);
-  --blur: blur(40px) saturate(180%);
-  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  --glow: 0 18px 52px rgba(0, 0, 0, 0.38);
-  --btn-face: #ffffff;
-  --btn-face-2: #e6e6e6;
+  --glass: rgba(255, 255, 255, 0.04);
+  --glass-strong: rgba(18, 18, 18, 0.92);
+  --blur: blur(36px) saturate(140%);
+  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --glow: 0 14px 40px rgba(0, 0, 0, 0.32);
+  --btn-face: #f3f3f3;
+  --btn-face-2: #dcdcdc;
 }
 
 @layer base {
@@ -125,13 +125,7 @@ body,
   grid-template-areas:
     "top top"
     "rail main";
-  background:
-    radial-gradient(
-      1000px 540px at 50% -10%,
-      rgba(255, 255, 255, 0.13),
-      transparent 58%
-    ),
-    var(--bg);
+  background: var(--bg);
   overflow: hidden;
   contain: layout;
   position: relative;
@@ -307,7 +301,7 @@ body,
   padding: 0 10px 0 32px;
   border-radius: 10px;
   border: var(--hairline);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.035);
   color: var(--text);
   font-size: 13px;
   outline: none;
@@ -434,10 +428,10 @@ body,
     transform 0.18s ease;
 }
 .chat-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.035);
 }
 .chat-row.active {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05);
   border-color: var(--line);
   box-shadow: var(--shine);
 }
@@ -785,34 +779,22 @@ body,
   padding: 0 12px 0 10px;
   gap: 7px;
   border-radius: 10px;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.14) 0%,
-    rgba(255, 255, 255, 0.045) 100%
-  );
+  background: rgba(255, 255, 255, 0.045);
   color: var(--text-2);
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.1);
   box-shadow: var(--shine);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
 .btn-chrome:hover:not(:disabled) {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.28);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(255, 255, 255, 0.07) 100%
-  );
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
 }
 .btn-chrome[aria-pressed="true"] {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.36);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.22) 0%,
-    rgba(255, 255, 255, 0.08) 100%
-  );
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09);
 }
 .btn-chrome.btn-icon,
 .btn-kbd {
@@ -839,17 +821,17 @@ body,
   gap: 7px;
 }
 .btn-ghost {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-2);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.1);
   box-shadow: var(--shine);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
 .btn-ghost:hover:not(:disabled) {
   color: var(--text);
-  border-color: rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
 }
 .btn-ghost[aria-pressed="true"] {
   color: var(--text);
@@ -884,7 +866,7 @@ body,
   flex-wrap: wrap;
   padding: 3px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.035);
   border: 1px solid var(--line);
   box-shadow: var(--shine);
   gap: 2px;
@@ -1111,15 +1093,15 @@ body,
   border-radius: 26px;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.16) 0%,
-    rgba(255, 255, 255, 0.07) 100%
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.03) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  backdrop-filter: blur(44px) saturate(180%);
-  -webkit-backdrop-filter: blur(44px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(36px) saturate(140%);
+  -webkit-backdrop-filter: blur(36px) saturate(140%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.28),
-    0 28px 70px rgba(0, 0, 0, 0.32);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 56px rgba(0, 0, 0, 0.28);
   animation: hero-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes hero-in {
@@ -1163,8 +1145,8 @@ body,
   width: fit-content;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-2);
   font-size: 11px;
   font-weight: 500;
@@ -1318,8 +1300,8 @@ body,
   height: 32px;
   padding: 0 14px 0 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text-2);
   font-size: 12px;
   cursor: pointer;
@@ -1432,18 +1414,11 @@ body,
 .dock-status {
   min-width: 4.5em;
 }
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--faint);
+.dock-status.run {
+  color: var(--live);
 }
-.dot.run {
-  background: var(--live);
-  animation: pulse 1.4s ease-in-out infinite;
-}
-.dot.pause {
-  background: var(--text-2);
+.dock-status.pause {
+  color: var(--text-2);
 }
 .bar {
   width: 56px;
@@ -1658,7 +1633,7 @@ body,
   animation: msg-in 0.22s ease both;
 }
 .glass-card {
-  background: rgba(255, 255, 255, 0.055);
+  background: rgba(255, 255, 255, 0.035);
   border: var(--hairline);
   border-radius: var(--r);
   box-shadow: var(--shine);
@@ -2060,7 +2035,6 @@ body,
   .btn:active {
     opacity: 1;
   }
-  .dot.run,
   .msg-live,
   .thinking .d,
   .stream-caret,
@@ -2097,7 +2071,7 @@ body,
   .empty-box,
   .toast,
   .modal-card {
-    background: #151515;
+    background: #141414;
   }
 }
 

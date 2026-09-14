@@ -94,7 +94,7 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 export function agentAccent(agent: string): string {
   switch (agent) {
     case "ai1":
-      return "#f4f4f4";
+      return "#ececec";
     case "ai2":
       return "#cfcfcf";
     case "ai3":

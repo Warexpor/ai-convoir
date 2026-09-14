@@ -140,10 +140,10 @@ function ControlBar({
       <div className="dock-lead">
         <div className="dock-stat" aria-live="polite">
           <span
-            className={`dot ${running ? "run" : status === "Paused" ? "pause" : ""}`}
-            aria-hidden
-          />
-          <span className="dock-status">{statusLabel}</span>
+            className={`dock-status${running ? " run" : status === "Paused" ? " pause" : ""}`}
+          >
+            {statusLabel}
+          </span>
           {!isStep && (
             <>
               <span className="dock-turns">

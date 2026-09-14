@@ -4,14 +4,14 @@ export default {
     extend: {
       colors: {
         xai: {
-          canvas: "#151515",
-          "canvas-soft": "#1c1c1c",
-          "canvas-card": "#151515",
-          ink: "#f4f4f4",
-          body: "#dcdcdc",
-          mute: "#a3a3a3",
-          hairline: "#2a2a2a",
-          accent: "#f4f4f4",
+          canvas: "#141414",
+          "canvas-soft": "#181818",
+          "canvas-card": "#141414",
+          ink: "#ececec",
+          body: "#c8c8c8",
+          mute: "#8f8f8f",
+          hairline: "#262626",
+          accent: "#ececec",
           live: "#f54e00",
         },
       },
