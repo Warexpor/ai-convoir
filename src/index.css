@@ -164,37 +164,6 @@ body,
   display: none;
 }
 
-@media (max-width: 640px) {
-  .topbar-sub {
-    display: none;
-  }
-  .dock-stat .bar,
-  .ctx-bar {
-    display: none;
-  }
-  .topbar {
-    padding: 0 8px 0 12px;
-    gap: 6px;
-  }
-  .topbar .btn:not(.btn-icon) {
-    height: 28px;
-    padding: 0 10px;
-    font-size: 11px;
-  }
-  .brand-mark {
-    font-size: 13px;
-  }
-  .composer {
-    padding: 8px 10px 10px;
-  }
-  .composer-row {
-    padding: 4px 4px 4px 12px;
-  }
-  .composer-hint {
-    display: none;
-  }
-}
-
 @media (max-width: 900px) {
   .app,
   .app.rail-closed,
@@ -1034,31 +1003,6 @@ body,
   width: 100%;
   justify-content: flex-start;
 }
-
-@media (max-width: 860px) {
-  .dock {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: stretch;
-    gap: 8px;
-    padding: 8px 12px 10px;
-  }
-  .dock-lead {
-    justify-content: space-between;
-    flex: none;
-    width: 100%;
-  }
-  .dock-actions {
-    width: 100%;
-  }
-  .dock-wide {
-    display: none;
-  }
-  .dock-narrow {
-    display: block;
-    margin-left: auto;
-  }
-}
 .dock-stat {
   font-size: 11px;
   color: var(--mute);
@@ -1680,4 +1624,73 @@ body,
   outline: none;
   font-family: inherit;
   line-height: 1.35;
+}
+
+/* Compact queries last so they win over the component rules above. */
+@media (max-width: 860px) {
+  .dock {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px 10px;
+  }
+  .dock-lead {
+    justify-content: space-between;
+    flex: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .dock-actions {
+    width: 100%;
+  }
+  .dock-actions > .btn {
+    flex-shrink: 0;
+  }
+  .dock-wide {
+    display: none;
+  }
+  .dock-narrow {
+    display: flex;
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  .dock-narrow > .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-sub {
+    display: none;
+  }
+  .dock-stat .bar,
+  .ctx-bar {
+    display: none;
+  }
+  .topbar {
+    padding: 0 8px 0 12px;
+    gap: 6px;
+  }
+  .topbar .btn:not(.btn-icon) {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .brand-mark {
+    font-size: 13px;
+  }
+  .composer {
+    padding: 8px 10px 10px;
+  }
+  .composer-row {
+    padding: 4px 4px 4px 12px;
+  }
+  .composer-row .mono-cap {
+    display: none;
+  }
+  .composer-hint {
+    display: none;
+  }
 }
