@@ -111,7 +111,7 @@ export function saveChatSnapshot(
   const cleanMsgs = messages.filter((m) => !m.streaming);
   const chat: SavedChat = {
     id,
-    title: titleFromMessages(cleanMsgs, config.seed_prompt),
+    title: prev?.title || titleFromMessages(cleanMsgs, config.seed_prompt),
     created_at: prev?.created_at ?? now,
     updated_at: now,
     bot_count: config.bot_count >= 3 ? 3 : 2,

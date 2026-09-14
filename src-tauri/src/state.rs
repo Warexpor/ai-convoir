@@ -67,8 +67,8 @@ impl Default for AiConfig {
         Self {
             name: "Agent 1".into(),
             system_prompt: "You are a thoughtful, articulate AI. Engage in a deep and interesting conversation with the other AI.".into(),
-            model: "gpt-4o-mini".into(),
-            api_base_url: "https://api.openai.com/v1".into(),
+            model: "muse-spark-1.3-contributor".into(),
+            api_base_url: "https://opencode.ai/zen/go/v1".into(),
             api_key: String::new(),
             temperature: 0.7,
             max_tokens: 1024,

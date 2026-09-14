@@ -62,6 +62,9 @@ export function useAppKeyboard(opts: KeyboardOptions) {
         else if (o.railOpen) o.onCloseRail();
       }
       if (inField) return;
+      if (o.helpOpen || o.settingsOpen) {
+        if (e.code === "Space" || e.code === "KeyN") return;
+      }
       if (e.code === "Space" && !e.repeat) {
         e.preventDefault();
         if (o.mode === "step") o.onStep();

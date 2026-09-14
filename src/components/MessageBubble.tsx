@@ -1,29 +1,27 @@
-import { useState, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import type { InnerState, Message } from "../types";
-import {
-  agentAccent,
-  agentInitials,
-  agentLabel,
-  relativeTime,
-} from "../types";
+import { agentAccent, agentInitials, agentLabel } from "../types";
 import MarkdownBody from "./MarkdownBody";
+import RelativeTime from "./RelativeTime";
+import { IconCheck, IconChevron, IconCopy } from "./Marks";
 
 interface Props {
   message: Message;
-  tick: number;
   config?: InnerState | null;
   showThoughtsUi: boolean;
   onDelete?: (agent: string, turn: number, created_at: number) => void;
+  enter?: boolean;
 }
 
-export default function MessageBubble({
+function MessageBubble({
   message,
-  tick: _tick,
   config,
   showThoughtsUi,
   onDelete,
+  enter = true,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const label = agentLabel(message.agent, config);
   const accent = agentAccent(message.agent);
@@ -41,14 +39,20 @@ export default function MessageBubble({
 
   return (
     <article
-      className={`msg ${isSeed ? "seed" : ""} ${isStream ? "streaming" : ""}`}
+      className={`msg ${isSeed ? "seed" : ""} ${isStream ? "streaming" : ""} ${
+        enter ? "" : "msg-static"
+      } ${confirming ? "confirming" : ""}`}
     >
       <div
         className="msg-avatar"
-        style={{
-          background: isSeed ? "var(--elev)" : accent,
-          color: isSeed ? "var(--text-2)" : "#12141a",
-        }}
+        style={
+          isSeed
+            ? undefined
+            : {
+                color: accent,
+                borderColor: accent,
+              }
+        }
         aria-hidden
       >
         {isSeed ? "You" : agentInitials(label)}
@@ -56,26 +60,52 @@ export default function MessageBubble({
 
       <div className="msg-body">
         <div className="msg-meta">
-          <span
-            className="msg-name"
-            style={{ color: isSeed ? undefined : accent }}
-          >
-            {label}
-          </span>
+          <span className="msg-name">{label}</span>
           {isStream ? (
             <span className="msg-live">live</span>
           ) : (
-            <span className="msg-time">
-              {relativeTime(message.created_at || Date.now())}
-            </span>
+            <RelativeTime at={message.created_at || Date.now()} />
           )}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm msg-copy"
-            onClick={handleCopy}
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
+          <div className="msg-actions">
+            <button
+              type="button"
+              className={`msg-action msg-action-icon ${copied ? "is-copied" : ""}`}
+              onClick={handleCopy}
+              aria-label={copied ? "Copied" : "Copy message"}
+              title={copied ? "Copied" : "Copy"}
+            >
+              {copied ? <IconCheck /> : <IconCopy />}
+            </button>
+            {!isStream && onDelete && confirming && (
+              <div className="inline-confirm">
+                <button
+                  type="button"
+                  className="confirm-del"
+                  onClick={() =>
+                    onDelete(message.agent, message.turn, message.created_at)
+                  }
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="confirm-cancel"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {!isStream && onDelete && !confirming && (
+              <button
+                type="button"
+                className="msg-action msg-action-del"
+                onClick={() => setConfirming(true)}
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
 
         {hasThoughts && (
@@ -86,13 +116,11 @@ export default function MessageBubble({
               onClick={() => setThoughtsOpen((o) => !o)}
               aria-expanded={thoughtsOpen}
             >
-              <span className="thoughts-chevron">
-                {thoughtsOpen ? "▾" : "▸"}
-              </span>
+              <IconChevron />
               <span className="thoughts-label">Thoughts</span>
               {isStream && !message.content && (
                 <span className="msg-live" style={{ marginLeft: 6 }}>
-                  thinking…
+                  thinking
                 </span>
               )}
             </button>
@@ -112,21 +140,9 @@ export default function MessageBubble({
             <MarkdownBody content={message.content} streaming={isStream} />
           </div>
         )}
-
-        {!isStream && onDelete && (
-          <button
-            type="button"
-            className="msg-del"
-            title="Delete message"
-            aria-label="Delete message"
-            onClick={() =>
-              onDelete(message.agent, message.turn, message.created_at)
-            }
-          >
-            Delete
-          </button>
-        )}
       </div>
     </article>
   );
 }
+
+export default memo(MessageBubble);

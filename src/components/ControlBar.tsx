@@ -1,3 +1,16 @@
+import { memo, useEffect, useRef, useState } from "react";
+import {
+  IconExport,
+  IconKey,
+  IconMore,
+  IconNew,
+  IconNextVoice,
+  IconPause,
+  IconPlay,
+  IconRetry,
+  IconSave,
+  IconStop,
+} from "./Marks";
 import type { AppStatus, ConversationMode } from "../types";
 
 interface Props {
@@ -16,9 +29,13 @@ interface Props {
   tokenCapacity?: number;
   retryTarget?: { agent: string; turn: number } | null;
   onRetry?: () => void;
+  hasMessages?: boolean;
+  nextName?: string | null;
+  needsKey?: boolean;
+  onOpenSettings?: () => void;
 }
 
-export default function ControlBar({
+function ControlBar({
   status,
   turnCount,
   maxTurns,
@@ -34,6 +51,10 @@ export default function ControlBar({
   tokenCapacity = 128000,
   retryTarget,
   onRetry,
+  hasMessages = false,
+  nextName = null,
+  needsKey = false,
+  onOpenSettings,
 }: Props) {
   const progress =
     mode === "step"
@@ -41,111 +62,213 @@ export default function ControlBar({
       : Math.min((turnCount / Math.max(maxTurns, 1)) * 100, 100);
   const running = status === "Running";
   const isStep = mode === "step";
+  const statusLabel = running
+    ? "Writing"
+    : status === "Paused"
+      ? "Paused"
+      : "Ready";
   const tokenRatio = tokenCapacity > 0 ? tokenUsed / tokenCapacity : 0;
   const tokenPct = Math.round(tokenRatio * 100);
   const tokenColor =
     tokenRatio > 0.8
       ? "var(--danger)"
       : tokenRatio > 0.6
-        ? "#c8a84a"
+        ? "var(--text-2)"
         : "var(--faint)";
 
-  return (
-    <div className="dock">
-      <div className="dock-stat">
-        <span
-          className={`dot ${running ? "run" : status === "Paused" ? "pause" : ""}`}
-        />
-        <span className="dock-status">{status}</span>
-        {!isStep && (
-          <>
-            <span className="dock-turns">
-              {turnCount}/{maxTurns}
-            </span>
-            <span className="bar">
-              <i style={{ width: `${progress}%` }} />
-            </span>
-          </>
-        )}
-        <span className="ctx-bar" title="Estimated context use">
-          <span className="ctx-pct" style={{ color: tokenColor }}>
-            {tokenPct}%
-          </span>
-          <span className="bar ctx">
-            <i
-              style={{
-                width: `${Math.min(tokenPct, 100)}%`,
-                background: tokenColor,
-              }}
-            />
-          </span>
-        </span>
-      </div>
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
 
-      <div className="seg" role="group" aria-label="Run mode">
-        <button
-          type="button"
-          className={mode === "step" ? "on" : ""}
-          onClick={() => onModeChange("step")}
-        >
-          Step
-        </button>
-        <button
-          type="button"
-          className={mode === "auto" ? "on" : ""}
-          onClick={() => onModeChange("auto")}
-        >
-          Auto
-        </button>
-      </div>
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
 
-      <div className="spacer" />
-
-      {isStep ? (
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onStep}
-          disabled={running}
-        >
-          Step
-        </button>
-      ) : (
-        <button type="button" className="btn btn-primary" onClick={onToggle}>
-          {running ? "Pause" : status === "Paused" ? "Resume" : "Start"}
-        </button>
-      )}
-
+  const secondary = (
+    <>
       <button
         type="button"
-        className="btn btn-danger"
-        onClick={onStop}
-        disabled={status === "Idle"}
-        title="Stop generation, keep chat"
+        className="btn btn-ghost"
+        onClick={() => {
+          setMoreOpen(false);
+          onSaveChat();
+        }}
+        disabled={!hasMessages}
       >
-        Stop
-      </button>
-
-      {retryTarget && onRetry && (
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onRetry}
-          title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
-        >
-          Retry
-        </button>
-      )}
-
-      <button type="button" className="btn btn-ghost" onClick={onSaveChat}>
+        <IconSave />
         Save
       </button>
-      <button type="button" className="btn btn-ghost" onClick={onExport}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() => {
+          setMoreOpen(false);
+          onExport();
+        }}
+        disabled={!hasMessages}
+      >
+        <IconExport />
         Export
       </button>
-      <button type="button" className="btn btn-ghost" onClick={onReset}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() => {
+          setMoreOpen(false);
+          onReset();
+        }}
+      >
+        <IconNew />
         New
       </button>
+    </>
+  );
+
+  return (
+    <div className="dock" role="toolbar" aria-label="Conversation controls">
+      <div className="dock-lead">
+        <div className="dock-stat" aria-live="polite">
+          <span
+            className={`dock-status${running ? " run" : status === "Paused" ? " pause" : ""}`}
+          >
+            {statusLabel}
+          </span>
+          {!isStep && (
+            <>
+              <span className="dock-turns">
+                {turnCount}/{maxTurns}
+              </span>
+              <span className="bar" aria-hidden>
+                <i style={{ width: `${progress}%` }} />
+              </span>
+            </>
+          )}
+          {tokenPct >= 50 && (
+            <span className="ctx-bar" title="How full the conversation is">
+              <span className="ctx-pct" style={{ color: tokenColor }}>
+                {tokenPct}%
+              </span>
+              <span className="bar ctx" aria-hidden>
+                <i
+                  style={{
+                    width: `${Math.min(tokenPct, 100)}%`,
+                    background: tokenColor,
+                  }}
+                />
+              </span>
+            </span>
+          )}
+        </div>
+
+        <div className="seg dock-mode" role="group" aria-label="Run mode">
+          <button
+            type="button"
+            className={mode === "step" ? "on" : ""}
+            aria-pressed={mode === "step"}
+            title="One reply at a time"
+            onClick={() => onModeChange("step")}
+          >
+            Step
+          </button>
+          <button
+            type="button"
+            className={mode === "auto" ? "on" : ""}
+            aria-pressed={mode === "auto"}
+            title="Keep talking until you pause"
+            onClick={() => onModeChange("auto")}
+          >
+            Auto
+          </button>
+        </div>
+      </div>
+
+      <div className="dock-actions">
+        {needsKey ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => onOpenSettings?.()}
+          >
+            <IconKey />
+            Add key
+          </button>
+        ) : isStep ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-next"
+            onClick={onStep}
+            disabled={running || !hasMessages}
+            title={
+              nextName ? `Let ${nextName} speak next` : "Advance one turn"
+            }
+          >
+            <IconNextVoice />
+            Next
+            {nextName ? <span className="btn-next-who">{nextName}</span> : null}
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={onToggle}>
+            {running ? <IconPause /> : <IconPlay />}
+            {running ? "Pause" : status === "Paused" ? "Resume" : "Start"}
+          </button>
+        )}
+
+        <button
+          type="button"
+          className={`btn btn-stop ${status === "Idle" ? "btn-ghost" : "btn-danger"}`}
+          onClick={onStop}
+          disabled={status === "Idle"}
+          title="Stop generation, keep chat"
+        >
+          <IconStop />
+          Stop
+        </button>
+
+        {retryTarget && onRetry && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onRetry}
+            title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
+          >
+            <IconRetry />
+            Retry
+          </button>
+        )}
+
+        <div className="dock-wide">{secondary}</div>
+
+        <div className="dock-narrow" ref={moreRef}>
+          <button
+            type="button"
+            className="btn btn-chrome"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            <IconMore />
+            More
+          </button>
+          {moreOpen && (
+            <div className="dock-menu" role="menu">
+              {secondary}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
+
+export default memo(ControlBar);

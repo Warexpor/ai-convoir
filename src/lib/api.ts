@@ -6,10 +6,26 @@ import type {
   InnerState,
   Message,
 } from "../types";
+import {
+  engineDeleteMessage,
+  engineFetchModels,
+  engineLoadTranscript,
+  enginePause,
+  engineReset,
+  engineSetNarration,
+  engineStart,
+  engineStep,
+  engineStop,
+  getEngineMessages,
+  getEngineStatus,
+  setEngineConfig,
+  setEngineSession,
+} from "./browserEngine";
+import { isTauriRuntime } from "./openaiCompat";
 
 /** True when running inside the Tauri webview (vs Vite browser preview). */
 export function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return isTauriRuntime();
 }
 
 async function tryInvoke<T>(
@@ -25,10 +41,12 @@ async function tryInvoke<T>(
 }
 
 export async function getMessages(): Promise<Message[]> {
+  if (!isTauri()) return getEngineMessages();
   return (await tryInvoke<Message[]>("get_messages")) ?? [];
 }
 
 export async function getStatus(): Promise<[AppStatus, number]> {
+  if (!isTauri()) return getEngineStatus();
   return (await tryInvoke<[AppStatus, number]>("get_status")) ?? ["Idle", 0];
 }
 
@@ -37,6 +55,10 @@ export async function getConfig(): Promise<InnerState | null> {
 }
 
 export async function updateConfig(cfg: InnerState): Promise<void> {
+  if (!isTauri()) {
+    setEngineConfig(cfg);
+    return;
+  }
   await tryInvoke("update_config", {
     ai1Config: cfg.ai1_config,
     ai2Config: cfg.ai2_config,
@@ -50,23 +72,43 @@ export async function updateConfig(cfg: InnerState): Promise<void> {
 }
 
 export async function startConversation(): Promise<void> {
+  if (!isTauri()) {
+    await engineStart();
+    return;
+  }
   await invoke("start_conversation");
 }
 
 export async function stepConversation(): Promise<void> {
+  if (!isTauri()) {
+    await engineStep();
+    return;
+  }
   await invoke("step_conversation");
 }
 
 export async function pauseConversation(): Promise<void> {
-  await invoke("pause_conversation");
+  if (!isTauri()) {
+    await enginePause();
+    return;
+  }
+  await tryInvoke("pause_conversation");
 }
 
 export async function stopConversation(): Promise<void> {
-  await invoke("stop_conversation");
+  if (!isTauri()) {
+    await engineStop();
+    return;
+  }
+  await tryInvoke("stop_conversation");
 }
 
 export async function resetConversation(): Promise<void> {
-  await invoke("reset_conversation");
+  if (!isTauri()) {
+    await engineReset();
+    return;
+  }
+  await tryInvoke("reset_conversation");
 }
 
 export async function loadTranscript(args: {
@@ -74,6 +116,10 @@ export async function loadTranscript(args: {
   turnCount: number;
   chatId: string;
 }): Promise<void> {
+  if (!isTauri()) {
+    await engineLoadTranscript(args.messages, args.turnCount, args.chatId);
+    return;
+  }
   await tryInvoke("load_transcript", {
     messages: args.messages,
     turnCount: args.turnCount,
@@ -82,14 +128,33 @@ export async function loadTranscript(args: {
 }
 
 export async function setActiveChat(chatId: string): Promise<void> {
+  if (!isTauri()) {
+    setEngineSession(chatId);
+    return;
+  }
   await tryInvoke("set_active_chat", { chatId });
 }
 
 export async function setNarration(text: string): Promise<void> {
+  if (!isTauri()) {
+    await engineSetNarration(text);
+    return;
+  }
   await tryInvoke("set_narration", { text });
 }
 
 export async function exportChat(content: string): Promise<string> {
+  if (!isTauri()) {
+    const name = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    return name;
+  }
   return invoke<string>("export_chat", { content });
 }
 
@@ -98,13 +163,18 @@ export async function deleteMessage(args: {
   turn: number;
   created_at: number;
 }): Promise<void> {
-  await invoke("delete_messages", args);
+  if (!isTauri()) {
+    await engineDeleteMessage(args.agent, args.turn, args.created_at);
+    return;
+  }
+  await tryInvoke("delete_messages", args);
 }
 
 export async function fetchModels(args: {
   baseUrl: string;
   apiKey: string;
 }): Promise<string[]> {
+  if (!isTauri()) return engineFetchModels(args.baseUrl, args.apiKey);
   return invoke<string[]>("fetch_models", args);
 }
 

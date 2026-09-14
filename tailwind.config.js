@@ -4,30 +4,31 @@ export default {
     extend: {
       colors: {
         xai: {
-          canvas: "#0a0a0a",
-          "canvas-soft": "#1a1c20",
-          "canvas-card": "#191919",
-          ink: "#ffffff",
-          body: "#dadbdf",
-          mute: "#7d8187",
-          hairline: "#212327",
-          accent: "#f4f4f5",
+          canvas: "#141414",
+          "canvas-soft": "#181818",
+          "canvas-card": "#141414",
+          ink: "#ececec",
+          body: "#c8c8c8",
+          mute: "#8f8f8f",
+          hairline: "#262626",
+          accent: "#ececec",
+          live: "#f54e00",
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
-        mono: ['"Cascadia Code"', '"JetBrains Mono"', 'GeistMono', 'Consolas', 'monospace'],
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
       borderRadius: {
         pill: "9999px",
       },
       letterSpacing: {
-        mono: "0.0875em",
+        mono: "0.1em",
       },
       animation: {
         "fade-in": "fade-in 0.15s ease-out",
-        "fade-in-up": "fade-in-up 0.25s ease-out",
-        "slide-in": "slide-in 0.2s ease-out",
+        "fade-in-up": "fade-in-up 0.22s ease-out",
+        "slide-in": "slide-in 0.18s ease-out",
         "pulse-dot": "pulse-dot 1.4s ease-in-out infinite",
       },
       keyframes: {
@@ -36,11 +37,11 @@ export default {
           to: { opacity: "1" },
         },
         "fade-in-up": {
-          from: { opacity: "0", transform: "translateY(6px)" },
+          from: { opacity: "0", transform: "translateY(4px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "slide-in": {
-          from: { transform: "translateX(100%)", opacity: "0" },
+          from: { transform: "translateX(8px)", opacity: "0" },
           to: { transform: "translateX(0)", opacity: "1" },
         },
         "pulse-dot": {

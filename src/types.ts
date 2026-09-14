@@ -62,6 +62,7 @@ export interface StreamChunk {
 
 export const OPENCODE_ZEN_BASE = "https://opencode.ai/zen/v1";
 export const OPENCODE_GO_BASE = "https://opencode.ai/zen/go/v1";
+export const MUSE_SPARK_13_CONTRIBUTOR = "muse-spark-1.3-contributor";
 
 export function relativeTime(epochMs: number): string {
   const diff = Date.now() - epochMs;
@@ -77,7 +78,7 @@ export function relativeTime(epochMs: number): string {
 
 export function agentLabel(agent: string, config?: InnerState | null): string {
   if (agent === "seed") return "You";
-  if (agent === "narrator") return "Director";
+  if (agent === "narrator") return "Note";
   if (!config) {
     if (agent === "ai1") return "Agent 1";
     if (agent === "ai2") return "Agent 2";
@@ -93,15 +94,15 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 export function agentAccent(agent: string): string {
   switch (agent) {
     case "ai1":
-      return "#7eb0c8";
+      return "#ececec";
     case "ai2":
-      return "#d4a574";
+      return "#cfcfcf";
     case "ai3":
-      return "#8eb4a0";
+      return "#9a9a9a";
     case "seed":
-      return "#9a9da3";
+      return "#8a8a8a";
     default:
-      return "#7d8187";
+      return "#8a8a8a";
   }
 }
 
@@ -149,6 +150,8 @@ export const MODEL_CONTEXTS: Record<string, number> = {
   "gemini-2.0-flash": 1000000,
   "gemini-1.5-pro": 2000000,
   "gemini-1.5-flash": 1000000,
+  "muse-spark-1.3-contributor": 128000,
+  "muse-spark-1.2-contributor": 128000,
   "deepseek-chat": 128000,
   "deepseek-reasoner": 128000,
 };

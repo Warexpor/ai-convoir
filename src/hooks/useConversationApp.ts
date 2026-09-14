@@ -23,7 +23,20 @@ import { agentLabel } from "../types";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
 
+const SKIP_RESUME_KEY = "ai-conversation-skip-resume";
+
+function pickResumeChat(): SavedChat | undefined {
+  if (typeof localStorage !== "undefined" && localStorage.getItem(SKIP_RESUME_KEY)) {
+    return undefined;
+  }
+  const aid = getActiveChatId();
+  const byId = aid ? getChat(aid) : undefined;
+  if (byId && byId.messages.length > 0) return byId;
+  return listChats().find((c) => c.messages.length > 0);
+}
+
 export function useConversationApp() {
+  const bootResume = useRef(pickResumeChat());
   const toast = useToast();
   const turnRef = useRef(0);
   const [narration, setNarration] = useState("");
@@ -37,17 +50,19 @@ export function useConversationApp() {
     onError: onStreamError,
     onNarrationCleared,
     turnRef,
+    initialMessages: bootResume.current?.messages ?? [],
+    initialTurnCount: bootResume.current?.turn_count ?? 0,
   });
   turnRef.current = stream.turnCount;
 
   const [config, setConfig] = useState<InnerState | null>(null);
-  const [firstDraft, setFirstDraft] = useState("");
-  const [chats, setChats] = useState<SavedChat[]>(() => listChats());
-  const [activeChatId, setActiveChatIdState] = useState<string | null>(() =>
-    getActiveChatId(),
+  const [firstDraft, setFirstDraft] = useState(
+    () => bootResume.current?.seed_prompt || "",
   );
-  const [tick, setTick] = useState(0);
-
+  const [chats, setChats] = useState<SavedChat[]>(() => listChats());
+  const [activeChatId, setActiveChatIdState] = useState<string | null>(
+    () => bootResume.current?.id ?? getActiveChatId(),
+  );
   const skipAutosaveUntil = useRef(0);
   const messagesRef = useRef(stream.messages);
   const configRef = useRef(config);
@@ -64,11 +79,6 @@ export function useConversationApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 5000);
-    return () => clearInterval(id);
   }, []);
 
   const pushConfig = useCallback(async (cfg: InnerState) => {
@@ -108,35 +118,6 @@ export function useConversationApp() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadChatIntoApp = async (chat: SavedChat) => {
-      const cfg: InnerState = {
-        ai1_config: chat.ai1_config,
-        ai2_config: chat.ai2_config,
-        ai3_config: chat.ai3_config,
-        bot_count: chat.bot_count,
-        messages: chat.messages,
-        status: "Idle",
-        turn_count: chat.turn_count,
-        max_turns: chat.max_turns,
-        delay_ms: chat.delay_ms,
-        mode: chat.mode,
-        seed_prompt: chat.seed_prompt,
-      };
-      await pushConfig(cfg);
-      await api.loadTranscript({
-        messages: chat.messages,
-        turnCount: chat.turn_count,
-        chatId: chat.id,
-      });
-      if (cancelled) return;
-      stream.setMessages(chat.messages);
-      stream.setTurnCount(chat.turn_count);
-      setFirstDraft(chat.seed_prompt || "");
-      setActiveChatId(chat.id);
-      setActiveChatIdState(chat.id);
-      chatIdRef.current = chat.id;
-    };
-
     const boot = async () => {
       try {
         const [msgs, statusData, cfg] = await Promise.all([
@@ -145,21 +126,58 @@ export function useConversationApp() {
           api.getConfig(),
         ]);
         if (cancelled) return;
-        stream.setMessages(msgs);
+
+        const resume = msgs.length > 0 ? undefined : bootResume.current;
+        if (msgs.length > 0) {
+          stream.setMessages(msgs);
+          stream.setTurnCount(statusData[1]);
+        } else if (resume) {
+          // Messages already initialized from bootResume; keep them.
+          setActiveChatId(resume.id);
+          setActiveChatIdState(resume.id);
+          chatIdRef.current = resume.id;
+        } else {
+          stream.setMessages([]);
+          stream.setTurnCount(statusData[1]);
+        }
         stream.setStatus(statusData[0]);
-        stream.setTurnCount(statusData[1]);
 
         let merged = normalizeConfig(cfg ?? defaultConfig());
         merged = mergePersisted(merged, loadPersistedConfig());
-        if (cfg) await pushConfig(merged);
-        else setConfig(merged);
+        if (resume) {
+          merged = {
+            ...merged,
+            ai1_config: resume.ai1_config,
+            ai2_config: resume.ai2_config,
+            ai3_config: resume.ai3_config,
+            bot_count: resume.bot_count,
+            messages: resume.messages,
+            turn_count: resume.turn_count,
+            max_turns: resume.max_turns,
+            delay_ms: resume.delay_ms,
+            mode: resume.mode,
+            seed_prompt: resume.seed_prompt,
+          };
+        }
+        if (cfg || resume) await pushConfig(merged);
+        else {
+          setConfig(merged);
+          await api.updateConfig(merged);
+        }
         if (cancelled) return;
-        setFirstDraft(merged.seed_prompt || "");
+        if (!resume) {
+          const skipped =
+            typeof localStorage !== "undefined" &&
+            !!localStorage.getItem(SKIP_RESUME_KEY);
+          setFirstDraft(skipped ? "" : merged.seed_prompt || "");
+        }
 
-        const aid = getActiveChatId();
-        if (aid && msgs.length === 0) {
-          const chat = getChat(aid);
-          if (chat?.messages.length) await loadChatIntoApp(chat);
+        if (resume) {
+          await api.loadTranscript({
+            messages: resume.messages,
+            turnCount: resume.turn_count,
+            chatId: resume.id,
+          });
         }
       } catch {
         if (cancelled) return;
@@ -216,13 +234,21 @@ export function useConversationApp() {
 
   const handleReset = useCallback(async () => {
     try {
+      const msgs = messagesRef.current.filter((m) => !m.streaming);
+      if (msgs.length > 0) autoSave();
+      skipAutosaveUntil.current = Date.now() + 2500;
       await api.resetConversation();
       void api.setActiveChat("");
+      try {
+        localStorage.setItem(SKIP_RESUME_KEY, "1");
+      } catch {
+        /* quota */
+      }
       stream.setMessages([]);
       stream.setTurnCount(0);
       stream.setStatus("Idle");
       setNarration("");
-      setFirstDraft(config?.seed_prompt || "");
+      setFirstDraft("");
       setActiveChatId(null);
       setActiveChatIdState(null);
       chatIdRef.current = null;
@@ -230,7 +256,7 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(String(e));
     }
-  }, [config?.seed_prompt, refreshChats, stream, toast]);
+  }, [autoSave, refreshChats, stream, toast]);
 
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
@@ -303,6 +329,16 @@ export function useConversationApp() {
     async (id: string) => {
       const chat = getChat(id);
       if (!chat) return;
+      const current = messagesRef.current.filter((m) => !m.streaming);
+      if (current.length > 0 && chatIdRef.current !== id) autoSave();
+      try {
+        localStorage.removeItem(SKIP_RESUME_KEY);
+      } catch {
+        /* quota */
+      }
+      setActiveChatId(chat.id);
+      setActiveChatIdState(chat.id);
+      chatIdRef.current = chat.id;
       try {
         await api.stopConversation().catch(() => undefined);
         const cfg: InnerState = {
@@ -336,7 +372,7 @@ export function useConversationApp() {
         toast.show(String(e));
       }
     },
-    [pushConfig, stream, toast],
+    [autoSave, pushConfig, stream, toast],
   );
 
   const handleDeleteChat = useCallback(
@@ -362,12 +398,22 @@ export function useConversationApp() {
   const handleStartFirst = useCallback(
     async (text: string) => {
       if (!config) return;
-      const next = { ...config, seed_prompt: text };
-      setFirstDraft(text);
+      const trimmed = text.trim();
+      if (!trimmed) {
+        toast.show("Write a first line.", 2200);
+        return;
+      }
+      const next = { ...config, seed_prompt: trimmed };
+      setFirstDraft(trimmed);
+      try {
+        localStorage.removeItem(SKIP_RESUME_KEY);
+      } catch {
+        /* quota */
+      }
       await pushConfig(next);
       if (missingApiKeys(next)) {
         toast.show(
-          "Add API keys for every active character in Settings, then Step or Start.",
+          "Add your OpenCode Go key in Settings, then press Begin.",
           6000,
         );
         return { needSettings: true as const };
@@ -394,7 +440,6 @@ export function useConversationApp() {
     setNarration,
     chats,
     activeChatId,
-    tick,
     refreshChats,
     handleToggle,
     handleStep,

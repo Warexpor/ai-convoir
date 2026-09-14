@@ -1,24 +1,29 @@
 # AI Conversation
 
-**v2.0** — Desktop multi-agent chat. Let 2–3 LLMs talk over OpenAI-compatible APIs.
+**v2.0** — Desktop multi-agent chat. Two or three voices take turns on one thread (OpenCode Go · Muse Spark 1.3 contributor).
 
 ![logo](public/logo.png)
 
 ## Features
 
-- 2–3 agents with system prompts, models, API keys, and reasoning effort
-- OpenCode Zen / Go / OpenAI presets, plus model list fetch
-- SSE streaming with non-stream fallback
-- Step / Auto modes, Stop (keeps transcript), Narrate next turn
-- Thoughts panel for reasoning models
-- Saved chats and API profiles (local)
-- Markdown export and keyboard shortcuts (`?`)
+- 2–3 voices, one shared OpenCode Go key
+- Locked to Muse Spark 1.3 contributor
+- SSE streaming, Step / Auto, Stop (keeps transcript), optional hint for the next speaker
+- Saved chats, markdown export, keyboard shortcuts (`?`)
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) (stable)
+- [Rust](https://rustup.rs/) 1.88+ (stable)
 - Tauri system deps for your OS ([guide](https://v2.tauri.app/start/prerequisites/))
+
+On **Linux** you also need WebKitGTK 4.1 (Debian/Ubuntu):
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
+
+On **Windows**, install the [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if the installer bootstrapper has not already (the NSIS/MSI bundle can download it). Use the MSVC Build Tools / Visual Studio C++ workload for `npm run windows:build`.
 
 ## Install & run
 
@@ -33,7 +38,19 @@ Production installers:
 npm run release:build
 ```
 
-Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows).
+Linux packages only (`.deb` + AppImage):
+
+```bash
+npm run linux:build
+```
+
+Windows installers only (NSIS + MSI), from a Windows machine:
+
+```bash
+npm run windows:build
+```
+
+Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows; `deb/` and `appimage/` on Linux). Rust is pinned to **1.88.0** via `rust-toolchain.toml`.
 
 ## Scripts
 
@@ -42,6 +59,8 @@ Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows).
 | `npm run tauri dev` | Desktop app in development |
 | `npm run build` | Frontend production build |
 | `npm run release:build` | Frontend + Tauri release bundles |
+| `npm run linux:build` | Linux `.deb` + AppImage |
+| `npm run windows:build` | Windows NSIS + MSI (run on Windows) |
 | `npm run typecheck` | TypeScript check |
 | `npm run test:rust` | Rust unit tests |
 | `npm run icons` | Regenerate icons (`scripts/make_icons.py`) |
@@ -77,10 +96,13 @@ Chats persist in a local SQLite database (app data dir). Browser Vite preview ca
 | `Ctrl+S` | Save chat |
 | `Ctrl+E` | Export |
 | `Ctrl+Shift+R` | New chat |
+| `Ctrl+=` / `Ctrl+-` | Zoom in / out |
+| `Ctrl+0` | Reset zoom |
+| `Ctrl+Enter` | Begin from the first-message box |
 
 ## Stack
 
-Tauri 2 · React 18 · TypeScript · Tailwind · Rust (`reqwest` SSE, `rusqlite`)
+Tauri 2 · React 19 · TypeScript · Tailwind · Rust (`reqwest` SSE, `rusqlite`)
 
 ## License
 

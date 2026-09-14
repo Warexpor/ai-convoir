@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import ControlBar from "./components/ControlBar";
 import SettingsSidebar from "./components/SettingsSidebar";
@@ -7,14 +7,18 @@ import ChatRail from "./components/ChatRail";
 import ShortcutsModal from "./components/ShortcutsModal";
 import { useAppKeyboard } from "./hooks/useAppKeyboard";
 import { useConversationApp } from "./hooks/useConversationApp";
+import { useTokenUsage } from "./hooks/useTokenUsage";
 import {
   PREF_KEYS,
+  missingApiKeys,
   readBoolPref,
   readZoom,
   writeBoolPref,
   writeZoom,
 } from "./lib/config";
-import { agentLabel, nextAgentId, totalTokenUsage } from "./types";
+import { IconThreads, IconVoices, SlashMark } from "./components/Marks";
+import StageField from "./components/StageField";
+import { agentLabel, nextAgentId } from "./types";
 
 function App() {
   const app = useConversationApp();
@@ -29,14 +33,13 @@ function App() {
     setNarration,
     chats,
     activeChatId,
-    tick,
     refreshChats,
   } = app;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(() =>
-    readBoolPref(PREF_KEYS.railOpen, true),
+    readBoolPref(PREF_KEYS.railOpen, false),
   );
   const [showThoughtsUi, setShowThoughtsUi] = useState(() =>
     readBoolPref(PREF_KEYS.showThoughts, true),
@@ -52,6 +55,12 @@ function App() {
   );
   useEffect(() => writeZoom(zoom), [zoom]);
 
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      setRailOpen(false);
+    }
+  }, []);
+
   const showZoomMsg = useCallback((val: number) => {
     if (zoomTimer.current) clearTimeout(zoomTimer.current);
     setZoomMsg(`${Math.round(val * 100)}%`);
@@ -63,7 +72,7 @@ function App() {
       const result = await app.handleStartFirst(text);
       if (result?.needSettings) setSettingsOpen(true);
     },
-    [app],
+    [app.handleStartFirst],
   );
 
   useAppKeyboard({
@@ -102,80 +111,136 @@ function App() {
     },
   });
 
-  const thinkingName =
-    config && stream.status === "Running"
-      ? agentLabel(nextAgentId(config, stream.turnCount), config)
-      : null;
-  const { used: tokenUsed, capacity: tokenCapacity } = totalTokenUsage(
+  const thinkingName = useMemo(
+    () =>
+      config && stream.status === "Running"
+        ? agentLabel(nextAgentId(config, stream.turnCount), config)
+        : null,
+    [config, stream.status, stream.turnCount],
+  );
+  const { used: tokenUsed, capacity: tokenCapacity } = useTokenUsage(
     stream.messages,
     config,
   );
+
+  const needsKey = !config || missingApiKeys(config);
+  const agentNames = useMemo(() => {
+    if (!config) return ["Ava", "Jules"];
+    if (config.bot_count >= 3) {
+      return [
+        config.ai1_config.name,
+        config.ai2_config.name,
+        config.ai3_config.name,
+      ];
+    }
+    return [config.ai1_config.name, config.ai2_config.name];
+  }, [config]);
+  const nextName = config
+    ? agentLabel(nextAgentId(config, stream.turnCount), config)
+    : null;
 
   return (
     <div
       className={[
         "app",
-        settingsOpen ? "settings-open" : "",
+        settingsOpen && config ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
+        railOpen ? "rail-open-mobile" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       style={{ zoom }}
     >
-      {railOpen && (
-        <ChatRail
-          chats={chats}
-          activeId={activeChatId}
-          onNew={app.handleReset}
-          onSelect={app.handleSelectChat}
-          onDelete={app.handleDeleteChat}
-          onClose={() => setRailOpen(false)}
-          onRename={refreshChats}
-        />
-      )}
+      <StageField />
+      <a className="skip-link" href="#main">
+        Skip to transcript
+      </a>
 
-      <div className="main">
-        <header className="topbar">
+      <button
+        type="button"
+        className="rail-scrim"
+        aria-label="Hide chats"
+        aria-hidden={!railOpen}
+        tabIndex={railOpen ? 0 : -1}
+        onClick={() => setRailOpen(false)}
+      />
+
+      <ChatRail
+        open={railOpen}
+        chats={chats}
+        activeId={activeChatId}
+        onNew={app.handleReset}
+        onSelect={(id) => {
+          app.handleSelectChat(id);
+          if (window.matchMedia("(max-width: 900px)").matches) {
+            setRailOpen(false);
+          }
+        }}
+        onDelete={app.handleDeleteChat}
+        onClose={() => setRailOpen(false)}
+        onRename={refreshChats}
+        agentNames={agentNames}
+        mode={config?.mode ?? "step"}
+        needsKey={needsKey}
+        onUseStarter={(text) => {
+          setFirstDraft(text);
+          if (window.matchMedia("(max-width: 900px)").matches) {
+            setRailOpen(false);
+          }
+        }}
+      />
+
+      <header className="topbar">
+        <div className="brand">
+          <SlashMark className="brand-logo" size={24} />
           <div className="brand-text">
             <p className="brand-mark">AI Conversation</p>
             <span className="topbar-sub">
               {config
-                ? `${config.bot_count >= 3 ? 3 : 2} agents · ${config.mode}`
-                : "loading…"}
+                ? agentNames.filter(Boolean).join(" · ")
+                : "loading"}
             </span>
           </div>
-          <div className="spacer" />
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setRailOpen((p) => !p)}
-            title="Toggle chats (B)"
-          >
-            {railOpen ? "Hide chats" : "Show chats"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setSettingsOpen((p) => !p)}
-            title="Toggle settings (S)"
-          >
-            {settingsOpen ? "Hide settings" : "Settings"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            onClick={() => setHelpOpen(true)}
-            title="Shortcuts (?)"
-            aria-label="Keyboard shortcuts"
-          >
-            ?
-          </button>
-        </header>
+        </div>
+        <div className="spacer" />
+        <button
+          type="button"
+          className="btn btn-chrome"
+          onClick={() => setRailOpen((p) => !p)}
+          title="Toggle chats (B)"
+          aria-pressed={railOpen}
+        >
+          <IconThreads />
+          Chats
+        </button>
+        <button
+          type="button"
+          className="btn btn-chrome"
+          onClick={() => setSettingsOpen((p) => !p)}
+          title="Toggle settings (S)"
+          aria-pressed={settingsOpen}
+        >
+          <IconVoices />
+          Settings
+        </button>
+        <button
+          type="button"
+          className="btn btn-chrome btn-kbd"
+          onClick={() => setHelpOpen(true)}
+          title="Shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          ?
+        </button>
+      </header>
+
+      <div className="main" id="main" tabIndex={-1} role="main">
 
         {toast.message !== null && (
           <div
             className={`toast ${toast.leaving ? "leaving" : ""}`}
             role="status"
+            aria-live="polite"
           >
             <span className="toast-text">{toast.message}</span>
             <button
@@ -197,7 +262,6 @@ function App() {
 
         <ChatView
           messages={stream.messages}
-          tick={tick}
           isThinking={
             stream.isThinking && !stream.messages.some((m) => m.streaming)
           }
@@ -208,6 +272,10 @@ function App() {
           onFirstDraftChange={setFirstDraft}
           onStartFirst={handleStartFirst}
           onDeleteMessage={app.handleDeleteMessage}
+          hasSavedChats={chats.length > 0}
+          needsKey={needsKey}
+          onOpenSettings={() => setSettingsOpen(true)}
+          agentNames={agentNames}
         />
 
         {stream.messages.length > 0 && (
@@ -221,23 +289,29 @@ function App() {
           />
         )}
 
-        <ControlBar
-          status={stream.status}
-          turnCount={stream.turnCount}
-          maxTurns={config?.max_turns ?? 40}
-          mode={config?.mode ?? "step"}
-          onToggle={app.handleToggle}
-          onStep={app.handleStep}
-          onStop={app.handleStop}
-          onReset={app.handleReset}
-          onExport={app.handleExport}
-          onModeChange={app.handleModeChange}
-          onSaveChat={app.handleSaveChat}
-          tokenUsed={tokenUsed}
-          tokenCapacity={tokenCapacity}
-          retryTarget={stream.lastFailed.current}
-          onRetry={app.handleRetry}
-        />
+        {stream.messages.length > 0 && (
+          <ControlBar
+            status={stream.status}
+            turnCount={stream.turnCount}
+            maxTurns={config?.max_turns ?? 40}
+            mode={config?.mode ?? "step"}
+            onToggle={app.handleToggle}
+            onStep={app.handleStep}
+            onStop={app.handleStop}
+            onReset={app.handleReset}
+            onExport={app.handleExport}
+            onModeChange={app.handleModeChange}
+            onSaveChat={app.handleSaveChat}
+            tokenUsed={tokenUsed}
+            tokenCapacity={tokenCapacity}
+            retryTarget={stream.lastFailed.current}
+            onRetry={app.handleRetry}
+            hasMessages
+            nextName={nextName}
+            needsKey={needsKey}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
       </div>
 
       {config && (
