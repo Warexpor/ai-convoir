@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ConversationMode, InnerState, Message } from "../types";
 import * as api from "../lib/api";
 import {
@@ -22,6 +22,13 @@ import {
 import { agentLabel } from "../types";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
+
+function pickResumeChat(): SavedChat | undefined {
+  const aid = getActiveChatId();
+  const byId = aid ? getChat(aid) : undefined;
+  if (byId && byId.messages.length > 0) return byId;
+  return listChats().find((c) => c.messages.length > 0);
+}
 
 export function useConversationApp() {
   const toast = useToast();
@@ -64,6 +71,18 @@ export function useConversationApp() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    const chat = pickResumeChat();
+    if (!chat?.messages.length) return;
+    stream.setMessages(chat.messages);
+    stream.setTurnCount(chat.turn_count);
+    setFirstDraft(chat.seed_prompt || "");
+    setActiveChatIdState(chat.id);
+    chatIdRef.current = chat.id;
+    // Paint the last thread before boot's async getMessages can return [].
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const pushConfig = useCallback(async (cfg: InnerState) => {
     const n = normalizeConfig(cfg);
     await api.updateConfig(n);
@@ -101,35 +120,6 @@ export function useConversationApp() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadChatIntoApp = async (chat: SavedChat) => {
-      const cfg: InnerState = {
-        ai1_config: chat.ai1_config,
-        ai2_config: chat.ai2_config,
-        ai3_config: chat.ai3_config,
-        bot_count: chat.bot_count,
-        messages: chat.messages,
-        status: "Idle",
-        turn_count: chat.turn_count,
-        max_turns: chat.max_turns,
-        delay_ms: chat.delay_ms,
-        mode: chat.mode,
-        seed_prompt: chat.seed_prompt,
-      };
-      await pushConfig(cfg);
-      await api.loadTranscript({
-        messages: chat.messages,
-        turnCount: chat.turn_count,
-        chatId: chat.id,
-      });
-      if (cancelled) return;
-      stream.setMessages(chat.messages);
-      stream.setTurnCount(chat.turn_count);
-      setFirstDraft(chat.seed_prompt || "");
-      setActiveChatId(chat.id);
-      setActiveChatIdState(chat.id);
-      chatIdRef.current = chat.id;
-    };
-
     const boot = async () => {
       try {
         const [msgs, statusData, cfg] = await Promise.all([
@@ -138,22 +128,52 @@ export function useConversationApp() {
           api.getConfig(),
         ]);
         if (cancelled) return;
-        stream.setMessages(msgs);
+
+        const resume = msgs.length > 0 ? undefined : pickResumeChat();
+        if (msgs.length > 0) {
+          stream.setMessages(msgs);
+          stream.setTurnCount(statusData[1]);
+        } else if (resume) {
+          stream.setMessages(resume.messages);
+          stream.setTurnCount(resume.turn_count);
+          setFirstDraft(resume.seed_prompt || "");
+          setActiveChatId(resume.id);
+          setActiveChatIdState(resume.id);
+          chatIdRef.current = resume.id;
+        } else {
+          stream.setMessages([]);
+          stream.setTurnCount(statusData[1]);
+        }
         stream.setStatus(statusData[0]);
-        stream.setTurnCount(statusData[1]);
 
         let merged = normalizeConfig(cfg ?? defaultConfig());
         merged = mergePersisted(merged, loadPersistedConfig());
-        if (cfg) await pushConfig(merged);
+        if (resume) {
+          merged = {
+            ...merged,
+            ai1_config: resume.ai1_config,
+            ai2_config: resume.ai2_config,
+            ai3_config: resume.ai3_config,
+            bot_count: resume.bot_count,
+            messages: resume.messages,
+            turn_count: resume.turn_count,
+            max_turns: resume.max_turns,
+            delay_ms: resume.delay_ms,
+            mode: resume.mode,
+            seed_prompt: resume.seed_prompt,
+          };
+        }
+        if (cfg || resume) await pushConfig(merged);
         else setConfig(merged);
         if (cancelled) return;
-        setFirstDraft(merged.seed_prompt || "");
+        if (!resume) setFirstDraft(merged.seed_prompt || "");
 
-        if (msgs.length === 0) {
-          const aid = getActiveChatId();
-          const recent = listChats().find((c) => c.messages.length > 0);
-          const chat = (aid && getChat(aid)) || recent;
-          if (chat?.messages.length) await loadChatIntoApp(chat);
+        if (resume) {
+          await api.loadTranscript({
+            messages: resume.messages,
+            turnCount: resume.turn_count,
+            chatId: resume.id,
+          });
         }
       } catch {
         if (cancelled) return;
@@ -210,6 +230,7 @@ export function useConversationApp() {
 
   const handleReset = useCallback(async () => {
     try {
+      skipAutosaveUntil.current = Date.now() + 2500;
       await api.resetConversation();
       void api.setActiveChat("");
       stream.setMessages([]);
