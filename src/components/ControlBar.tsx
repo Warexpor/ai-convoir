@@ -122,7 +122,7 @@ function ControlBar({
 
       <button
         type="button"
-        className="btn btn-danger"
+        className={`btn ${status === "Idle" ? "btn-ghost" : "btn-danger"}`}
         onClick={onStop}
         disabled={status === "Idle"}
         title="Stop generation, keep chat"

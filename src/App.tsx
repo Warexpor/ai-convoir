@@ -51,6 +51,12 @@ function App() {
   );
   useEffect(() => writeZoom(zoom), [zoom]);
 
+  useEffect(() => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      setRailOpen(false);
+    }
+  }, []);
+
   const showZoomMsg = useCallback((val: number) => {
     if (zoomTimer.current) clearTimeout(zoomTimer.current);
     setZoomMsg(`${Math.round(val * 100)}%`);
@@ -116,7 +122,7 @@ function App() {
     <div
       className={[
         "app",
-        settingsOpen ? "settings-open" : "",
+        settingsOpen && config ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
         railOpen ? "rail-open-mobile" : "",
       ]
@@ -138,61 +144,65 @@ function App() {
           chats={chats}
           activeId={activeChatId}
           onNew={app.handleReset}
-          onSelect={app.handleSelectChat}
+          onSelect={(id) => {
+            app.handleSelectChat(id);
+            if (window.matchMedia("(max-width: 900px)").matches) {
+              setRailOpen(false);
+            }
+          }}
           onDelete={app.handleDeleteChat}
           onClose={() => setRailOpen(false)}
           onRename={refreshChats}
         />
       )}
 
-      <div className="main">
-        <header className="topbar">
-          <div className="brand">
-            <img
-              className="brand-logo"
-              src="/logo.svg"
-              width={18}
-              height={18}
-              alt=""
-            />
-            <div className="brand-text">
-              <p className="brand-mark">AI Conversation</p>
-              <span className="topbar-sub">
-                {config
-                  ? `${agentCount} agents · ${config.mode}`
-                  : "loading"}
-              </span>
-            </div>
+      <header className="topbar">
+        <div className="brand">
+          <img
+            className="brand-logo"
+            src="/logo.svg"
+            width={18}
+            height={18}
+            alt=""
+          />
+          <div className="brand-text">
+            <p className="brand-mark">AI Conversation</p>
+            <span className="topbar-sub">
+              {config ? `${agentCount} agents · ${config.mode}` : "loading"}
+            </span>
           </div>
-          <div className="spacer" />
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setRailOpen((p) => !p)}
-            title="Toggle chats (B)"
-            aria-pressed={railOpen}
-          >
-            {railOpen ? "Chats" : "Chats"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={() => setSettingsOpen((p) => !p)}
-            title="Toggle settings (S)"
-            aria-pressed={settingsOpen}
-          >
-            Settings
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-icon"
-            onClick={() => setHelpOpen(true)}
-            title="Shortcuts (?)"
-            aria-label="Keyboard shortcuts"
-          >
-            ?
-          </button>
-        </header>
+        </div>
+        <div className="spacer" />
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => setRailOpen((p) => !p)}
+          title="Toggle chats (B)"
+          aria-pressed={railOpen}
+        >
+          Chats
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => setSettingsOpen((p) => !p)}
+          title="Toggle settings (S)"
+          aria-pressed={settingsOpen}
+        >
+          Settings
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-icon"
+          onClick={() => setHelpOpen(true)}
+          title="Shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          ?
+        </button>
+      </header>
+
+      <div className="main">
 
         {toast.message !== null && (
           <div
