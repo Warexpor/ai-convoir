@@ -56,6 +56,13 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-card">
+          <img
+            className="empty-logo"
+            src="/logo.svg"
+            width={28}
+            height={28}
+            alt=""
+          />
           <span className="mono-cap empty-kicker">Conversation</span>
           <h2>Start a thread</h2>
           <p>
@@ -68,6 +75,7 @@ function ChatView({
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
               placeholder="A question, a scene, or an opening line."
               aria-label="First message"
+              autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();

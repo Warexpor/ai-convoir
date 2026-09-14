@@ -304,6 +304,7 @@ export default function SettingsSidebar({
 }: Props) {
   const [local, setLocal] = useState(config);
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => setLocal(config), [config]);
   useEffect(() => {
@@ -327,6 +328,7 @@ export default function SettingsSidebar({
         </button>
       </div>
       <div className="settings-body">
+        <p className="mono-cap settings-kicker">Session</p>
         <div className="field">
           <label>Agents</label>
           <div className="seg" role="group" aria-label="Agent count">
@@ -417,8 +419,8 @@ export default function SettingsSidebar({
           </div>
         )}
 
+        <p className="mono-cap settings-kicker">Roster</p>
         <div className="field">
-          <label>Roster</label>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <CharCard
               accent={agentAccent("ai1")}
@@ -446,7 +448,9 @@ export default function SettingsSidebar({
 
         {apis.length > 0 && (
           <div className="field">
-            <label>Profiles</label>
+            <p className="mono-cap settings-kicker" style={{ marginBottom: 8 }}>
+              Profiles
+            </p>
             {apis.map((a) => (
               <div key={a.id} className="api-row">
                 <span>
@@ -475,15 +479,17 @@ export default function SettingsSidebar({
           type="button"
           className="btn btn-primary"
           style={{ width: "100%" }}
-          onClick={() =>
+          onClick={() => {
             onSave({
               ...local,
               bot_count: botCount,
               max_turns: Math.max(1, local.max_turns),
-            })
-          }
+            });
+            setSaved(true);
+            window.setTimeout(() => setSaved(false), 1400);
+          }}
         >
-          Save
+          {saved ? "Saved" : "Save"}
         </button>
         <p className="about-line">
           AI Conversation <span>v2.0</span>

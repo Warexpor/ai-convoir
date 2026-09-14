@@ -574,6 +574,7 @@ body,
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  overscroll-behavior: contain;
 }
 .chat-inner {
   max-width: 720px;
@@ -708,6 +709,12 @@ body,
   display: block;
   text-align: center;
   margin-bottom: 10px;
+}
+.empty-logo {
+  display: block;
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 16px;
 }
 .empty-card h2 {
   font-size: 32px;
@@ -992,6 +999,9 @@ body,
   color: var(--faint);
   line-height: 1.45;
 }
+.settings-kicker {
+  margin: 4px 0 -6px;
+}
 .char-card {
   border: var(--hairline);
   border-radius: var(--r);
@@ -1095,12 +1105,35 @@ body,
   padding: 12px;
   overflow-x: auto;
   margin: 0.6em 0;
+  tab-size: 2;
 }
 .md-body pre code {
   border: none;
   background: none;
   padding: 0;
   color: var(--text-2);
+}
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.92em;
+}
+.md-body th,
+.md-body td {
+  border: var(--hairline);
+  padding: 6px 10px;
+  text-align: left;
+}
+.md-body th {
+  color: var(--text);
+  font-weight: 500;
+  background: var(--bg);
+}
+.md-body hr {
+  border: none;
+  border-top: var(--hairline);
+  margin: 1em 0;
 }
 .md-body ul,
 .md-body ol {
@@ -1325,6 +1358,12 @@ body,
   }
   .btn:active {
     opacity: 1;
+  }
+  .dot.run,
+  .msg-live,
+  .thinking .d,
+  .stream-caret {
+    animation: none !important;
   }
 }
 

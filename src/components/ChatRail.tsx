@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
-import { relativeTime } from "../types";
+import RelativeTime from "./RelativeTime";
 
 interface Props {
   chats: SavedChat[];
@@ -117,7 +117,8 @@ export default function ChatRail({
                 >
                   <div className="chat-item-title">{c.title}</div>
                   <div className="chat-item-meta">
-                    {c.messages.length} msgs · {relativeTime(c.updated_at)}
+                    {c.messages.length} msgs ·{" "}
+                    <RelativeTime at={c.updated_at} className="" />
                   </div>
                 </button>
               )}

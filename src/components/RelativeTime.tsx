@@ -1,7 +1,13 @@
 import { memo, useEffect, useState } from "react";
 import { relativeTime } from "../types";
 
-function RelativeTime({ at }: { at: number }) {
+function RelativeTime({
+  at,
+  className = "msg-time",
+}: {
+  at: number;
+  className?: string;
+}) {
   const [label, setLabel] = useState(() => relativeTime(at));
 
   useEffect(() => {
@@ -12,7 +18,7 @@ function RelativeTime({ at }: { at: number }) {
   }, [at]);
 
   return (
-    <time className="msg-time" dateTime={new Date(at).toISOString()}>
+    <time className={className} dateTime={new Date(at).toISOString()}>
       {label}
     </time>
   );

@@ -24,6 +24,16 @@ async function tryInvoke<T>(
   }
 }
 
+async function requireInvoke<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  if (!isTauri()) {
+    throw new Error("Run the desktop app to generate turns.");
+  }
+  return invoke<T>(cmd, args);
+}
+
 export async function getMessages(): Promise<Message[]> {
   return (await tryInvoke<Message[]>("get_messages")) ?? [];
 }
@@ -50,23 +60,23 @@ export async function updateConfig(cfg: InnerState): Promise<void> {
 }
 
 export async function startConversation(): Promise<void> {
-  await invoke("start_conversation");
+  await requireInvoke("start_conversation");
 }
 
 export async function stepConversation(): Promise<void> {
-  await invoke("step_conversation");
+  await requireInvoke("step_conversation");
 }
 
 export async function pauseConversation(): Promise<void> {
-  await invoke("pause_conversation");
+  await tryInvoke("pause_conversation");
 }
 
 export async function stopConversation(): Promise<void> {
-  await invoke("stop_conversation");
+  await tryInvoke("stop_conversation");
 }
 
 export async function resetConversation(): Promise<void> {
-  await invoke("reset_conversation");
+  await tryInvoke("reset_conversation");
 }
 
 export async function loadTranscript(args: {
@@ -90,6 +100,17 @@ export async function setNarration(text: string): Promise<void> {
 }
 
 export async function exportChat(content: string): Promise<string> {
+  if (!isTauri()) {
+    const name = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+    return name;
+  }
   return invoke<string>("export_chat", { content });
 }
 
@@ -98,14 +119,14 @@ export async function deleteMessage(args: {
   turn: number;
   created_at: number;
 }): Promise<void> {
-  await invoke("delete_messages", args);
+  await tryInvoke("delete_messages", args);
 }
 
 export async function fetchModels(args: {
   baseUrl: string;
   apiKey: string;
 }): Promise<string[]> {
-  return invoke<string[]>("fetch_models", args);
+  return requireInvoke<string[]>("fetch_models", args);
 }
 
 export async function upsertSavedChat(snapshot: unknown): Promise<void> {
