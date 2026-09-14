@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationMode, InnerState, Message } from "../types";
 import * as api from "../lib/api";
 import {
@@ -36,6 +36,7 @@ function pickResumeChat(): SavedChat | undefined {
 }
 
 export function useConversationApp() {
+  const bootResume = useRef(pickResumeChat());
   const toast = useToast();
   const turnRef = useRef(0);
   const [narration, setNarration] = useState("");
@@ -49,14 +50,18 @@ export function useConversationApp() {
     onError: onStreamError,
     onNarrationCleared,
     turnRef,
+    initialMessages: bootResume.current?.messages ?? [],
+    initialTurnCount: bootResume.current?.turn_count ?? 0,
   });
   turnRef.current = stream.turnCount;
 
   const [config, setConfig] = useState<InnerState | null>(null);
-  const [firstDraft, setFirstDraft] = useState("");
+  const [firstDraft, setFirstDraft] = useState(
+    () => bootResume.current?.seed_prompt || "",
+  );
   const [chats, setChats] = useState<SavedChat[]>(() => listChats());
-  const [activeChatId, setActiveChatIdState] = useState<string | null>(() =>
-    getActiveChatId(),
+  const [activeChatId, setActiveChatIdState] = useState<string | null>(
+    () => bootResume.current?.id ?? getActiveChatId(),
   );
   const skipAutosaveUntil = useRef(0);
   const messagesRef = useRef(stream.messages);
@@ -74,18 +79,6 @@ export function useConversationApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useLayoutEffect(() => {
-    const chat = pickResumeChat();
-    if (!chat?.messages.length) return;
-    stream.setMessages(chat.messages);
-    stream.setTurnCount(chat.turn_count);
-    setFirstDraft(chat.seed_prompt || "");
-    setActiveChatIdState(chat.id);
-    chatIdRef.current = chat.id;
-    // Paint the last thread before boot's async getMessages can return [].
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pushConfig = useCallback(async (cfg: InnerState) => {
@@ -134,19 +127,17 @@ export function useConversationApp() {
         ]);
         if (cancelled) return;
 
-        const resume = msgs.length > 0 ? undefined : pickResumeChat();
+        const resume = msgs.length > 0 ? undefined : bootResume.current;
         if (msgs.length > 0) {
           stream.setMessages(msgs);
           stream.setTurnCount(statusData[1]);
         } else if (resume) {
-          stream.setMessages(resume.messages);
-          stream.setTurnCount(resume.turn_count);
-          setFirstDraft(resume.seed_prompt || "");
+          // Messages already initialized from bootResume; keep them.
           setActiveChatId(resume.id);
           setActiveChatIdState(resume.id);
           chatIdRef.current = resume.id;
         } else {
-          stream.setMessages((prev) => (prev.length > 0 ? prev : []));
+          stream.setMessages([]);
           stream.setTurnCount(statusData[1]);
         }
         stream.setStatus(statusData[0]);
@@ -333,6 +324,9 @@ export function useConversationApp() {
       } catch {
         /* quota */
       }
+      setActiveChatId(chat.id);
+      setActiveChatIdState(chat.id);
+      chatIdRef.current = chat.id;
       try {
         await api.stopConversation().catch(() => undefined);
         const cfg: InnerState = {

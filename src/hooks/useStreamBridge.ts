@@ -15,6 +15,8 @@ interface StreamBridgeOptions {
   onError: (message: string) => void;
   onNarrationCleared: () => void;
   turnRef: MutableRefObject<number>;
+  initialMessages?: Message[];
+  initialTurnCount?: number;
 }
 
 /**
@@ -25,10 +27,12 @@ export function useStreamBridge({
   onError,
   onNarrationCleared,
   turnRef,
+  initialMessages = [],
+  initialTurnCount = 0,
 }: StreamBridgeOptions) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [status, setStatus] = useState<AppStatus>("Idle");
-  const [turnCount, setTurnCount] = useState(0);
+  const [turnCount, setTurnCount] = useState(initialTurnCount);
   const [isThinking, setIsThinking] = useState(false);
   const lastFailed = useRef<FailedTurn>(null);
   const lastMsgTime = useRef(Date.now());
