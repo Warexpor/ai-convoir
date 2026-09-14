@@ -149,9 +149,10 @@ export function useConversationApp() {
         if (cancelled) return;
         setFirstDraft(merged.seed_prompt || "");
 
-        const aid = getActiveChatId();
-        if (aid && msgs.length === 0) {
-          const chat = getChat(aid);
+        if (msgs.length === 0) {
+          const aid = getActiveChatId();
+          const recent = listChats().find((c) => c.messages.length > 0);
+          const chat = (aid && getChat(aid)) || recent;
           if (chat?.messages.length) await loadChatIntoApp(chat);
         }
       } catch {
@@ -215,7 +216,7 @@ export function useConversationApp() {
       stream.setTurnCount(0);
       stream.setStatus("Idle");
       setNarration("");
-      setFirstDraft(config?.seed_prompt || "");
+      setFirstDraft("");
       setActiveChatId(null);
       setActiveChatIdState(null);
       chatIdRef.current = null;
@@ -223,7 +224,7 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(String(e));
     }
-  }, [config?.seed_prompt, refreshChats, stream, toast]);
+  }, [refreshChats, stream, toast]);
 
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
@@ -355,8 +356,13 @@ export function useConversationApp() {
   const handleStartFirst = useCallback(
     async (text: string) => {
       if (!config) return;
-      const next = { ...config, seed_prompt: text };
-      setFirstDraft(text);
+      const trimmed = text.trim();
+      if (!trimmed) {
+        toast.show("Write a first line.", 2200);
+        return;
+      }
+      const next = { ...config, seed_prompt: trimmed };
+      setFirstDraft(trimmed);
       await pushConfig(next);
       if (missingApiKeys(next)) {
         toast.show(

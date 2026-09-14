@@ -208,6 +208,7 @@ function App() {
           <div
             className={`toast ${toast.leaving ? "leaving" : ""}`}
             role="status"
+            aria-live="polite"
           >
             <span className="toast-text">{toast.message}</span>
             <button
@@ -239,6 +240,7 @@ function App() {
           onFirstDraftChange={setFirstDraft}
           onStartFirst={handleStartFirst}
           onDeleteMessage={app.handleDeleteMessage}
+          hasSavedChats={chats.length > 0}
         />
 
         {stream.messages.length > 0 && (
@@ -268,6 +270,7 @@ function App() {
           tokenCapacity={tokenCapacity}
           retryTarget={stream.lastFailed.current}
           onRetry={app.handleRetry}
+          hasMessages={stream.messages.length > 0}
         />
       </div>
 

@@ -95,9 +95,9 @@ export function agentAccent(agent: string): string {
     case "ai1":
       return "#f0f0fa";
     case "ai2":
-      return "#a8aab0";
+      return "#c8c9ce";
     case "ai3":
-      return "#6e7278";
+      return "#8b8e96";
     case "seed":
       return "#7d8187";
     default:

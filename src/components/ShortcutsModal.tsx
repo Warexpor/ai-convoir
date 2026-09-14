@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 const ROWS: { keys: string; action: string }[] = [
-  { keys: "Space", action: "Start / pause (auto) or step (step mode)" },
+  { keys: "Space", action: "Start / pause (auto) or next (step mode)" },
   { keys: "N", action: "Advance one agent turn" },
   { keys: "S", action: "Toggle settings" },
   { keys: "B", action: "Toggle chats sidebar" },
@@ -23,16 +23,40 @@ export default function ShortcutsModal({
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const root = cardRef.current;
+      if (!root) return;
+      const nodes = [
+        ...root.querySelectorAll<HTMLElement>(
+          'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
+        ),
+      ];
+      if (nodes.length === 0) return;
+      const first = nodes[0];
+      const last = nodes[nodes.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
   if (!open) return null;
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
+        ref={cardRef}
         className="modal-card"
         role="dialog"
         aria-modal="true"

@@ -315,6 +315,27 @@ export default function SettingsSidebar({
 
   if (!open) return null;
   const botCount = local.bot_count >= 3 ? 3 : 2;
+  const dirty =
+    JSON.stringify({
+      n: botCount,
+      d: local.delay_ms,
+      t: local.max_turns,
+      s: local.seed_prompt,
+      m: local.mode,
+      a1: local.ai1_config,
+      a2: local.ai2_config,
+      a3: botCount === 3 ? local.ai3_config : null,
+    }) !==
+    JSON.stringify({
+      n: config.bot_count >= 3 ? 3 : 2,
+      d: config.delay_ms,
+      t: config.max_turns,
+      s: config.seed_prompt,
+      m: config.mode,
+      a1: config.ai1_config,
+      a2: config.ai2_config,
+      a3: config.bot_count >= 3 ? config.ai3_config : null,
+    });
 
   return (
     <aside className="settings">
@@ -479,6 +500,7 @@ export default function SettingsSidebar({
           type="button"
           className="btn btn-primary"
           style={{ width: "100%" }}
+          disabled={!dirty && !saved}
           onClick={() => {
             onSave({
               ...local,

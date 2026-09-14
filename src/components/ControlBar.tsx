@@ -17,6 +17,7 @@ interface Props {
   tokenCapacity?: number;
   retryTarget?: { agent: string; turn: number } | null;
   onRetry?: () => void;
+  hasMessages?: boolean;
 }
 
 function ControlBar({
@@ -35,6 +36,7 @@ function ControlBar({
   tokenCapacity = 128000,
   retryTarget,
   onRetry,
+  hasMessages = false,
 }: Props) {
   const progress =
     mode === "step"
@@ -52,8 +54,8 @@ function ControlBar({
         : "var(--faint)";
 
   return (
-    <div className="dock">
-      <div className="dock-stat">
+    <div className="dock" role="toolbar" aria-label="Conversation controls">
+      <div className="dock-stat" aria-live="polite">
         <span
           className={`dot ${running ? "run" : status === "Paused" ? "pause" : ""}`}
           aria-hidden
@@ -112,7 +114,7 @@ function ControlBar({
           onClick={onStep}
           disabled={running}
         >
-          Step
+          Next
         </button>
       ) : (
         <button type="button" className="btn btn-primary" onClick={onToggle}>
@@ -141,10 +143,20 @@ function ControlBar({
         </button>
       )}
 
-      <button type="button" className="btn btn-ghost" onClick={onSaveChat}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={onSaveChat}
+        disabled={!hasMessages}
+      >
         Save
       </button>
-      <button type="button" className="btn btn-ghost" onClick={onExport}>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={onExport}
+        disabled={!hasMessages}
+      >
         Export
       </button>
       <button type="button" className="btn btn-ghost" onClick={onReset}>

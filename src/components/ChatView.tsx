@@ -12,6 +12,7 @@ interface Props {
   firstDraft?: string;
   onFirstDraftChange?: (t: string) => void;
   onDeleteMessage?: (agent: string, turn: number, created_at: number) => void;
+  hasSavedChats?: boolean;
 }
 
 function ChatView({
@@ -24,6 +25,7 @@ function ChatView({
   firstDraft = "",
   onFirstDraftChange,
   onDeleteMessage,
+  hasSavedChats = false,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,7 @@ function ChatView({
           <p>
             Two or three models take turns on one transcript. Set endpoints in
             Settings, then write the first line.
+            {hasSavedChats ? " Open a saved thread from Chats." : ""}
           </p>
           <div className="empty-box">
             <textarea
@@ -88,6 +91,7 @@ function ChatView({
               <button
                 type="button"
                 className="btn btn-primary"
+                disabled={!firstDraft.trim()}
                 onClick={() => onStartFirst?.(firstDraft)}
               >
                 Begin
