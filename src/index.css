@@ -28,8 +28,8 @@
   --font-read: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --hairline: 1px solid var(--line);
-  --glass: rgba(8, 8, 12, 0.58);
-  --glass-strong: rgba(8, 8, 12, 0.78);
+  --glass: rgba(16, 16, 22, 0.62);
+  --glass-strong: rgba(12, 12, 16, 0.82);
   --blur: blur(22px) saturate(170%);
   --shine: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   --glow: 0 10px 40px rgba(0, 0, 0, 0.45);
@@ -914,8 +914,9 @@ body,
 }
 .setup-steps li.on {
   color: var(--text);
-  border-color: var(--line);
-  background: rgba(240, 240, 250, 0.04);
+  border-color: rgba(240, 240, 250, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: var(--shine);
 }
 .setup-steps li.done {
   color: var(--text-2);
@@ -938,13 +939,15 @@ body,
   border-color: var(--text);
 }
 .empty-box {
-  background: var(--glass);
-  border: var(--hairline);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(240, 240, 250, 0.16);
   border-radius: var(--r);
   overflow: hidden;
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
-  box-shadow: var(--shine), var(--glow);
+  box-shadow:
+    var(--shine),
+    0 18px 50px rgba(0, 0, 0, 0.45);
   transition:
     border-color 0.18s,
     box-shadow 0.18s;
