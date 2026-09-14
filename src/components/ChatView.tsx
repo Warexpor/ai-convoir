@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconArrow, SlashMark } from "./Marks";
+import { IconChevronDown, IconKey, IconReturn, SlashMark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import type { InnerState, Message } from "../types";
 
@@ -165,8 +165,8 @@ function ChatView({
                   className="btn btn-primary"
                   onClick={() => onOpenSettings?.()}
                 >
+                  <IconKey />
                   Add your key
-                  <IconArrow />
                 </button>
               ) : (
                 <button
@@ -176,7 +176,7 @@ function ChatView({
                   onClick={() => onStartFirst?.(firstDraft)}
                 >
                   Begin
-                  <IconArrow />
+                  <IconReturn />
                 </button>
               )}
             </div>
@@ -232,6 +232,7 @@ function ChatView({
           className="jump-latest"
           onClick={jumpLatest}
         >
+          <IconChevronDown />
           Latest
         </button>
       )}

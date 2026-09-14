@@ -1,5 +1,16 @@
 import { memo, useEffect, useRef, useState } from "react";
-import { IconArrow, IconStop } from "./Marks";
+import {
+  IconExport,
+  IconKey,
+  IconMore,
+  IconNew,
+  IconNextVoice,
+  IconPause,
+  IconPlay,
+  IconRetry,
+  IconSave,
+  IconStop,
+} from "./Marks";
 import type { AppStatus, ConversationMode } from "../types";
 
 interface Props {
@@ -95,6 +106,7 @@ function ControlBar({
         }}
         disabled={!hasMessages}
       >
+        <IconSave />
         Save
       </button>
       <button
@@ -106,6 +118,7 @@ function ControlBar({
         }}
         disabled={!hasMessages}
       >
+        <IconExport />
         Export
       </button>
       <button
@@ -116,6 +129,7 @@ function ControlBar({
           onReset();
         }}
       >
+        <IconNew />
         New
       </button>
     </>
@@ -186,8 +200,8 @@ function ControlBar({
             className="btn btn-primary"
             onClick={() => onOpenSettings?.()}
           >
+            <IconKey />
             Add key
-            <IconArrow />
           </button>
         ) : isStep ? (
           <button
@@ -199,14 +213,14 @@ function ControlBar({
               nextName ? `Let ${nextName} speak next` : "Advance one turn"
             }
           >
+            <IconNextVoice />
             Next
             {nextName ? <span className="btn-next-who">{nextName}</span> : null}
-            <IconArrow />
           </button>
         ) : (
           <button type="button" className="btn btn-primary" onClick={onToggle}>
+            {running ? <IconPause /> : <IconPlay />}
             {running ? "Pause" : status === "Paused" ? "Resume" : "Start"}
-            {!running && <IconArrow />}
           </button>
         )}
 
@@ -228,6 +242,7 @@ function ControlBar({
             onClick={onRetry}
             title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
           >
+            <IconRetry />
             Retry
           </button>
         )}
@@ -242,6 +257,7 @@ function ControlBar({
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen((o) => !o)}
           >
+            <IconMore />
             More
           </button>
           {moreOpen && (

@@ -16,7 +16,7 @@ import {
   writeBoolPref,
   writeZoom,
 } from "./lib/config";
-import { IconChats, IconHelp, IconSliders, SlashMark } from "./components/Marks";
+import { IconThreads, IconVoices, SlashMark } from "./components/Marks";
 import { agentLabel, nextAgentId } from "./types";
 
 function App() {
@@ -209,7 +209,7 @@ function App() {
           title="Toggle chats (B)"
           aria-pressed={railOpen}
         >
-          <IconChats />
+          <IconThreads />
           Chats
         </button>
         <button
@@ -219,17 +219,17 @@ function App() {
           title="Toggle settings (S)"
           aria-pressed={settingsOpen}
         >
-          <IconSliders />
+          <IconVoices />
           Settings
         </button>
         <button
           type="button"
-          className="btn btn-chrome btn-icon"
+          className="btn btn-chrome btn-kbd"
           onClick={() => setHelpOpen(true)}
           title="Shortcuts (?)"
           aria-label="Keyboard shortcuts"
         >
-          <IconHelp />
+          ?
         </button>
       </header>
 

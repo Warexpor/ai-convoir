@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
-  <rect width="1024" height="1024" fill="#1c1c1c"/>
+  <rect width="1024" height="1024" fill="#151515"/>
   <!-- Traced from assets/icon-master.png — same mark as README / public/logo.png -->
   <g transform="translate(0 1024) scale(0.1 -0.1)" fill="#ececec">
     <path d="M3555 8648 c-4 -27 -1 -3825 4 -3837 2 -6 37 19 446 309 215 152 425 301 467 331 l77 54 1 1588 0 1587 -495 0 -494 0 -6 -32z"/>

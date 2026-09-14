@@ -3,6 +3,7 @@ import type { InnerState, Message } from "../types";
 import { agentAccent, agentInitials, agentLabel } from "../types";
 import MarkdownBody from "./MarkdownBody";
 import RelativeTime from "./RelativeTime";
+import { IconCheck, IconChevron, IconCopy } from "./Marks";
 
 interface Props {
   message: Message;
@@ -63,10 +64,12 @@ function MessageBubble({
           <div className="msg-actions">
             <button
               type="button"
-              className="msg-action"
+              className="msg-action msg-action-icon"
               onClick={handleCopy}
+              aria-label={copied ? "Copied" : "Copy message"}
+              title={copied ? "Copied" : "Copy"}
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? <IconCheck /> : <IconCopy />}
             </button>
             {!isStream && onDelete && (
               <button
@@ -90,9 +93,7 @@ function MessageBubble({
               onClick={() => setThoughtsOpen((o) => !o)}
               aria-expanded={thoughtsOpen}
             >
-              <span className="thoughts-chevron">
-                {thoughtsOpen ? "▾" : "▸"}
-              </span>
+              <IconChevron />
               <span className="thoughts-label">Thoughts</span>
               {isStream && !message.content && (
                 <span className="msg-live" style={{ marginLeft: 6 }}>

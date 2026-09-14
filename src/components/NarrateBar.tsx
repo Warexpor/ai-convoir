@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { agentLabel, nextAgentId, type InnerState } from "../types";
+import { IconHint, IconReturn } from "./Marks";
 
 interface Props {
   config: InnerState | null;
@@ -35,6 +36,7 @@ export default function NarrateBar({
           disabled={disabled}
           onClick={() => setOpen(true)}
         >
+          <IconHint />
           Hint for {nextName}
         </button>
       </div>
@@ -82,6 +84,7 @@ export default function NarrateBar({
           onClick={() => onCommit(value)}
         >
           Send
+          <IconReturn />
         </button>
       </div>
     </div>

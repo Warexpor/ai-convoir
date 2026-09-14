@@ -3,7 +3,7 @@ import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import { agentInitials, type ConversationMode } from "../types";
 import RelativeTime from "./RelativeTime";
-import { SlashMark } from "./Marks";
+import { SlashMark, IconNew, IconRailHide, IconSearch } from "./Marks";
 
 interface Props {
   chats: SavedChat[];
@@ -103,21 +103,23 @@ export default function ChatRail({
       <div className="rail-head">
         <span className="rail-title">Chats</span>
         <button type="button" className="btn btn-primary btn-sm" onClick={onNew}>
+          <IconNew />
           New
         </button>
         <button
           type="button"
-          className="btn btn-chrome btn-sm"
+          className="btn btn-chrome btn-icon"
           onClick={onClose}
           title="Hide chats panel"
           aria-label="Hide chats panel"
         >
-          Hide
+          <IconRailHide />
         </button>
       </div>
 
       <div className="rail-tools">
         <label className="rail-search">
+          <IconSearch />
           <input
             type="search"
             value={query}
