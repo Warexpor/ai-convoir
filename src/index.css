@@ -117,35 +117,27 @@ body,
 /* layout — min-height:0 is required so nested overflow-y:auto actually scrolls */
 .app {
   --topbar-h: 56px;
+  --rail-w: 260px;
+  --settings-w: 0px;
+  --panel-ease: 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   height: 100%;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--settings-w);
   grid-template-rows: var(--topbar-h) minmax(0, 1fr);
   grid-template-areas:
-    "top top"
-    "rail main";
+    "top top top"
+    "rail main settings";
   background: var(--bg);
   overflow: hidden;
   contain: layout;
   position: relative;
+  transition: grid-template-columns var(--panel-ease);
 }
 .app.rail-closed {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas:
-    "top"
-    "main";
+  --rail-w: 0px;
 }
 .app.settings-open {
-  grid-template-columns: 260px minmax(0, 1fr) minmax(300px, 380px);
-  grid-template-areas:
-    "top top top"
-    "rail main settings";
-}
-.app.rail-closed.settings-open {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-  grid-template-areas:
-    "top top"
-    "main settings";
+  --settings-w: 360px;
 }
 .app > * {
   min-height: 0;
@@ -171,12 +163,20 @@ body,
 }
 .rail {
   grid-area: rail;
+  pointer-events: auto;
+}
+.app.rail-closed .rail {
+  pointer-events: none;
 }
 .main {
   grid-area: main;
 }
 .settings {
   grid-area: settings;
+  pointer-events: none;
+}
+.settings.is-open {
+  pointer-events: auto;
 }
 
 .rail-scrim {
@@ -188,10 +188,13 @@ body,
   .app.rail-closed,
   .app.settings-open,
   .app.rail-closed.settings-open {
+    --rail-w: 0px;
+    --settings-w: 0px;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "top"
       "main";
+    transition: none;
   }
   .app.settings-open,
   .app.rail-closed.settings-open {
@@ -200,12 +203,15 @@ body,
       "top top"
       "main settings";
   }
-  .app .rail {
+  .app .settings {
     display: none;
-    grid-area: unset;
   }
-  .app.rail-open-mobile .rail {
+  .app.settings-open .settings {
     display: flex;
+  }
+  .app .rail {
+    display: flex;
+    grid-area: unset;
     position: absolute;
     z-index: 40;
     top: var(--topbar-h);
@@ -216,8 +222,15 @@ body,
     background: var(--glass-strong);
     backdrop-filter: var(--blur);
     -webkit-backdrop-filter: var(--blur);
+    transform: translateX(-105%);
+    pointer-events: none;
+    transition: transform var(--panel-ease);
   }
-  .app.rail-open-mobile .rail-scrim {
+  .app.rail-open-mobile .rail {
+    transform: none;
+    pointer-events: auto;
+  }
+  .app .rail-scrim {
     display: block;
     position: absolute;
     z-index: 35;
@@ -231,6 +244,18 @@ body,
     border: none;
     padding: 0;
     cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+  .app.rail-open-mobile .rail-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .rail-inner,
+  .settings-inner {
+    width: 100%;
+    min-width: 0;
   }
 }
 
@@ -247,7 +272,14 @@ body,
   min-height: 0;
   overflow: hidden;
   contain: layout style;
-  animation: panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.rail-inner {
+  width: 260px;
+  min-width: 260px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .rail-head {
   height: 48px;
@@ -926,7 +958,14 @@ body,
   padding: 32px 24px 40px;
   display: flex;
   flex-direction: column;
+}
+.chat-list {
+  display: flex;
+  flex-direction: column;
   gap: 28px;
+}
+.chat-list.is-virt .msg {
+  content-visibility: visible;
 }
 
 .msg {
@@ -936,6 +975,9 @@ body,
   content-visibility: auto;
   contain-intrinsic-size: auto 140px;
   animation: msg-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.msg.msg-static {
+  animation: none;
 }
 .msg.streaming {
   animation: none;
@@ -1017,7 +1059,8 @@ body,
   transition: opacity 0.12s;
 }
 .msg:hover .msg-actions,
-.msg:focus-within .msg-actions {
+.msg:focus-within .msg-actions,
+.msg.confirming .msg-actions {
   opacity: 1;
 }
 .msg-action {
@@ -1044,6 +1087,25 @@ body,
 .msg-action-icon:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+.msg-action-icon.is-copied {
+  color: var(--ok);
+}
+.msg-action-icon.is-copied svg {
+  animation: copy-ack 0.35s ease;
+}
+@keyframes copy-ack {
+  0% {
+    transform: scale(0.72);
+    opacity: 0.5;
+  }
+  55% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
 .msg-action:hover {
   color: var(--text);
 }
@@ -1056,9 +1118,6 @@ body,
   }
   .msg-action {
     color: var(--faint);
-  }
-  .msg-action-del {
-    display: none;
   }
 }
 .msg-bubble {
@@ -1267,6 +1326,7 @@ body,
   background: transparent;
   padding: 8px 16px 0;
   border: none;
+  animation: dock-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .composer-row {
   max-width: 760px;
@@ -1282,6 +1342,7 @@ body,
   padding: 6px 6px 6px 16px;
   box-shadow: var(--shine);
   transition: border-color 0.18s;
+  animation: composer-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .composer-row:focus-within {
   border-color: rgba(255, 255, 255, 0.4);
@@ -1318,6 +1379,7 @@ body,
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  animation: composer-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
   transition:
     color 0.18s,
     border-color 0.18s,
@@ -1353,6 +1415,16 @@ body,
   from {
     opacity: 0;
     transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes composer-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -1464,8 +1536,15 @@ body,
   min-height: 0;
   height: 100%;
   overflow: hidden;
-  animation: slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
   contain: layout style;
+}
+.settings-inner {
+  width: 360px;
+  min-width: 360px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 @keyframes slide-in {
   from {
@@ -1523,6 +1602,10 @@ body,
   border-top: var(--hairline);
   flex-shrink: 0;
   background: transparent;
+}
+.settings-save-hint {
+  margin-top: 8px;
+  text-align: center;
 }
 .field label {
   display: block;
@@ -1958,6 +2041,17 @@ body,
   padding: 24px;
   animation: msg-in 0.18s ease both;
 }
+.modal-backdrop.is-leaving {
+  animation: overlay-out 0.16s ease both;
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
 .modal-card {
   width: 100%;
   max-width: 420px;
@@ -2020,6 +2114,9 @@ body,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app {
+    transition: none !important;
+  }
   .msg,
   .empty-hero,
   .settings,
@@ -2027,12 +2124,22 @@ body,
   .thinking,
   .api-row,
   .modal-backdrop,
+  .modal-card,
   .jump-latest,
   .rail,
   .dock,
   .dock-menu,
-  .session-more {
+  .session-more,
+  .composer,
+  .composer-row,
+  .hint-toggle,
+  .zoom-badge,
+  .inline-confirm {
     animation: none !important;
+  }
+  .rail,
+  .rail-scrim {
+    transition: none !important;
   }
   .btn:hover:not(:disabled) {
     transform: none;
@@ -2043,7 +2150,8 @@ body,
   .msg-live,
   .thinking .d,
   .stream-caret,
-  .msg.streaming .msg-avatar {
+  .msg.streaming .msg-avatar,
+  .msg-action-icon.is-copied svg {
     animation: none !important;
   }
 }

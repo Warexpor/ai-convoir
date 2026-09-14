@@ -9,7 +9,13 @@ function focusables(root: HTMLElement): HTMLElement[] {
   );
 }
 
-/** Trap Tab inside `rootRef` while `active` is true. Focuses the first node on open. */
+function restoreFocus(node: Element | null) {
+  if (node instanceof HTMLElement && document.contains(node)) {
+    node.focus();
+  }
+}
+
+/** Trap Tab inside `rootRef` while `active` is true. Focuses the first node on open; restores prior focus on close. */
 export function useFocusTrap(
   active: boolean,
   rootRef: RefObject<HTMLElement | null>,
@@ -19,6 +25,7 @@ export function useFocusTrap(
     const root = rootRef.current;
     if (!root) return;
 
+    const previouslyFocused = document.activeElement;
     const nodes = focusables(root);
     nodes[0]?.focus();
 
@@ -38,6 +45,9 @@ export function useFocusTrap(
     };
 
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      restoreFocus(previouslyFocused);
+    };
   }, [active, rootRef]);
 }

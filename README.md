@@ -23,6 +23,8 @@ On **Linux** you also need WebKitGTK 4.1 (Debian/Ubuntu):
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 ```
 
+On **Windows**, install the [WebView2 runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) if the installer bootstrapper has not already (the NSIS/MSI bundle can download it). Use the MSVC Build Tools / Visual Studio C++ workload for `npm run windows:build`.
+
 ## Install & run
 
 ```bash
@@ -42,7 +44,13 @@ Linux packages only (`.deb` + AppImage):
 npm run linux:build
 ```
 
-Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows; `deb/` and `appimage/` on Linux).
+Windows installers only (NSIS + MSI), from a Windows machine:
+
+```bash
+npm run windows:build
+```
+
+Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows; `deb/` and `appimage/` on Linux). Rust is pinned to **1.88.0** via `rust-toolchain.toml`.
 
 ## Scripts
 
@@ -52,6 +60,7 @@ Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows; `d
 | `npm run build` | Frontend production build |
 | `npm run release:build` | Frontend + Tauri release bundles |
 | `npm run linux:build` | Linux `.deb` + AppImage |
+| `npm run windows:build` | Windows NSIS + MSI (run on Windows) |
 | `npm run typecheck` | TypeScript check |
 | `npm run test:rust` | Rust unit tests |
 | `npm run icons` | Regenerate icons (`scripts/make_icons.py`) |
@@ -87,6 +96,9 @@ Chats persist in a local SQLite database (app data dir). Browser Vite preview ca
 | `Ctrl+S` | Save chat |
 | `Ctrl+E` | Export |
 | `Ctrl+Shift+R` | New chat |
+| `Ctrl+=` / `Ctrl+-` | Zoom in / out |
+| `Ctrl+0` | Reset zoom |
+| `Ctrl+Enter` | Begin from the first-message box |
 
 ## Stack
 

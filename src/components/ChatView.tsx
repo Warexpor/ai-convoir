@@ -19,9 +19,19 @@ interface Props {
   agentNames?: string[];
 }
 
-const EST_MSG = 148;
-const OVERSCAN = 5;
+const EST_MSG = 168;
+const GAP = 28;
+const OVERSCAN = 12;
 const VIRTUALIZE_AFTER = 28;
+const NEAR_PX = 96;
+
+function msgKey(msg: Message, idx: number) {
+  return `${msg.agent}-${msg.turn}-${msg.created_at || idx}`;
+}
+
+function nearBottom(el: HTMLElement) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
+}
 
 function ChatView({
   messages,
@@ -39,47 +49,83 @@ function ChatView({
   agentNames = ["Ava", "Jules"],
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const heightsRef = useRef(new Map<string, number>());
+  const measureRaf = useRef(0);
   const [autoScroll, setAutoScroll] = useState(true);
-  const prevLen = useRef(0);
   const [win, setWin] = useState({ start: 0, end: messages.length });
+  const [heightTick, setHeightTick] = useState(0);
+
+  const virtualize = messages.length >= VIRTUALIZE_AFTER;
+  const streamingTail = messages[messages.length - 1];
+  const streamLen = streamingTail?.streaming
+    ? streamingTail.content.length
+    : 0;
+
+  const heightOf = useCallback(
+    (i: number) => {
+      const m = messages[i];
+      if (!m) return EST_MSG + GAP;
+      return (heightsRef.current.get(msgKey(m, i)) ?? EST_MSG) + GAP;
+    },
+    [messages, heightTick],
+  );
+
+  const prefixes = useMemo(() => {
+    const p = new Array<number>(messages.length + 1);
+    p[0] = 0;
+    for (let i = 0; i < messages.length; i++) p[i + 1] = p[i] + heightOf(i);
+    return p;
+  }, [messages, heightOf]);
+
+  const updateWindow = useCallback(
+    (el: HTMLElement, atBottom: boolean) => {
+      if (!virtualize) {
+        setWin({ start: 0, end: messages.length });
+        return;
+      }
+      const top = el.scrollTop;
+      let lo = 0;
+      let hi = messages.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (prefixes[mid] < top) lo = mid + 1;
+        else hi = mid;
+      }
+      const start = Math.max(0, lo - 1 - OVERSCAN);
+      const limit = top + el.clientHeight;
+      let end = start;
+      while (end < messages.length && prefixes[end] < limit) end++;
+      end = Math.min(messages.length, end + OVERSCAN);
+      if (atBottom) end = messages.length;
+      setWin({ start, end });
+    },
+    [messages.length, prefixes, virtualize],
+  );
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    const atBottom = nearBottom(el);
     setAutoScroll(atBottom);
+    updateWindow(el, atBottom);
+  }, [updateWindow]);
 
-    if (messages.length < VIRTUALIZE_AFTER) {
-      setWin({ start: 0, end: messages.length });
-      return;
-    }
-    const start = Math.max(0, Math.floor(el.scrollTop / EST_MSG) - OVERSCAN);
-    const visible = Math.ceil(el.clientHeight / EST_MSG) + OVERSCAN * 2;
-    let end = Math.min(messages.length, start + visible);
-    if (atBottom) end = messages.length;
-    setWin({ start, end });
-  }, [messages.length]);
+  const stickToBottom = useCallback((smooth: boolean) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (smooth) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    else el.scrollTop = el.scrollHeight;
+  }, []);
 
   useEffect(() => {
-    if (autoScroll) {
-      bottomRef.current?.scrollIntoView({
-        behavior: messages.length > prevLen.current ? "smooth" : "auto",
-      });
-    }
-    prevLen.current = messages.length;
-  }, [messages, autoScroll]);
-
-  const streamingTail = messages[messages.length - 1];
-  const streamLen =
-    streamingTail?.streaming ? streamingTail.content.length : 0;
-  useEffect(() => {
-    if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: "auto" });
-  }, [streamLen, autoScroll]);
+    if (!autoScroll) return;
+    stickToBottom(false);
+  }, [messages.length, streamLen, isThinking, autoScroll, stickToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || messages.length < VIRTUALIZE_AFTER) {
+    if (!el) return;
+    if (!virtualize) {
       setWin({ start: 0, end: messages.length });
       return;
     }
@@ -91,16 +137,22 @@ function ChatView({
       });
       return;
     }
-    onScroll();
-  }, [messages.length, autoScroll, onScroll]);
+    updateWindow(el, false);
+  }, [messages.length, autoScroll, virtualize, updateWindow]);
+
+  useEffect(() => {
+    return () => {
+      if (measureRaf.current) cancelAnimationFrame(measureRaf.current);
+    };
+  }, []);
 
   const jumpLatest = useCallback(() => {
     setAutoScroll(true);
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+    requestAnimationFrame(() => stickToBottom(true));
+  }, [stickToBottom]);
 
   const { slice, sliceStart, topPad, bottomPad } = useMemo(() => {
-    if (messages.length < VIRTUALIZE_AFTER) {
+    if (!virtualize) {
       return {
         slice: messages,
         sliceStart: 0,
@@ -115,10 +167,28 @@ function ChatView({
     return {
       slice: messages.slice(start, end),
       sliceStart: start,
-      topPad: start * EST_MSG,
-      bottomPad: Math.max(0, messages.length - end) * EST_MSG,
+      topPad: prefixes[start] ?? start * (EST_MSG + GAP),
+      bottomPad: Math.max(
+        0,
+        (prefixes[messages.length] ?? 0) - (prefixes[end] ?? 0),
+      ),
     };
-  }, [messages, win.start, win.end, autoScroll]);
+  }, [messages, win.start, win.end, autoScroll, virtualize, prefixes]);
+
+  const measure = useCallback((key: string, streaming: boolean) => {
+    return (el: HTMLDivElement | null) => {
+      if (!el) return;
+      const h = el.offsetHeight;
+      if (heightsRef.current.get(key) === h) return;
+      heightsRef.current.set(key, h);
+      if (streaming) return;
+      if (measureRaf.current) return;
+      measureRaf.current = requestAnimationFrame(() => {
+        measureRaf.current = 0;
+        setHeightTick((n) => n + 1);
+      });
+    };
+  }, []);
 
   if (messages.length === 0) {
     const names = agentNames.filter(Boolean).slice(0, 3);
@@ -188,31 +258,47 @@ function ChatView({
 
   return (
     <div className="chat-wrap">
-      <div ref={scrollRef} onScroll={onScroll} className="chat" aria-busy={isThinking || !!streamingTail?.streaming}>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="chat"
+        aria-busy={isThinking || !!streamingTail?.streaming}
+      >
         <div className="chat-inner">
           {topPad > 0 && (
-            <div className="chat-spacer" style={{ height: topPad }} aria-hidden />
+            <div
+              className="chat-spacer"
+              style={{ height: topPad }}
+              aria-hidden
+            />
           )}
-          {slice.map((msg, i) => {
-            const idx = sliceStart + i;
-            return (
-              <MessageBubble
-                key={`${msg.agent}-${msg.turn}-${msg.created_at || idx}`}
-                message={msg}
-                config={config}
-                showThoughtsUi={showThoughtsUi}
-                onDelete={onDeleteMessage}
-              />
-            );
-          })}
-          {isThinking && (
-            <div className="thinking" role="status">
-              <span className="d" />
-              <span className="d" style={{ animationDelay: "0.2s" }} />
-              <span className="d" style={{ animationDelay: "0.4s" }} />
-              {thinkingAgent ? `${thinkingAgent}` : "Writing"}
-            </div>
-          )}
+          <div className={`chat-list ${virtualize ? "is-virt" : ""}`}>
+            {slice.map((msg, i) => {
+              const idx = sliceStart + i;
+              const key = msgKey(msg, idx);
+              return (
+                <div key={key} ref={measure(key, !!msg.streaming)}>
+                  <MessageBubble
+                    message={msg}
+                    config={config}
+                    showThoughtsUi={showThoughtsUi}
+                    onDelete={onDeleteMessage}
+                    enter={
+                      !virtualize || idx >= messages.length - 1
+                    }
+                  />
+                </div>
+              );
+            })}
+            {isThinking && (
+              <div className="thinking" role="status">
+                <span className="d" />
+                <span className="d" style={{ animationDelay: "0.2s" }} />
+                <span className="d" style={{ animationDelay: "0.4s" }} />
+                {thinkingAgent ? `${thinkingAgent}` : "Writing"}
+              </div>
+            )}
+          </div>
           {bottomPad > 0 && (
             <div
               className="chat-spacer"
@@ -223,15 +309,10 @@ function ChatView({
           {!autoScroll && (
             <div className="jump-latest-space" aria-hidden />
           )}
-          <div ref={bottomRef} />
         </div>
       </div>
       {!autoScroll && (
-        <button
-          type="button"
-          className="jump-latest"
-          onClick={jumpLatest}
-        >
+        <button type="button" className="jump-latest" onClick={jumpLatest}>
           <IconChevronDown />
           Latest
         </button>

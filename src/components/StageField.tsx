@@ -122,10 +122,10 @@ export default function StageField() {
     const uMotion = gl.getUniformLocation(prog, "u_motion");
 
     const motionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let hidden = document.hidden;
-    let motion = motionMq.matches ? 0 : 1;
     let raf = 0;
-    let start = performance.now();
+    const start = performance.now();
+
+    const live = () => !document.hidden && !motionMq.matches;
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -142,24 +142,43 @@ export default function StageField() {
       resize();
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, (now - start) * 0.001);
-      gl.uniform1f(uMotion, hidden ? 0 : motion);
+      gl.uniform1f(uMotion, live() ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      raf = requestAnimationFrame(draw);
+    };
+
+    const loop = (now: number) => {
+      draw(now);
+      if (live()) raf = requestAnimationFrame(loop);
+      else raf = 0;
+    };
+
+    const kick = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(loop);
     };
 
     const onVis = () => {
-      hidden = document.hidden;
+      if (live()) kick();
+      else {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        draw(performance.now());
+      }
     };
-    const onMotion = () => {
-      motion = motionMq.matches ? 0 : 1;
-    };
+    const onMotion = () => onVis();
+
+    const ro = new ResizeObserver(() => {
+      if (!raf) draw(performance.now());
+    });
+    ro.observe(wrap);
 
     document.addEventListener("visibilitychange", onVis);
     motionMq.addEventListener("change", onMotion);
-    raf = requestAnimationFrame(draw);
+    kick();
 
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf) cancelAnimationFrame(raf);
+      ro.disconnect();
       document.removeEventListener("visibilitychange", onVis);
       motionMq.removeEventListener("change", onMotion);
       gl.deleteProgram(prog);

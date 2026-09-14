@@ -27,9 +27,52 @@ export default function NarrateBar({
     if (value.trim()) setOpen(true);
   }, [value]);
 
-  if (!open) {
-    return (
-      <div className="composer composer-collapsed">
+  return (
+    <div className={`composer ${open ? "is-open" : "composer-collapsed"}`}>
+      {open ? (
+        <div className="composer-row">
+          <span className="mono-cap" style={{ flexShrink: 0 }}>
+            Hint · {nextName}
+          </span>
+          <input
+            value={value}
+            disabled={disabled}
+            placeholder={`A quiet note for ${nextName}`}
+            aria-label={`Hint for ${nextName}`}
+            autoFocus
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onCommit(value);
+              }
+              if (e.key === "Escape" && !value.trim()) {
+                setOpen(false);
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={disabled}
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+          >
+            Hide
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={disabled || !value.trim()}
+            onClick={() => onCommit(value)}
+          >
+            Send
+            <IconReturn />
+          </button>
+        </div>
+      ) : (
         <button
           type="button"
           className="hint-toggle"
@@ -39,54 +82,7 @@ export default function NarrateBar({
           <IconHint />
           Hint for {nextName}
         </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="composer">
-      <div className="composer-row">
-        <span className="mono-cap" style={{ flexShrink: 0 }}>
-          Hint · {nextName}
-        </span>
-        <input
-          value={value}
-          disabled={disabled}
-          placeholder={`A quiet note for ${nextName}`}
-          aria-label={`Hint for ${nextName}`}
-          autoFocus
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              onCommit(value);
-            }
-            if (e.key === "Escape" && !value.trim()) {
-              setOpen(false);
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          disabled={disabled}
-          onClick={() => {
-            onChange("");
-            setOpen(false);
-          }}
-        >
-          Hide
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={disabled || !value.trim()}
-          onClick={() => onCommit(value)}
-        >
-          Send
-          <IconReturn />
-        </button>
-      </div>
+      )}
     </div>
   );
 }

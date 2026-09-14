@@ -6,6 +6,7 @@ import RelativeTime from "./RelativeTime";
 import { SlashMark, IconNew, IconRailHide, IconSearch } from "./Marks";
 
 interface Props {
+  open?: boolean;
   chats: SavedChat[];
   activeId: string | null;
   onNew: () => void;
@@ -43,6 +44,7 @@ function chatVoices(c: SavedChat): string[] {
 }
 
 export default function ChatRail({
+  open = true,
   chats,
   activeId,
   onNew,
@@ -99,7 +101,13 @@ export default function ChatRail({
     chats.length === 1 ? "1 thread" : `${chats.length} threads`;
 
   return (
-    <aside className="rail" aria-label="Saved chats">
+    <aside
+      className="rail"
+      aria-label="Saved chats"
+      aria-hidden={!open}
+      inert={!open}
+    >
+      <div className="rail-inner">
       <div className="rail-head">
         <span className="rail-title">Chats</span>
         <button type="button" className="btn btn-primary btn-sm" onClick={onNew}>
@@ -278,6 +286,7 @@ export default function ChatRail({
           {needsKey ? "Key needed" : threadLabel}
           <span> · B hides this</span>
         </p>
+      </div>
       </div>
     </aside>
   );

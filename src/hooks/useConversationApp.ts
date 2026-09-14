@@ -234,6 +234,8 @@ export function useConversationApp() {
 
   const handleReset = useCallback(async () => {
     try {
+      const msgs = messagesRef.current.filter((m) => !m.streaming);
+      if (msgs.length > 0) autoSave();
       skipAutosaveUntil.current = Date.now() + 2500;
       await api.resetConversation();
       void api.setActiveChat("");
@@ -254,7 +256,7 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(String(e));
     }
-  }, [refreshChats, stream, toast]);
+  }, [autoSave, refreshChats, stream, toast]);
 
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
@@ -327,6 +329,8 @@ export function useConversationApp() {
     async (id: string) => {
       const chat = getChat(id);
       if (!chat) return;
+      const current = messagesRef.current.filter((m) => !m.streaming);
+      if (current.length > 0 && chatIdRef.current !== id) autoSave();
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
       } catch {
@@ -368,7 +372,7 @@ export function useConversationApp() {
         toast.show(String(e));
       }
     },
-    [pushConfig, stream, toast],
+    [autoSave, pushConfig, stream, toast],
   );
 
   const handleDeleteChat = useCallback(

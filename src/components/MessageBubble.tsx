@@ -10,6 +10,7 @@ interface Props {
   config?: InnerState | null;
   showThoughtsUi: boolean;
   onDelete?: (agent: string, turn: number, created_at: number) => void;
+  enter?: boolean;
 }
 
 function MessageBubble({
@@ -17,8 +18,10 @@ function MessageBubble({
   config,
   showThoughtsUi,
   onDelete,
+  enter = true,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const label = agentLabel(message.agent, config);
   const accent = agentAccent(message.agent);
@@ -36,7 +39,9 @@ function MessageBubble({
 
   return (
     <article
-      className={`msg ${isSeed ? "seed" : ""} ${isStream ? "streaming" : ""}`}
+      className={`msg ${isSeed ? "seed" : ""} ${isStream ? "streaming" : ""} ${
+        enter ? "" : "msg-static"
+      } ${confirming ? "confirming" : ""}`}
     >
       <div
         className="msg-avatar"
@@ -64,20 +69,38 @@ function MessageBubble({
           <div className="msg-actions">
             <button
               type="button"
-              className="msg-action msg-action-icon"
+              className={`msg-action msg-action-icon ${copied ? "is-copied" : ""}`}
               onClick={handleCopy}
               aria-label={copied ? "Copied" : "Copy message"}
               title={copied ? "Copied" : "Copy"}
             >
               {copied ? <IconCheck /> : <IconCopy />}
             </button>
-            {!isStream && onDelete && (
+            {!isStream && onDelete && confirming && (
+              <div className="inline-confirm">
+                <button
+                  type="button"
+                  className="confirm-del"
+                  onClick={() =>
+                    onDelete(message.agent, message.turn, message.created_at)
+                  }
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="confirm-cancel"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {!isStream && onDelete && !confirming && (
               <button
                 type="button"
                 className="msg-action msg-action-del"
-                onClick={() =>
-                  onDelete(message.agent, message.turn, message.created_at)
-                }
+                onClick={() => setConfirming(true)}
               >
                 Delete
               </button>

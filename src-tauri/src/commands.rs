@@ -1,10 +1,11 @@
+use crate::db;
 use crate::engine::{
     next_speaker, prepare_step, start_action_with_transcript, trim_messages_for_context,
     StartAction, OPENCODE_GO_BASE, OPENCODE_ZEN_BASE,
 };
 use crate::llm;
 use crate::state::{AiConfig, AppState, AppStatus, ConversationMode, InnerState, Message};
-use crate::db;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -349,20 +350,32 @@ pub async fn update_config(
     Ok(())
 }
 
+/// Home-relative Desktop if it exists, otherwise the home directory (or cwd).
+pub(crate) fn export_dir() -> PathBuf {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let desktop = home.join("Desktop");
+    if desktop.is_dir() {
+        desktop
+    } else {
+        home
+    }
+}
+
 #[tauri::command]
 pub fn export_chat(content: String) -> Result<String, String> {
-    let desktop = std::env::var("USERPROFILE")
-        .map(|p| format!("{}\\Desktop", p.trim_end_matches('\\')))
-        .map_err(|_| "Cannot find Desktop folder".to_string())?;
-
+    let dir = export_dir();
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let filename = format!("AI-Conversation-{}.md", timestamp);
-    let path = format!("{}\\{}", desktop, filename);
+    let path = dir.join(filename);
     std::fs::write(&path, &content).map_err(|e| format!("Failed to save file: {}", e))?;
-    Ok(path)
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Set which chat the current session belongs to (matches frontend chat ID).
@@ -800,5 +813,26 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
                 "turn": inner.turn_count,
             }),
         );
+    }
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::export_dir;
+    use std::path::PathBuf;
+
+    #[test]
+    fn export_dir_follows_home_or_userprofile() {
+        let dir = export_dir();
+        assert!(!dir.as_os_str().is_empty());
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from);
+        if let Some(home) = home {
+            assert!(
+                dir == home.join("Desktop") || dir == home,
+                "export_dir {dir:?} should be Desktop or home {home:?}"
+            );
+        }
     }
 }

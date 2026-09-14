@@ -156,40 +156,39 @@ function App() {
         Skip to transcript
       </a>
 
-      {railOpen && (
-        <button
-          type="button"
-          className="rail-scrim"
-          aria-label="Hide chats"
-          onClick={() => setRailOpen(false)}
-        />
-      )}
+      <button
+        type="button"
+        className="rail-scrim"
+        aria-label="Hide chats"
+        aria-hidden={!railOpen}
+        tabIndex={railOpen ? 0 : -1}
+        onClick={() => setRailOpen(false)}
+      />
 
-      {railOpen && (
-        <ChatRail
-          chats={chats}
-          activeId={activeChatId}
-          onNew={app.handleReset}
-          onSelect={(id) => {
-            app.handleSelectChat(id);
-            if (window.matchMedia("(max-width: 900px)").matches) {
-              setRailOpen(false);
-            }
-          }}
-          onDelete={app.handleDeleteChat}
-          onClose={() => setRailOpen(false)}
-          onRename={refreshChats}
-          agentNames={agentNames}
-          mode={config?.mode ?? "step"}
-          needsKey={needsKey}
-          onUseStarter={(text) => {
-            setFirstDraft(text);
-            if (window.matchMedia("(max-width: 900px)").matches) {
-              setRailOpen(false);
-            }
-          }}
-        />
-      )}
+      <ChatRail
+        open={railOpen}
+        chats={chats}
+        activeId={activeChatId}
+        onNew={app.handleReset}
+        onSelect={(id) => {
+          app.handleSelectChat(id);
+          if (window.matchMedia("(max-width: 900px)").matches) {
+            setRailOpen(false);
+          }
+        }}
+        onDelete={app.handleDeleteChat}
+        onClose={() => setRailOpen(false)}
+        onRename={refreshChats}
+        agentNames={agentNames}
+        mode={config?.mode ?? "step"}
+        needsKey={needsKey}
+        onUseStarter={(text) => {
+          setFirstDraft(text);
+          if (window.matchMedia("(max-width: 900px)").matches) {
+            setRailOpen(false);
+          }
+        }}
+      />
 
       <header className="topbar">
         <div className="brand">

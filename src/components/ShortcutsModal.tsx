@@ -1,4 +1,5 @@
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { usePresence } from "../hooks/usePresence";
 import { useRef } from "react";
 
 const ROWS: { keys: string; action: string }[] = [
@@ -24,11 +25,16 @@ export default function ShortcutsModal({
   onClose: () => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const shown = usePresence(open, 200);
   useFocusTrap(open, cardRef);
 
-  if (!open) return null;
+  if (!shown) return null;
   return (
-    <div className="modal-backdrop" onClick={onClose} role="presentation">
+    <div
+      className={`modal-backdrop ${open ? "" : "is-leaving"}`}
+      onClick={onClose}
+      role="presentation"
+    >
       <div
         ref={cardRef}
         className="modal-card"

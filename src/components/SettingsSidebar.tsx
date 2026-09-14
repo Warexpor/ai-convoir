@@ -205,7 +205,6 @@ export default function SettingsSidebar({
     return () => window.removeEventListener("apis-changed", r);
   }, []);
 
-  if (!open) return null;
   const botCount = local.bot_count >= 3 ? 3 : 2;
   const sharedKey =
     local.ai1_config.api_key ||
@@ -253,13 +252,16 @@ export default function SettingsSidebar({
 
   return (
     <aside
-      className="settings"
+      className={`settings ${open ? "is-open" : ""}`}
       ref={panelRef}
       aria-label="Settings"
       aria-labelledby="settings-title"
-      aria-modal="true"
-      role="dialog"
+      aria-modal={open ? true : undefined}
+      aria-hidden={!open}
+      inert={!open}
+      role={open ? "dialog" : undefined}
     >
+      <div className="settings-inner">
       <div className="settings-head">
         <div className="settings-brand">
           <span className="settings-title" id="settings-title">
@@ -508,6 +510,10 @@ export default function SettingsSidebar({
         <p className="about-line">
           AI Conversation <span>v2.0</span>
         </p>
+        <p className="field-hint settings-save-hint">
+          Close keeps your changes. Save stays on this panel.
+        </p>
+      </div>
       </div>
     </aside>
   );
