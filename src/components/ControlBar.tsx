@@ -18,6 +18,9 @@ interface Props {
   retryTarget?: { agent: string; turn: number } | null;
   onRetry?: () => void;
   hasMessages?: boolean;
+  nextName?: string | null;
+  needsKey?: boolean;
+  onOpenSettings?: () => void;
 }
 
 function ControlBar({
@@ -37,6 +40,9 @@ function ControlBar({
   retryTarget,
   onRetry,
   hasMessages = false,
+  nextName = null,
+  needsKey = false,
+  onOpenSettings,
 }: Props) {
   const progress =
     mode === "step"
@@ -44,6 +50,11 @@ function ControlBar({
       : Math.min((turnCount / Math.max(maxTurns, 1)) * 100, 100);
   const running = status === "Running";
   const isStep = mode === "step";
+  const statusLabel = running
+    ? "Writing"
+    : status === "Paused"
+      ? "Paused"
+      : "Ready";
   const tokenRatio = tokenCapacity > 0 ? tokenUsed / tokenCapacity : 0;
   const tokenPct = Math.round(tokenRatio * 100);
   const tokenColor =
@@ -117,7 +128,7 @@ function ControlBar({
             className={`dot ${running ? "run" : status === "Paused" ? "pause" : ""}`}
             aria-hidden
           />
-          <span className="dock-status">{status}</span>
+          <span className="dock-status">{statusLabel}</span>
           {!isStep && (
             <>
               <span className="dock-turns">
@@ -148,6 +159,7 @@ function ControlBar({
             type="button"
             className={mode === "step" ? "on" : ""}
             aria-pressed={mode === "step"}
+            title="One reply at a time"
             onClick={() => onModeChange("step")}
           >
             Step
@@ -156,6 +168,7 @@ function ControlBar({
             type="button"
             className={mode === "auto" ? "on" : ""}
             aria-pressed={mode === "auto"}
+            title="Keep talking until you pause"
             onClick={() => onModeChange("auto")}
           >
             Auto
@@ -164,14 +177,28 @@ function ControlBar({
       </div>
 
       <div className="dock-actions">
-        {isStep ? (
+        {needsKey ? (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => onOpenSettings?.()}
+          >
+            Add key
+          </button>
+        ) : isStep ? (
           <button
             type="button"
             className="btn btn-primary"
             onClick={onStep}
-            disabled={running}
+            disabled={running || !hasMessages}
+            title={
+              nextName ? `Let ${nextName} speak next` : "Advance one turn"
+            }
           >
             Next
+            {nextName ? (
+              <span className="dock-next-name"> · {nextName}</span>
+            ) : null}
           </button>
         ) : (
           <button type="button" className="btn btn-primary" onClick={onToggle}>

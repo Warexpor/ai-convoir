@@ -72,7 +72,7 @@ export default function ChatRail({
         {chats.length === 0 && (
           <div className="rail-empty">
             <span className="mono-cap">Empty</span>
-            <p>Saved threads appear here. Double-click a title to rename.</p>
+            <p>Saved threads land here. Double-click a title to rename.</p>
           </div>
         )}
         {chats.map((c) => {

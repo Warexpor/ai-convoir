@@ -82,6 +82,33 @@ function injectSeed() {
   emit("new-message", msg);
 }
 
+function friendlyApiError(status: number, detail: string): string {
+  const d = detail.toLowerCase();
+  if (
+    d.includes("geo") ||
+    d.includes("region") ||
+    d.includes("geographic") ||
+    d.includes("not available in")
+  ) {
+    return "Muse Spark 1.3 contributor isn’t available in this region.";
+  }
+  if (
+    status === 401 ||
+    d.includes("unauthorized") ||
+    d.includes("invalid api") ||
+    d.includes("incorrect api")
+  ) {
+    return "That API key was rejected. Check it in Settings.";
+  }
+  if (status === 429) {
+    return "Too many requests. Wait a moment, then press Next.";
+  }
+  if (status === 400 && d.includes("session")) {
+    return "The session header was missing. Refresh and try again.";
+  }
+  return `Couldn’t reach OpenCode Go (${status}): ${detail}`;
+}
+
 function goHeaders(apiKey: string): HeadersInit {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -173,7 +200,7 @@ async function streamResponses(cfg: AiConfig, speaking: string, turn: number) {
     } catch {
       /* keep statusText */
     }
-    throw new Error(`API ${res.status}: ${detail}`);
+    throw new Error(friendlyApiError(res.status, detail));
   }
 
   const reader = res.body?.getReader();
@@ -434,7 +461,7 @@ export async function engineFetchModels(baseUrl: string, apiKey: string): Promis
       "x-opencode-session": state.sessionId || "ai-conversation",
     },
   });
-  if (!res.ok) throw new Error(`Models API ${res.status}`);
+  if (!res.ok) throw new Error(friendlyApiError(res.status, `Models API ${res.status}`));
   const data = (await res.json()) as { data?: { id?: string }[] };
   const ids = (data.data || [])
     .map((m) => m.id)

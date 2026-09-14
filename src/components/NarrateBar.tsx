@@ -24,13 +24,13 @@ export default function NarrateBar({
     <div className="composer">
       <div className="composer-row">
         <span className="mono-cap" style={{ flexShrink: 0 }}>
-          Note → {nextName}
+          Hint · {nextName}
         </span>
         <input
           value={value}
           disabled={disabled}
-          placeholder={`Steer ${nextName}’s next reply`}
-          aria-label={`Note for ${nextName}`}
+          placeholder={`A quiet note for ${nextName}`}
+          aria-label={`Hint for ${nextName}`}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -45,13 +45,15 @@ export default function NarrateBar({
           disabled={disabled || !value.trim()}
           onClick={() => onCommit(value)}
         >
-          Arm
+          Send
         </button>
       </div>
       {value.trim() ? (
-        <p className="composer-hint">Applies once to {nextName}, then clears.</p>
+        <p className="composer-hint">
+          {nextName} will use this once, then it clears.
+        </p>
       ) : (
-        <p className="composer-hint">Optional note for the next speaker.</p>
+        <p className="composer-hint">Optional. They won’t mention you said it.</p>
       )}
     </div>
   );

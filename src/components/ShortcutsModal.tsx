@@ -2,10 +2,10 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useRef } from "react";
 
 const ROWS: { keys: string; action: string }[] = [
-  { keys: "Space", action: "Start / pause (auto) or next (step mode)" },
-  { keys: "N", action: "Advance one agent turn" },
-  { keys: "S", action: "Toggle settings" },
-  { keys: "B", action: "Toggle chats sidebar" },
+  { keys: "Space", action: "Start / pause, or next turn in Step" },
+  { keys: "N", action: "Next voice speaks" },
+  { keys: "S", action: "Settings" },
+  { keys: "B", action: "Saved chats" },
   { keys: "?", action: "This help" },
   { keys: "Esc", action: "Stop run → close help → close settings → hide chats" },
   { keys: "Ctrl+Shift+R", action: "New chat" },

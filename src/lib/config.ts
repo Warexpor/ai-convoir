@@ -68,14 +68,21 @@ function patchAgent(base: AiConfig, patch?: Partial<AiConfig>): AiConfig {
 
 export function normalizeConfig(raw: InnerState): InnerState {
   const fallback = defaultConfig();
+  const sharedKey =
+    raw.ai1_config?.api_key ||
+    raw.ai2_config?.api_key ||
+    raw.ai3_config?.api_key ||
+    "";
+  const withShared = (c?: AiConfig): AiConfig =>
+    patchAgent(fallback.ai1_config, {
+      ...c,
+      api_key: c?.api_key || sharedKey,
+    });
   return {
     ...raw,
-    ai1_config: patchAgent(fallback.ai1_config, raw.ai1_config),
-    ai2_config: patchAgent(fallback.ai2_config, raw.ai2_config),
-    ai3_config: patchAgent(
-      fallback.ai3_config,
-      raw.ai3_config ?? undefined,
-    ),
+    ai1_config: withShared(raw.ai1_config),
+    ai2_config: withShared(raw.ai2_config),
+    ai3_config: withShared(raw.ai3_config),
     bot_count: raw.bot_count >= 3 ? 3 : 2,
     mode: raw.mode === "step" ? "step" : "auto",
     seed_prompt: raw.seed_prompt ?? "",

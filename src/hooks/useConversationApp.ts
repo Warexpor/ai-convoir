@@ -409,7 +409,7 @@ export function useConversationApp() {
       await pushConfig(next);
       if (missingApiKeys(next)) {
         toast.show(
-          "Add API keys for every active agent in Settings, then Step or Start.",
+          "Add your OpenCode Go key in Settings, then press Begin.",
           6000,
         );
         return { needSettings: true as const };

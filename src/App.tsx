@@ -10,6 +10,7 @@ import { useConversationApp } from "./hooks/useConversationApp";
 import { useTokenUsage } from "./hooks/useTokenUsage";
 import {
   PREF_KEYS,
+  missingApiKeys,
   readBoolPref,
   readZoom,
   writeBoolPref,
@@ -121,6 +122,21 @@ function App() {
   );
 
   const agentCount = config ? (config.bot_count >= 3 ? 3 : 2) : null;
+  const needsKey = !config || missingApiKeys(config);
+  const agentNames = useMemo(() => {
+    if (!config) return ["Ava", "Jules"];
+    if (config.bot_count >= 3) {
+      return [
+        config.ai1_config.name,
+        config.ai2_config.name,
+        config.ai3_config.name,
+      ];
+    }
+    return [config.ai1_config.name, config.ai2_config.name];
+  }, [config]);
+  const nextName = config
+    ? agentLabel(nextAgentId(config, stream.turnCount), config)
+    : null;
 
   return (
     <div
@@ -176,7 +192,9 @@ function App() {
           <div className="brand-text">
             <p className="brand-mark">AI Conversation</p>
             <span className="topbar-sub">
-              {config ? `${agentCount} agents · ${config.mode}` : "loading"}
+              {config
+                ? `${agentCount} voices · ${config.mode === "step" ? "step" : "auto"}`
+                : "loading"}
             </span>
           </div>
         </div>
@@ -249,6 +267,9 @@ function App() {
           onStartFirst={handleStartFirst}
           onDeleteMessage={app.handleDeleteMessage}
           hasSavedChats={chats.length > 0}
+          needsKey={needsKey}
+          onOpenSettings={() => setSettingsOpen(true)}
+          agentNames={agentNames}
         />
 
         {stream.messages.length > 0 && (
@@ -262,24 +283,29 @@ function App() {
           />
         )}
 
-        <ControlBar
-          status={stream.status}
-          turnCount={stream.turnCount}
-          maxTurns={config?.max_turns ?? 40}
-          mode={config?.mode ?? "step"}
-          onToggle={app.handleToggle}
-          onStep={app.handleStep}
-          onStop={app.handleStop}
-          onReset={app.handleReset}
-          onExport={app.handleExport}
-          onModeChange={app.handleModeChange}
-          onSaveChat={app.handleSaveChat}
-          tokenUsed={tokenUsed}
-          tokenCapacity={tokenCapacity}
-          retryTarget={stream.lastFailed.current}
-          onRetry={app.handleRetry}
-          hasMessages={stream.messages.length > 0}
-        />
+        {stream.messages.length > 0 && (
+          <ControlBar
+            status={stream.status}
+            turnCount={stream.turnCount}
+            maxTurns={config?.max_turns ?? 40}
+            mode={config?.mode ?? "step"}
+            onToggle={app.handleToggle}
+            onStep={app.handleStep}
+            onStop={app.handleStop}
+            onReset={app.handleReset}
+            onExport={app.handleExport}
+            onModeChange={app.handleModeChange}
+            onSaveChat={app.handleSaveChat}
+            tokenUsed={tokenUsed}
+            tokenCapacity={tokenCapacity}
+            retryTarget={stream.lastFailed.current}
+            onRetry={app.handleRetry}
+            hasMessages
+            nextName={nextName}
+            needsKey={needsKey}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
+        )}
       </div>
 
       {config && (

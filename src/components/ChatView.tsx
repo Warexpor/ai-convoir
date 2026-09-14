@@ -13,6 +13,9 @@ interface Props {
   onFirstDraftChange?: (t: string) => void;
   onDeleteMessage?: (agent: string, turn: number, created_at: number) => void;
   hasSavedChats?: boolean;
+  needsKey?: boolean;
+  onOpenSettings?: () => void;
+  agentNames?: string[];
 }
 
 const EST_MSG = 148;
@@ -30,6 +33,9 @@ function ChatView({
   onFirstDraftChange,
   onDeleteMessage,
   hasSavedChats = false,
+  needsKey = false,
+  onOpenSettings,
+  agentNames = ["Ava", "Jules"],
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -114,6 +120,11 @@ function ChatView({
   }, [messages, win.start, win.end, autoScroll]);
 
   if (messages.length === 0) {
+    const names = agentNames.filter(Boolean).slice(0, 3);
+    const roster =
+      names.length === 3
+        ? `${names[0]}, ${names[1]}, and ${names[2]}`
+        : `${names[0] || "Ava"} and ${names[1] || "Jules"}`;
     return (
       <div className="empty">
         <div className="empty-card">
@@ -127,12 +138,25 @@ function ChatView({
           <span className="mono-cap empty-kicker">Conversation</span>
           <h2>Start a thread</h2>
           <p>
-            Two or three models take turns on one transcript. Endpoints default
-            to OpenCode Go with Muse Spark 1.3 contributor. Add your API key in
-            Settings, then write the first line.
-            {hasSavedChats ? " Open a saved thread from Chats." : ""}
+            {roster} take turns in one chat. Write the first line, then press
+            Begin.
+            {hasSavedChats ? " Or open a saved thread from Chats." : ""}
           </p>
-          <div className="empty-box">
+          <ol className="setup-steps" aria-label="How to start">
+            <li className={needsKey ? "on" : "done"}>
+              <span className="setup-n">1</span>
+              Add your OpenCode Go key
+            </li>
+            <li className={!needsKey ? "on" : ""}>
+              <span className="setup-n">2</span>
+              Write an opening line
+            </li>
+            <li>
+              <span className="setup-n">3</span>
+              Press Begin — they reply in turns
+            </li>
+          </ol>
+          <div className="empty-box glass-card">
             <textarea
               value={firstDraft}
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
@@ -142,24 +166,37 @@ function ChatView({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  onStartFirst?.(firstDraft);
+                  if (needsKey) onOpenSettings?.();
+                  else onStartFirst?.(firstDraft);
                 }
               }}
             />
             <div className="empty-actions">
-              <span className="mono-cap">Ctrl+Enter · begin</span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={!firstDraft.trim()}
-                onClick={() => onStartFirst?.(firstDraft)}
-              >
-                Begin
-              </button>
+              <span className="mono-cap">
+                {needsKey ? "Key first" : "Ctrl+Enter · begin"}
+              </span>
+              {needsKey ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => onOpenSettings?.()}
+                >
+                  Add API key
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!firstDraft.trim()}
+                  onClick={() => onStartFirst?.(firstDraft)}
+                >
+                  Begin
+                </button>
+              )}
             </div>
           </div>
-          <p className="empty-hint mono-cap">
-            S settings · B chats · N step · ? shortcuts
+          <p className="empty-hint">
+            Step mode: one reply at a time. Auto: they keep talking.
           </p>
         </div>
       </div>
