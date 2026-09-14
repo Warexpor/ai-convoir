@@ -43,7 +43,7 @@ def render(size: int, master: Image.Image) -> Image.Image:
                 pixels[x, y] = (236, 236, 236, 255)
             else:
                 # Mid tones → hard threshold for tiny-icon clarity
-                pixels[x, y] = (236, 236, 236, 255) if lum >= 110 else (18, 18, 18, 255)
+                pixels[x, y] = (236, 236, 236, 255) if lum >= 110 else (28, 28, 28, 255)
     return bg
 
 
