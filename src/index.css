@@ -140,6 +140,19 @@ body,
   display: none;
 }
 
+@media (max-width: 640px) {
+  .topbar-sub {
+    display: none;
+  }
+  .dock-stat .bar,
+  .ctx-bar {
+    display: none;
+  }
+  .dock {
+    padding: 8px 10px 10px;
+  }
+}
+
 @media (max-width: 900px) {
   .app,
   .app.rail-closed,
