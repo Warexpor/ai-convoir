@@ -139,19 +139,21 @@ function ControlBar({
               </span>
             </>
           )}
-          <span className="ctx-bar" title="Estimated context use">
-            <span className="ctx-pct" style={{ color: tokenColor }}>
-              {tokenPct}%
+          {tokenPct >= 50 && (
+            <span className="ctx-bar" title="How full the conversation is">
+              <span className="ctx-pct" style={{ color: tokenColor }}>
+                {tokenPct}%
+              </span>
+              <span className="bar ctx" aria-hidden>
+                <i
+                  style={{
+                    width: `${Math.min(tokenPct, 100)}%`,
+                    background: tokenColor,
+                  }}
+                />
+              </span>
             </span>
-            <span className="bar ctx" aria-hidden>
-              <i
-                style={{
-                  width: `${Math.min(tokenPct, 100)}%`,
-                  background: tokenColor,
-                }}
-              />
-            </span>
-          </span>
+          )}
         </div>
 
         <div className="seg dock-mode" role="group" aria-label="Run mode">

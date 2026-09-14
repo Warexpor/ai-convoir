@@ -121,7 +121,6 @@ function App() {
     config,
   );
 
-  const agentCount = config ? (config.bot_count >= 3 ? 3 : 2) : null;
   const needsKey = !config || missingApiKeys(config);
   const agentNames = useMemo(() => {
     if (!config) return ["Ava", "Jules"];
@@ -193,7 +192,7 @@ function App() {
             <p className="brand-mark">AI Conversation</p>
             <span className="topbar-sub">
               {config
-                ? `${agentCount} voices · ${config.mode === "step" ? "step" : "auto"}`
+                ? agentNames.filter(Boolean).join(" · ")
                 : "loading"}
             </span>
           </div>

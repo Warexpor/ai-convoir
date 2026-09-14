@@ -127,36 +127,24 @@ function ChatView({
         : `${names[0] || "Ava"} and ${names[1] || "Jules"}`;
     return (
       <div className="empty">
-        <div className="empty-card">
+        <div className="empty-hero">
           <img
             className="empty-logo"
             src="/logo.svg"
-            width={28}
-            height={28}
+            width={36}
+            height={36}
             alt=""
           />
-          <span className="mono-cap empty-kicker">Conversation</span>
           <h2>Start a thread</h2>
           <p>
-            {roster} take turns in one chat. Write the first line, then press
-            Begin.
-            {hasSavedChats ? " Or open a saved thread from Chats." : ""}
+            {roster} take turns.{" "}
+            {needsKey
+              ? "Add your key, then write the first line."
+              : "Write the first line and press Begin."}
+            {hasSavedChats ? " Saved threads live in Chats." : ""}
           </p>
-          <ol className="setup-steps" aria-label="How to start">
-            <li className={needsKey ? "on" : "done"}>
-              <span className="setup-n">1</span>
-              Add your OpenCode Go key
-            </li>
-            <li className={!needsKey ? "on" : ""}>
-              <span className="setup-n">2</span>
-              Write an opening line
-            </li>
-            <li>
-              <span className="setup-n">3</span>
-              Press Begin — they reply in turns
-            </li>
-          </ol>
-          <div className="empty-box glass-card">
+          {needsKey && <div className="empty-badge">Key needed</div>}
+          <div className="empty-box">
             <textarea
               value={firstDraft}
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
@@ -172,16 +160,13 @@ function ChatView({
               }}
             />
             <div className="empty-actions">
-              <span className="mono-cap">
-                {needsKey ? "Key first" : "Ctrl+Enter · begin"}
-              </span>
               {needsKey ? (
                 <button
                   type="button"
                   className="btn btn-primary"
                   onClick={() => onOpenSettings?.()}
                 >
-                  Add API key
+                  Add your key
                 </button>
               ) : (
                 <button
@@ -195,9 +180,6 @@ function ChatView({
               )}
             </div>
           </div>
-          <p className="empty-hint">
-            Step mode: one reply at a time. Auto: they keep talking.
-          </p>
         </div>
       </div>
     );
