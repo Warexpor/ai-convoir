@@ -17,6 +17,7 @@ import {
   writeZoom,
 } from "./lib/config";
 import { IconThreads, IconVoices, SlashMark } from "./components/Marks";
+import StageField from "./components/StageField";
 import { agentLabel, nextAgentId } from "./types";
 
 function App() {
@@ -150,6 +151,7 @@ function App() {
         .join(" ")}
       style={{ zoom }}
     >
+      <StageField />
       <a className="skip-link" href="#main">
         Skip to transcript
       </a>

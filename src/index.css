@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-/* Chrome uses the same canvas as the transcript. Hairlines only. */
+/* Solid canvas under a slow lacquer field. Chrome is glass over it. */
 
 :root {
   --bg: #141414;
@@ -9,8 +9,8 @@
   --panel: rgba(28, 28, 28, 0.72);
   --panel-2: rgba(34, 34, 34, 0.58);
   --elev: rgba(38, 38, 38, 0.78);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-2: rgba(255, 255, 255, 0.14);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
   --text: #ececec;
   --text-2: #c8c8c8;
   --mute: #8f8f8f;
@@ -27,11 +27,11 @@
   --font-read: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --hairline: 1px solid var(--line);
-  --glass: var(--bg);
-  --glass-strong: var(--bg);
-  --blur: blur(36px) saturate(140%);
-  --shine: none;
-  --glow: none;
+  --glass: rgba(18, 18, 18, 0.52);
+  --glass-strong: rgba(14, 14, 14, 0.78);
+  --blur: blur(28px) saturate(145%);
+  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --glow: 0 16px 44px rgba(0, 0, 0, 0.22);
   --btn-face: #f3f3f3;
   --btn-face-2: #dcdcdc;
 }
@@ -151,6 +151,20 @@ body,
   min-height: 0;
   min-width: 0;
 }
+.stage {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  z-index: 0;
+  pointer-events: none;
+}
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.app > :not(.stage) {
+  z-index: 1;
+}
 .topbar {
   grid-area: top;
   min-height: var(--topbar-h);
@@ -199,7 +213,9 @@ body,
     bottom: 0;
     width: min(280px, 85vw);
     border-right: var(--hairline);
-    background: var(--bg);
+    background: var(--glass-strong);
+    backdrop-filter: var(--blur);
+    -webkit-backdrop-filter: var(--blur);
   }
   .app.rail-open-mobile .rail-scrim {
     display: block;
@@ -221,7 +237,10 @@ body,
 /* left rail */
 .rail {
   border-right: var(--hairline);
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shine);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -553,7 +572,10 @@ body,
   gap: 8px;
   padding: 0 14px 0 18px;
   border-bottom: var(--hairline);
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shine);
   z-index: 20;
 }
 .brand {
@@ -1083,8 +1105,11 @@ body,
   max-width: 440px;
   padding: 34px 28px 22px;
   border-radius: 26px;
-  background: var(--bg);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--glass);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(36px) saturate(155%);
+  -webkit-backdrop-filter: blur(36px) saturate(155%);
+  box-shadow: var(--shine), var(--glow);
   animation: hero-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes hero-in {
@@ -1249,10 +1274,13 @@ body,
   display: flex;
   gap: 8px;
   align-items: center;
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border: var(--hairline);
   border-radius: 999px;
   padding: 6px 6px 6px 16px;
+  box-shadow: var(--shine);
   transition: border-color 0.18s;
 }
 .composer-row:focus-within {
@@ -1281,7 +1309,7 @@ body,
   padding: 0 14px 0 12px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--bg);
+  background: var(--glass);
   color: var(--text-2);
   font-size: 12px;
   cursor: pointer;
@@ -1315,7 +1343,10 @@ body,
   padding: 10px 12px;
   border: var(--hairline);
   border-radius: 20px;
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shine), var(--glow);
   animation: dock-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes dock-in {
@@ -1423,7 +1454,10 @@ body,
 /* settings panel */
 .settings {
   border-left: var(--hairline);
-  background: var(--bg);
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shine);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -2015,6 +2049,9 @@ body,
 }
 
 @media (prefers-reduced-transparency: reduce) {
+  .stage {
+    display: none;
+  }
   .topbar,
   .rail,
   .settings,
