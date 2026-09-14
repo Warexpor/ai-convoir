@@ -13,6 +13,7 @@ import {
   saveApi,
   type SavedApi,
 } from "../lib/storage";
+import { agentAccent } from "../types";
 
 interface Props {
   open: boolean;
@@ -87,10 +88,10 @@ function CharCard({
 
   return (
     <div className="char-card">
-      <button type="button" className="char-head" onClick={() => setOpen(!open)}>
+      <button type="button" className="char-head" onClick={() => setOpen(!open)} aria-expanded={open}>
         <span
           className="char-avatar"
-          style={{ background: accent }}
+          style={{ color: accent, borderColor: accent }}
         >
           {(config.name || "?").slice(0, 2).toUpperCase()}
         </span>
@@ -114,7 +115,7 @@ function CharCard({
               onChange={(e) =>
                 onChange({ ...config, system_prompt: e.target.value })
               }
-              placeholder="Personality, speech, boundaries…"
+              placeholder="Voice, constraints, what they know…"
             />
           </div>
           {apis.length > 0 && (
@@ -207,7 +208,7 @@ function CharCard({
           </div>
           <div className="field">
             <label>Reasoning</label>
-            <div className="seg">
+            <div className="seg" role="group" aria-label="Reasoning effort">
               {(["none", "low", "medium", "high"] as ReasoningEffort[]).map(
                 (r) => (
                   <button
@@ -216,6 +217,7 @@ function CharCard({
                     className={
                       (config.reasoning_effort || "none") === r ? "on" : ""
                     }
+                    aria-pressed={(config.reasoning_effort || "none") === r}
                     onClick={() =>
                       onChange({ ...config, reasoning_effort: r })
                     }
@@ -228,7 +230,7 @@ function CharCard({
           </div>
           <div className="field">
             <label>Response length</label>
-            <div className="seg">
+            <div className="seg" role="group" aria-label="Response length">
               {(["brief", "small", "normal", "long", "very_long"] as ResponseLength[]).map(
                 (r) => (
                   <button
@@ -237,6 +239,7 @@ function CharCard({
                     className={
                       (config.response_length || "normal") === r ? "on" : ""
                     }
+                    aria-pressed={(config.response_length || "normal") === r}
                     onClick={() =>
                       onChange({ ...config, response_length: r })
                     }
@@ -317,7 +320,7 @@ export default function SettingsSidebar({
       <div className="settings-head">
         <div className="settings-brand">
           <span className="settings-title">Settings</span>
-          <span className="settings-sub">Cast, providers, pace</span>
+          <span className="settings-sub">Agents, endpoints, pace</span>
         </div>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
           Close
@@ -325,11 +328,12 @@ export default function SettingsSidebar({
       </div>
       <div className="settings-body">
         <div className="field">
-          <label>Characters</label>
-          <div className="seg">
+          <label>Agents</label>
+          <div className="seg" role="group" aria-label="Agent count">
             <button
               type="button"
               className={botCount === 2 ? "on" : ""}
+              aria-pressed={botCount === 2}
               onClick={() => setLocal({ ...local, bot_count: 2 })}
             >
               2
@@ -337,6 +341,7 @@ export default function SettingsSidebar({
             <button
               type="button"
               className={botCount === 3 ? "on" : ""}
+              aria-pressed={botCount === 3}
               onClick={() => setLocal({ ...local, bot_count: 3 })}
             >
               3
@@ -344,21 +349,22 @@ export default function SettingsSidebar({
           </div>
         </div>
         <div className="field">
-          <label>First message</label>
+          <label>Opening</label>
           <textarea
             value={local.seed_prompt || ""}
             onChange={(e) =>
               setLocal({ ...local, seed_prompt: e.target.value })
             }
-            placeholder="Opening line for this chat…"
+            placeholder="Default first line for this thread"
           />
         </div>
         <div className="field">
-          <label>Model thoughts</label>
-          <div className="seg">
+          <label>Thoughts</label>
+          <div className="seg" role="group" aria-label="Show model thoughts">
             <button
               type="button"
               className={showThoughtsUi ? "on" : ""}
+              aria-pressed={showThoughtsUi}
               onClick={() => onShowThoughtsUiChange(true)}
             >
               Show
@@ -366,31 +372,28 @@ export default function SettingsSidebar({
             <button
               type="button"
               className={!showThoughtsUi ? "on" : ""}
+              aria-pressed={!showThoughtsUi}
               onClick={() => onShowThoughtsUiChange(false)}
             >
               Hide
             </button>
           </div>
-          <p
-            style={{
-              marginTop: 8,
-              fontSize: 11,
-              color: "var(--faint)",
-              lineHeight: 1.45,
-            }}
-          >
-            When on, messages can expand a Thoughts block (reasoning models).
-            When off, that control is hidden entirely.
+          <p className="field-hint">
+            Reasoning models can expand a Thoughts block. Hide removes the
+            control from the transcript.
           </p>
         </div>
         <div className="field">
-          <label>Pace ({local.delay_ms}ms)</label>
+          <label>Delay · {local.delay_ms}ms</label>
           <input
             type="range"
             min={0}
             max={4000}
             step={100}
             value={local.delay_ms}
+            aria-valuemin={0}
+            aria-valuemax={4000}
+            aria-valuenow={local.delay_ms}
             onChange={(e) =>
               setLocal({ ...local, delay_ms: parseInt(e.target.value) || 0 })
             }
@@ -415,24 +418,24 @@ export default function SettingsSidebar({
         )}
 
         <div className="field">
-          <label>Cast</label>
+          <label>Roster</label>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <CharCard
-              accent="#7eb0c8"
+              accent={agentAccent("ai1")}
               config={local.ai1_config}
               apis={apis}
               onChange={(c) => setLocal({ ...local, ai1_config: c })}
               defaultOpen
             />
             <CharCard
-              accent="#d4a574"
+              accent={agentAccent("ai2")}
               config={local.ai2_config}
               apis={apis}
               onChange={(c) => setLocal({ ...local, ai2_config: c })}
             />
             {botCount === 3 && (
               <CharCard
-                accent="#8eb4a0"
+                accent={agentAccent("ai3")}
                 config={local.ai3_config}
                 apis={apis}
                 onChange={(c) => setLocal({ ...local, ai3_config: c })}
@@ -443,7 +446,7 @@ export default function SettingsSidebar({
 
         {apis.length > 0 && (
           <div className="field">
-            <label>API library</label>
+            <label>Profiles</label>
             {apis.map((a) => (
               <div key={a.id} className="api-row">
                 <span>
@@ -480,7 +483,7 @@ export default function SettingsSidebar({
             })
           }
         >
-          Save settings
+          Save
         </button>
         <p className="about-line">
           AI Conversation <span>v2.0</span>

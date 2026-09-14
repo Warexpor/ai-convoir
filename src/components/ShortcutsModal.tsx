@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 const ROWS: { keys: string; action: string }[] = [
   { keys: "Space", action: "Start / pause (auto) or step (step mode)" },
   { keys: "N", action: "Advance one agent turn" },
@@ -20,18 +22,31 @@ export default function ShortcutsModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+  }, [open]);
+
   if (!open) return null;
   return (
     <div className="modal-backdrop" onClick={onClose} role="presentation">
       <div
         className="modal-card"
         role="dialog"
-        aria-label="Keyboard shortcuts"
+        aria-modal="true"
+        aria-labelledby="shortcuts-title"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
-          <span>Keyboard shortcuts</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+          <span id="shortcuts-title">Keyboard shortcuts</span>
+          <button
+            ref={closeRef}
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={onClose}
+          >
             Close
           </button>
         </div>

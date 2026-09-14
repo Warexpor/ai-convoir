@@ -1,24 +1,18 @@
-import { useState, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import type { InnerState, Message } from "../types";
-import {
-  agentAccent,
-  agentInitials,
-  agentLabel,
-  relativeTime,
-} from "../types";
+import { agentAccent, agentInitials, agentLabel } from "../types";
 import MarkdownBody from "./MarkdownBody";
+import RelativeTime from "./RelativeTime";
 
 interface Props {
   message: Message;
-  tick: number;
   config?: InnerState | null;
   showThoughtsUi: boolean;
   onDelete?: (agent: string, turn: number, created_at: number) => void;
 }
 
-export default function MessageBubble({
+function MessageBubble({
   message,
-  tick: _tick,
   config,
   showThoughtsUi,
   onDelete,
@@ -45,10 +39,14 @@ export default function MessageBubble({
     >
       <div
         className="msg-avatar"
-        style={{
-          background: isSeed ? "var(--elev)" : accent,
-          color: isSeed ? "var(--text-2)" : "#12141a",
-        }}
+        style={
+          isSeed
+            ? undefined
+            : {
+                color: accent,
+                borderColor: accent,
+              }
+        }
         aria-hidden
       >
         {isSeed ? "You" : agentInitials(label)}
@@ -56,18 +54,11 @@ export default function MessageBubble({
 
       <div className="msg-body">
         <div className="msg-meta">
-          <span
-            className="msg-name"
-            style={{ color: isSeed ? undefined : accent }}
-          >
-            {label}
-          </span>
+          <span className="msg-name">{label}</span>
           {isStream ? (
             <span className="msg-live">live</span>
           ) : (
-            <span className="msg-time">
-              {relativeTime(message.created_at || Date.now())}
-            </span>
+            <RelativeTime at={message.created_at || Date.now()} />
           )}
           <button
             type="button"
@@ -92,7 +83,7 @@ export default function MessageBubble({
               <span className="thoughts-label">Thoughts</span>
               {isStream && !message.content && (
                 <span className="msg-live" style={{ marginLeft: 6 }}>
-                  thinking…
+                  thinking
                 </span>
               )}
             </button>
@@ -130,3 +121,5 @@ export default function MessageBubble({
     </article>
   );
 }
+
+export default memo(MessageBubble);

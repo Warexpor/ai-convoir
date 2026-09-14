@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
 import type { InnerState, Message } from "../types";
 
 interface Props {
   messages: Message[];
-  tick: number;
   isThinking: boolean;
   thinkingAgent?: string | null;
   config?: InnerState | null;
@@ -15,9 +14,8 @@ interface Props {
   onDeleteMessage?: (agent: string, turn: number, created_at: number) => void;
 }
 
-export default function ChatView({
+function ChatView({
   messages,
-  tick,
   isThinking,
   thinkingAgent,
   config,
@@ -47,10 +45,9 @@ export default function ChatView({
     prevLen.current = messages.length;
   }, [messages, autoScroll]);
 
-  const streamLen = messages.reduce(
-    (n, m) => n + (m.streaming ? m.content.length : 0),
-    0,
-  );
+  const streamingTail = messages[messages.length - 1];
+  const streamLen =
+    streamingTail?.streaming ? streamingTail.content.length : 0;
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: "auto" });
   }, [streamLen, autoScroll]);
@@ -59,16 +56,18 @@ export default function ChatView({
     return (
       <div className="empty">
         <div className="empty-card">
-          <h2>Open the booth</h2>
+          <span className="mono-cap empty-kicker">Conversation</span>
+          <h2>Start a thread</h2>
           <p>
-            Drop a scene, a question, or a first line. Your agents take turns
-            with full context, streaming, and optional director notes.
+            Two or three models take turns on one transcript. Set endpoints in
+            Settings, then write the first line.
           </p>
           <div className="empty-box">
             <textarea
               value={firstDraft}
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
-              placeholder="Hey… you two wake up in a diner at 3am. The jukebox only plays one song."
+              placeholder="A question, a scene, or an opening line."
+              aria-label="First message"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
@@ -100,21 +99,19 @@ export default function ChatView({
       <div className="chat-inner">
         {messages.map((msg, i) => (
           <MessageBubble
-            // Stable key — do NOT flip on streaming end (remounts scramble the stream UI)
             key={`${msg.agent}-${msg.turn}-${msg.created_at || i}`}
             message={msg}
-            tick={tick}
             config={config}
             showThoughtsUi={showThoughtsUi}
             onDelete={onDeleteMessage}
           />
         ))}
         {isThinking && (
-          <div className="thinking">
+          <div className="thinking" role="status">
             <span className="d" />
             <span className="d" style={{ animationDelay: "0.2s" }} />
             <span className="d" style={{ animationDelay: "0.4s" }} />
-            {thinkingAgent ? `${thinkingAgent} is writing` : "Writing"}
+            {thinkingAgent ? `${thinkingAgent}` : "Writing"}
           </div>
         )}
         <div ref={bottomRef} />
@@ -122,3 +119,5 @@ export default function ChatView({
     </div>
   );
 }
+
+export default memo(ChatView);

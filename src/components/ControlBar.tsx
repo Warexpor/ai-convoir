@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { AppStatus, ConversationMode } from "../types";
 
 interface Props {
@@ -18,7 +19,7 @@ interface Props {
   onRetry?: () => void;
 }
 
-export default function ControlBar({
+function ControlBar({
   status,
   turnCount,
   maxTurns,
@@ -47,7 +48,7 @@ export default function ControlBar({
     tokenRatio > 0.8
       ? "var(--danger)"
       : tokenRatio > 0.6
-        ? "#c8a84a"
+        ? "var(--text-2)"
         : "var(--faint)";
 
   return (
@@ -55,6 +56,7 @@ export default function ControlBar({
       <div className="dock-stat">
         <span
           className={`dot ${running ? "run" : status === "Paused" ? "pause" : ""}`}
+          aria-hidden
         />
         <span className="dock-status">{status}</span>
         {!isStep && (
@@ -62,7 +64,7 @@ export default function ControlBar({
             <span className="dock-turns">
               {turnCount}/{maxTurns}
             </span>
-            <span className="bar">
+            <span className="bar" aria-hidden>
               <i style={{ width: `${progress}%` }} />
             </span>
           </>
@@ -71,7 +73,7 @@ export default function ControlBar({
           <span className="ctx-pct" style={{ color: tokenColor }}>
             {tokenPct}%
           </span>
-          <span className="bar ctx">
+          <span className="bar ctx" aria-hidden>
             <i
               style={{
                 width: `${Math.min(tokenPct, 100)}%`,
@@ -86,6 +88,7 @@ export default function ControlBar({
         <button
           type="button"
           className={mode === "step" ? "on" : ""}
+          aria-pressed={mode === "step"}
           onClick={() => onModeChange("step")}
         >
           Step
@@ -93,6 +96,7 @@ export default function ControlBar({
         <button
           type="button"
           className={mode === "auto" ? "on" : ""}
+          aria-pressed={mode === "auto"}
           onClick={() => onModeChange("auto")}
         >
           Auto
@@ -149,3 +153,5 @@ export default function ControlBar({
     </div>
   );
 }
+
+export default memo(ControlBar);

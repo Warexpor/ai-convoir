@@ -77,7 +77,7 @@ export function relativeTime(epochMs: number): string {
 
 export function agentLabel(agent: string, config?: InnerState | null): string {
   if (agent === "seed") return "You";
-  if (agent === "narrator") return "Director";
+  if (agent === "narrator") return "Note";
   if (!config) {
     if (agent === "ai1") return "Agent 1";
     if (agent === "ai2") return "Agent 2";
@@ -93,13 +93,13 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 export function agentAccent(agent: string): string {
   switch (agent) {
     case "ai1":
-      return "#7eb0c8";
+      return "#f0f0fa";
     case "ai2":
-      return "#d4a574";
+      return "#a8aab0";
     case "ai3":
-      return "#8eb4a0";
+      return "#6e7278";
     case "seed":
-      return "#9a9da3";
+      return "#7d8187";
     default:
       return "#7d8187";
   }

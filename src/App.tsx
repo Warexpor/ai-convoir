@@ -29,7 +29,6 @@ function App() {
     setNarration,
     chats,
     activeChatId,
-    tick,
     refreshChats,
   } = app;
 
@@ -63,7 +62,7 @@ function App() {
       const result = await app.handleStartFirst(text);
       if (result?.needSettings) setSettingsOpen(true);
     },
-    [app],
+    [app.handleStartFirst],
   );
 
   useAppKeyboard({
@@ -111,17 +110,29 @@ function App() {
     config,
   );
 
+  const agentCount = config ? (config.bot_count >= 3 ? 3 : 2) : null;
+
   return (
     <div
       className={[
         "app",
         settingsOpen ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
+        railOpen ? "rail-open-mobile" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       style={{ zoom }}
     >
+      {railOpen && (
+        <button
+          type="button"
+          className="rail-scrim"
+          aria-label="Hide chats"
+          onClick={() => setRailOpen(false)}
+        />
+      )}
+
       {railOpen && (
         <ChatRail
           chats={chats}
@@ -136,13 +147,22 @@ function App() {
 
       <div className="main">
         <header className="topbar">
-          <div className="brand-text">
-            <p className="brand-mark">AI Conversation</p>
-            <span className="topbar-sub">
-              {config
-                ? `${config.bot_count >= 3 ? 3 : 2} agents · ${config.mode}`
-                : "loading…"}
-            </span>
+          <div className="brand">
+            <img
+              className="brand-logo"
+              src="/logo.svg"
+              width={18}
+              height={18}
+              alt=""
+            />
+            <div className="brand-text">
+              <p className="brand-mark">AI Conversation</p>
+              <span className="topbar-sub">
+                {config
+                  ? `${agentCount} agents · ${config.mode}`
+                  : "loading"}
+              </span>
+            </div>
           </div>
           <div className="spacer" />
           <button
@@ -150,16 +170,18 @@ function App() {
             className="btn btn-ghost"
             onClick={() => setRailOpen((p) => !p)}
             title="Toggle chats (B)"
+            aria-pressed={railOpen}
           >
-            {railOpen ? "Hide chats" : "Show chats"}
+            {railOpen ? "Chats" : "Chats"}
           </button>
           <button
             type="button"
             className="btn btn-ghost"
             onClick={() => setSettingsOpen((p) => !p)}
             title="Toggle settings (S)"
+            aria-pressed={settingsOpen}
           >
-            {settingsOpen ? "Hide settings" : "Settings"}
+            Settings
           </button>
           <button
             type="button"
@@ -197,7 +219,6 @@ function App() {
 
         <ChatView
           messages={stream.messages}
-          tick={tick}
           isThinking={
             stream.isThinking && !stream.messages.some((m) => m.streaming)
           }

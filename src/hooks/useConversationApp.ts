@@ -46,8 +46,6 @@ export function useConversationApp() {
   const [activeChatId, setActiveChatIdState] = useState<string | null>(() =>
     getActiveChatId(),
   );
-  const [tick, setTick] = useState(0);
-
   const skipAutosaveUntil = useRef(0);
   const messagesRef = useRef(stream.messages);
   const configRef = useRef(config);
@@ -64,11 +62,6 @@ export function useConversationApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 5000);
-    return () => clearInterval(id);
   }, []);
 
   const pushConfig = useCallback(async (cfg: InnerState) => {
@@ -367,7 +360,7 @@ export function useConversationApp() {
       await pushConfig(next);
       if (missingApiKeys(next)) {
         toast.show(
-          "Add API keys for every active character in Settings, then Step or Start.",
+          "Add API keys for every active agent in Settings, then Step or Start.",
           6000,
         );
         return { needSettings: true as const };
@@ -394,7 +387,6 @@ export function useConversationApp() {
     setNarration,
     chats,
     activeChatId,
-    tick,
     refreshChats,
     handleToggle,
     handleStep,

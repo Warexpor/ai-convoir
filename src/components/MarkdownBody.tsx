@@ -1,7 +1,10 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-export default function MarkdownBody({
+const REMARK_PLUGINS = [remarkGfm];
+
+function MarkdownBody({
   content,
   streaming,
 }: {
@@ -9,7 +12,7 @@ export default function MarkdownBody({
   streaming?: boolean;
 }) {
   // Mid-stream markdown is unstable (half fences, half bold). Show plain text
-  // while streaming so SSE output doesn't "glitch" or scramble.
+  // while streaming so SSE output doesn't glitch.
   if (streaming) {
     return (
       <div className="md-body md-streaming">
@@ -21,9 +24,11 @@ export default function MarkdownBody({
 
   return (
     <div className="md-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
         {content || " "}
       </ReactMarkdown>
     </div>
   );
 }
+
+export default memo(MarkdownBody);

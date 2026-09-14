@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import { relativeTime } from "../types";
@@ -30,19 +30,21 @@ export default function ChatRail({
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
     setRenamingId(id);
     setRenameText(currentTitle);
-    // Focus input on next tick after render
     requestAnimationFrame(() => renameRef.current?.select());
   }, []);
 
-  const handleCommitRename = useCallback((id: string) => {
-    const trimmed = renameText.trim();
-    if (trimmed) {
-      renameChat(id, trimmed);
-      onRename?.();
-    }
-    setRenamingId(null);
-    setRenameText("");
-  }, [renameText, onRename]);
+  const handleCommitRename = useCallback(
+    (id: string) => {
+      const trimmed = renameText.trim();
+      if (trimmed) {
+        renameChat(id, trimmed);
+        onRename?.();
+      }
+      setRenamingId(null);
+      setRenameText("");
+    },
+    [renameText, onRename],
+  );
 
   const handleCancelRename = useCallback(() => {
     setRenamingId(null);
@@ -54,7 +56,7 @@ export default function ChatRail({
       <div className="rail-head">
         <span className="rail-title">Chats</span>
         <button type="button" className="btn btn-primary btn-sm" onClick={onNew}>
-          + New
+          New
         </button>
         <button
           type="button"
@@ -69,7 +71,7 @@ export default function ChatRail({
       <div className="rail-scroll">
         {chats.length === 0 && (
           <p className="rail-empty">
-            Past sessions show up here. Double-click a title to rename.
+            Saved threads appear here. Double-click a title to rename.
           </p>
         )}
         {chats.map((c) => {
@@ -102,6 +104,7 @@ export default function ChatRail({
                     }}
                     onBlur={() => handleCommitRename(c.id)}
                     onClick={(e) => e.stopPropagation()}
+                    aria-label="Rename chat"
                   />
                 </div>
               ) : (
@@ -110,6 +113,7 @@ export default function ChatRail({
                   className="chat-item"
                   onClick={() => onSelect(c.id)}
                   onDoubleClick={() => handleStartRename(c.id, c.title)}
+                  aria-current={activeId === c.id ? "page" : undefined}
                 >
                   <div className="chat-item-title">{c.title}</div>
                   <div className="chat-item-meta">
