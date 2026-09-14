@@ -130,9 +130,9 @@ function ChatView({
         <div className="empty-hero">
           <img
             className="empty-logo"
-            src="/logo.svg"
-            width={36}
-            height={36}
+            src="/logo.png"
+            width={40}
+            height={40}
             alt=""
           />
           <h2>Start a thread</h2>

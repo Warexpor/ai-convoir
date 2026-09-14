@@ -183,9 +183,9 @@ function App() {
         <div className="brand">
           <img
             className="brand-logo"
-            src="/logo.svg"
-            width={18}
-            height={18}
+            src="/logo.png"
+            width={20}
+            height={20}
             alt=""
           />
           <div className="brand-text">

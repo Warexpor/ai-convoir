@@ -1,24 +1,27 @@
 # AI Conversation
 
-**v2.0** — Desktop multi-agent chat. Let 2–3 LLMs talk over OpenAI-compatible APIs.
+**v2.0** — Desktop multi-agent chat. Two or three voices take turns on one thread (OpenCode Go · Muse Spark 1.3 contributor).
 
 ![logo](public/logo.png)
 
 ## Features
 
-- 2–3 agents with system prompts, models, API keys, and reasoning effort
-- OpenCode Zen / Go / OpenAI presets, plus model list fetch
-- SSE streaming with non-stream fallback
-- Step / Auto modes, Stop (keeps transcript), Narrate next turn
-- Thoughts panel for reasoning models
-- Saved chats and API profiles (local)
-- Markdown export and keyboard shortcuts (`?`)
+- 2–3 voices, one shared OpenCode Go key
+- Locked to Muse Spark 1.3 contributor
+- SSE streaming, Step / Auto, Stop (keeps transcript), optional hint for the next speaker
+- Saved chats, markdown export, keyboard shortcuts (`?`)
 
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18+
 - [Rust](https://rustup.rs/) (stable)
 - Tauri system deps for your OS ([guide](https://v2.tauri.app/start/prerequisites/))
+
+On **Linux** you also need WebKitGTK 4.1 (Debian/Ubuntu):
+
+```bash
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+```
 
 ## Install & run
 
@@ -33,7 +36,13 @@ Production installers:
 npm run release:build
 ```
 
-Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows).
+Linux packages only (`.deb` + AppImage):
+
+```bash
+npm run linux:build
+```
+
+Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows; `deb/` and `appimage/` on Linux).
 
 ## Scripts
 
@@ -42,6 +51,7 @@ Outputs land under `src-tauri/target/release/bundle/` (NSIS / MSI on Windows).
 | `npm run tauri dev` | Desktop app in development |
 | `npm run build` | Frontend production build |
 | `npm run release:build` | Frontend + Tauri release bundles |
+| `npm run linux:build` | Linux `.deb` + AppImage |
 | `npm run typecheck` | TypeScript check |
 | `npm run test:rust` | Rust unit tests |
 | `npm run icons` | Regenerate icons (`scripts/make_icons.py`) |

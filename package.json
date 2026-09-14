@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "icons": "python scripts/make_icons.py",
-    "release:build": "npm run build && npm run tauri build"
+    "release:build": "npm run build && npm run tauri build",
+    "linux:build": "npm run build && npm run tauri build -- --bundles deb,appimage"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
