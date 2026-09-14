@@ -23,7 +23,12 @@ import { agentLabel } from "../types";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
 
+const SKIP_RESUME_KEY = "ai-conversation-skip-resume";
+
 function pickResumeChat(): SavedChat | undefined {
+  if (typeof localStorage !== "undefined" && localStorage.getItem(SKIP_RESUME_KEY)) {
+    return undefined;
+  }
   const aid = getActiveChatId();
   const byId = aid ? getChat(aid) : undefined;
   if (byId && byId.messages.length > 0) return byId;
@@ -141,7 +146,7 @@ export function useConversationApp() {
           setActiveChatIdState(resume.id);
           chatIdRef.current = resume.id;
         } else {
-          stream.setMessages([]);
+          stream.setMessages((prev) => (prev.length > 0 ? prev : []));
           stream.setTurnCount(statusData[1]);
         }
         stream.setStatus(statusData[0]);
@@ -233,6 +238,11 @@ export function useConversationApp() {
       skipAutosaveUntil.current = Date.now() + 2500;
       await api.resetConversation();
       void api.setActiveChat("");
+      try {
+        localStorage.setItem(SKIP_RESUME_KEY, "1");
+      } catch {
+        /* quota */
+      }
       stream.setMessages([]);
       stream.setTurnCount(0);
       stream.setStatus("Idle");
@@ -319,6 +329,11 @@ export function useConversationApp() {
       const chat = getChat(id);
       if (!chat) return;
       try {
+        localStorage.removeItem(SKIP_RESUME_KEY);
+      } catch {
+        /* quota */
+      }
+      try {
         await api.stopConversation().catch(() => undefined);
         const cfg: InnerState = {
           ai1_config: chat.ai1_config,
@@ -384,6 +399,11 @@ export function useConversationApp() {
       }
       const next = { ...config, seed_prompt: trimmed };
       setFirstDraft(trimmed);
+      try {
+        localStorage.removeItem(SKIP_RESUME_KEY);
+      } catch {
+        /* quota */
+      }
       await pushConfig(next);
       if (missingApiKeys(next)) {
         toast.show(
