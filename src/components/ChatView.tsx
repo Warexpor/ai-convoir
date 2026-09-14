@@ -219,6 +219,9 @@ function ChatView({
               aria-hidden
             />
           )}
+          {!autoScroll && (
+            <div className="jump-latest-space" aria-hidden />
+          )}
           <div ref={bottomRef} />
         </div>
       </div>

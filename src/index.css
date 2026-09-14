@@ -990,9 +990,10 @@ body,
   box-shadow: var(--shine), var(--glow);
   animation: msg-in 0.22s ease both;
 }
-.jump-latest:hover {
-  border-color: var(--line-2);
-  background: var(--elev);
+.jump-latest-space {
+  flex-shrink: 0;
+  height: 44px;
+  pointer-events: none;
 }
 
 /* composer / narrate */
@@ -1942,8 +1943,8 @@ body,
   .composer-row .mono-cap {
     display: none;
   }
-  .composer-hint {
-    display: none;
+  .jump-latest {
+    bottom: 6px;
   }
   .dock-next-name {
     display: none;
