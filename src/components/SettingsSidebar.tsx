@@ -300,7 +300,11 @@ export default function SettingsSidebar({
             <input
               id="go-api-key"
               type="password"
-              autoComplete="off"
+              name="opencode-go-key"
+              autoComplete="new-password"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-form-type="other"
               spellCheck={false}
               value={sharedKey}
               onChange={(e) => setLocal(withSharedKey(local, e.target.value))}

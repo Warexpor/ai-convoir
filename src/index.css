@@ -1117,6 +1117,12 @@ body,
   gap: 6px;
   flex-shrink: 0;
 }
+.dock-actions .btn-primary {
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .dock-wide {
   display: inline-flex;
   align-items: center;
