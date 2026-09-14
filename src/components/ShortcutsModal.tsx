@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useRef } from "react";
 
 const ROWS: { keys: string; action: string }[] = [
   { keys: "Space", action: "Start / pause (auto) or next (step mode)" },
@@ -22,35 +23,8 @@ export default function ShortcutsModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const root = cardRef.current;
-      if (!root) return;
-      const nodes = [
-        ...root.querySelectorAll<HTMLElement>(
-          'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])',
-        ),
-      ];
-      if (nodes.length === 0) return;
-      const first = nodes[0];
-      const last = nodes[nodes.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  useFocusTrap(open, cardRef);
 
   if (!open) return null;
   return (
@@ -66,7 +40,6 @@ export default function ShortcutsModal({
         <div className="modal-head">
           <span id="shortcuts-title">Keyboard shortcuts</span>
           <button
-            ref={closeRef}
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={onClose}

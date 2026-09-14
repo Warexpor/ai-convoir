@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 import type {
   AiConfig,
   InnerState,
@@ -95,7 +96,7 @@ function CharCard({
         >
           {(config.name || "?").slice(0, 2).toUpperCase()}
         </span>
-        <span style={{ flex: 1, textAlign: "left" }}>{config.name}</span>
+        <span className="char-name">{config.name}</span>
         <span className="mono-cap">{open ? "−" : "+"}</span>
       </button>
       {open && (
@@ -305,6 +306,8 @@ export default function SettingsSidebar({
   const [local, setLocal] = useState(config);
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
   const [saved, setSaved] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  useFocusTrap(open, panelRef);
 
   useEffect(() => setLocal(config), [config]);
   useEffect(() => {
@@ -338,10 +341,19 @@ export default function SettingsSidebar({
     });
 
   return (
-    <aside className="settings">
+    <aside
+      className="settings"
+      ref={panelRef}
+      aria-label="Settings"
+      aria-labelledby="settings-title"
+      aria-modal="true"
+      role="dialog"
+    >
       <div className="settings-head">
         <div className="settings-brand">
-          <span className="settings-title">Settings</span>
+          <span className="settings-title" id="settings-title">
+            Settings
+          </span>
           <span className="settings-sub">Agents, endpoints, pace</span>
         </div>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
@@ -378,8 +390,12 @@ export default function SettingsSidebar({
             onChange={(e) =>
               setLocal({ ...local, seed_prompt: e.target.value })
             }
-            placeholder="Default first line for this thread"
+            placeholder="Default first line for a new thread"
           />
+          <p className="field-hint">
+            Used when you begin a thread without typing one. New leaves the
+            composer empty until you write.
+          </p>
         </div>
         <div className="field">
           <label>Thoughts</label>
@@ -417,6 +433,9 @@ export default function SettingsSidebar({
             aria-valuemin={0}
             aria-valuemax={4000}
             aria-valuenow={local.delay_ms}
+            style={{
+              ["--range" as string]: `${(local.delay_ms / 4000) * 100}%`,
+            }}
             onChange={(e) =>
               setLocal({ ...local, delay_ms: parseInt(e.target.value) || 0 })
             }

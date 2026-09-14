@@ -60,13 +60,26 @@ function MessageBubble({
           ) : (
             <RelativeTime at={message.created_at || Date.now()} />
           )}
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm msg-copy"
-            onClick={handleCopy}
-          >
-            {copied ? "Copied" : "Copy"}
-          </button>
+          <div className="msg-actions">
+            <button
+              type="button"
+              className="msg-action"
+              onClick={handleCopy}
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+            {!isStream && onDelete && (
+              <button
+                type="button"
+                className="msg-action msg-action-del"
+                onClick={() =>
+                  onDelete(message.agent, message.turn, message.created_at)
+                }
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
 
         {hasThoughts && (
@@ -102,20 +115,6 @@ function MessageBubble({
           <div className="msg-bubble">
             <MarkdownBody content={message.content} streaming={isStream} />
           </div>
-        )}
-
-        {!isStream && onDelete && (
-          <button
-            type="button"
-            className="msg-del"
-            title="Delete message"
-            aria-label="Delete message"
-            onClick={() =>
-              onDelete(message.agent, message.turn, message.created_at)
-            }
-          >
-            Delete
-          </button>
         )}
       </div>
     </article>

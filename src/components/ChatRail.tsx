@@ -70,9 +70,10 @@ export default function ChatRail({
       </div>
       <div className="rail-scroll">
         {chats.length === 0 && (
-          <p className="rail-empty">
-            Saved threads appear here. Double-click a title to rename.
-          </p>
+          <div className="rail-empty">
+            <span className="mono-cap">Empty</span>
+            <p>Saved threads appear here. Double-click a title to rename.</p>
+          </div>
         )}
         {chats.map((c) => {
           const isConfirming = confirmingId === c.id;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import ControlBar from "./components/ControlBar";
 import SettingsSidebar from "./components/SettingsSidebar";
@@ -7,6 +7,7 @@ import ChatRail from "./components/ChatRail";
 import ShortcutsModal from "./components/ShortcutsModal";
 import { useAppKeyboard } from "./hooks/useAppKeyboard";
 import { useConversationApp } from "./hooks/useConversationApp";
+import { useTokenUsage } from "./hooks/useTokenUsage";
 import {
   PREF_KEYS,
   readBoolPref,
@@ -14,7 +15,7 @@ import {
   writeBoolPref,
   writeZoom,
 } from "./lib/config";
-import { agentLabel, nextAgentId, totalTokenUsage } from "./types";
+import { agentLabel, nextAgentId } from "./types";
 
 function App() {
   const app = useConversationApp();
@@ -107,11 +108,14 @@ function App() {
     },
   });
 
-  const thinkingName =
-    config && stream.status === "Running"
-      ? agentLabel(nextAgentId(config, stream.turnCount), config)
-      : null;
-  const { used: tokenUsed, capacity: tokenCapacity } = totalTokenUsage(
+  const thinkingName = useMemo(
+    () =>
+      config && stream.status === "Running"
+        ? agentLabel(nextAgentId(config, stream.turnCount), config)
+        : null,
+    [config, stream.status, stream.turnCount],
+  );
+  const { used: tokenUsed, capacity: tokenCapacity } = useTokenUsage(
     stream.messages,
     config,
   );
@@ -130,6 +134,10 @@ function App() {
         .join(" ")}
       style={{ zoom }}
     >
+      <a className="skip-link" href="#main">
+        Skip to transcript
+      </a>
+
       {railOpen && (
         <button
           type="button"
@@ -202,7 +210,7 @@ function App() {
         </button>
       </header>
 
-      <div className="main">
+      <div className="main" id="main" tabIndex={-1} role="main">
 
         {toast.message !== null && (
           <div

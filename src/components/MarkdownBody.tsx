@@ -1,8 +1,16 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const REMARK_PLUGINS = [remarkGfm];
+
+const MD_COMPONENTS = {
+  table: ({ children }: { children?: ReactNode }) => (
+    <div className="md-table-wrap">
+      <table>{children}</table>
+    </div>
+  ),
+};
 
 function MarkdownBody({
   content,
@@ -24,7 +32,7 @@ function MarkdownBody({
 
   return (
     <div className="md-body">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MD_COMPONENTS}>
         {content || " "}
       </ReactMarkdown>
     </div>
