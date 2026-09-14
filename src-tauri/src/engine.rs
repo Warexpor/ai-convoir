@@ -269,6 +269,15 @@ pub fn chat_url(base: &str) -> String {
     format!("{}/chat/completions", normalize_base_url(base))
 }
 
+/// OpenAI Responses API (required for muse-spark-* on OpenCode Go).
+pub fn responses_url(base: &str) -> String {
+    format!("{}/responses", normalize_base_url(base))
+}
+
+pub fn uses_responses_api(model: &str) -> bool {
+    model.starts_with("muse-spark")
+}
+
 /// What `start_conversation` should do given current status + mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartAction {

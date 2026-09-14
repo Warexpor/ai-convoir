@@ -160,7 +160,10 @@ export function useConversationApp() {
           };
         }
         if (cfg || resume) await pushConfig(merged);
-        else setConfig(merged);
+        else {
+          setConfig(merged);
+          await api.updateConfig(merged);
+        }
         if (cancelled) return;
         if (!resume) {
           const skipped =

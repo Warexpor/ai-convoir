@@ -605,7 +605,20 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     let narr_ref = narration.as_deref();
 
     // Prefer SSE streaming; falls back to non-stream if empty
-    let result = llm::stream_llm(&config, agent, &messages, narr_ref, turn_count, app_handle).await;
+    let result = llm::stream_llm(
+        &config,
+        agent,
+        &messages,
+        narr_ref,
+        turn_count,
+        app_handle,
+        if chat_id.is_empty() {
+            "ai-conversation"
+        } else {
+            chat_id.as_str()
+        },
+    )
+    .await;
 
     match result {
         Ok((content, reasoning)) => {

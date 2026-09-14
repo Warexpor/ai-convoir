@@ -1,4 +1,5 @@
 import type { AiConfig, InnerState } from "../types";
+import { MUSE_SPARK_13_CONTRIBUTOR, OPENCODE_GO_BASE } from "../types";
 
 const CONFIG_KEY = "ai-conversation-config-v2";
 const LEGACY_KEY = "ai-conversation-config-v1";
@@ -16,8 +17,8 @@ function defaultAgent(
   return {
     name,
     system_prompt,
-    model: "gpt-4o-mini",
-    api_base_url: "https://api.openai.com/v1",
+    model: MUSE_SPARK_13_CONTRIBUTOR,
+    api_base_url: OPENCODE_GO_BASE,
     api_key: "",
     temperature: 0.85,
     max_tokens: 2048,
@@ -56,6 +57,8 @@ function patchAgent(base: AiConfig, patch?: Partial<AiConfig>): AiConfig {
   return {
     ...merged,
     name: merged.name || base.name || "Agent",
+    model: MUSE_SPARK_13_CONTRIBUTOR,
+    api_base_url: OPENCODE_GO_BASE,
     reasoning_effort: merged.reasoning_effort || "none",
     response_length: merged.response_length || "normal",
     temperature: merged.temperature ?? 0.85,

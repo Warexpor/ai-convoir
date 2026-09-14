@@ -45,21 +45,22 @@ function CharCard({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen ?? false);
-  const [models, setModels] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const [profileName, setProfileName] = useState("My endpoint");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const loadModels = async () => {
     setLoading(true);
     setErr(null);
+    setOkMsg(null);
     try {
-      const ids = await fetchModels({
+      await fetchModels({
         baseUrl: config.api_base_url,
         apiKey: config.api_key,
       });
-      setModels(ids);
+      setOkMsg("Key accepted");
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -178,29 +179,29 @@ function CharCard({
           </div>
           <div className="field">
             <label>Model</label>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                style={{ flex: 1 }}
-                value={config.model}
-                onChange={(e) => onChange({ ...config, model: e.target.value })}
-                list={`m-${config.name}`}
-              />
+            <input
+              value={config.model}
+              readOnly
+              aria-readonly="true"
+            />
+            <p className="field-hint">
+              Locked to Muse Spark 1.3 contributor on OpenCode Go.
+            </p>
+            <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={loadModels}
-                disabled={loading}
+                disabled={loading || !config.api_key}
               >
-                {loading ? "…" : "Fetch"}
+                {loading ? "…" : "Verify key"}
               </button>
+              {okMsg && (
+                <span className="mono-cap" style={{ color: "var(--ok)" }}>
+                  {okMsg}
+                </span>
+              )}
             </div>
-            {models.length > 0 && (
-              <datalist id={`m-${config.name}`}>
-                {models.map((id) => (
-                  <option key={id} value={id} />
-                ))}
-              </datalist>
-            )}
             {err && (
               <p style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>
                 {err}
@@ -354,7 +355,7 @@ export default function SettingsSidebar({
           <span className="settings-title" id="settings-title">
             Settings
           </span>
-          <span className="settings-sub">Agents, endpoints, pace</span>
+          <span className="settings-sub">OpenCode Go · Muse Spark 1.3</span>
         </div>
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
           Close

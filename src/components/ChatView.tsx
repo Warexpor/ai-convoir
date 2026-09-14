@@ -127,7 +127,8 @@ function ChatView({
           <span className="mono-cap empty-kicker">Conversation</span>
           <h2>Start a thread</h2>
           <p>
-            Two or three models take turns on one transcript. Set endpoints in
+            Two or three models take turns on one transcript. Endpoints default
+            to OpenCode Go with Muse Spark 1.3 contributor. Add your API key in
             Settings, then write the first line.
             {hasSavedChats ? " Open a saved thread from Chats." : ""}
           </p>

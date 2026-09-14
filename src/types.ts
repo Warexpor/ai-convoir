@@ -62,6 +62,7 @@ export interface StreamChunk {
 
 export const OPENCODE_ZEN_BASE = "https://opencode.ai/zen/v1";
 export const OPENCODE_GO_BASE = "https://opencode.ai/zen/go/v1";
+export const MUSE_SPARK_13_CONTRIBUTOR = "muse-spark-1.3-contributor";
 
 export function relativeTime(epochMs: number): string {
   const diff = Date.now() - epochMs;
@@ -149,6 +150,8 @@ export const MODEL_CONTEXTS: Record<string, number> = {
   "gemini-2.0-flash": 1000000,
   "gemini-1.5-pro": 2000000,
   "gemini-1.5-flash": 1000000,
+  "muse-spark-1.3-contributor": 128000,
+  "muse-spark-1.2-contributor": 128000,
   "deepseek-chat": 128000,
   "deepseek-reasoner": 128000,
 };
