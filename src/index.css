@@ -195,30 +195,6 @@ body,
   }
 }
 
-@media (max-width: 860px) {
-  .dock {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px;
-    padding: 8px 12px 10px;
-  }
-  .dock-lead {
-    justify-content: space-between;
-    flex: none;
-    width: 100%;
-  }
-  .dock-actions {
-    width: 100%;
-  }
-  .dock-wide {
-    display: none;
-  }
-  .dock-narrow {
-    display: block;
-    margin-left: auto;
-  }
-}
-
 @media (max-width: 900px) {
   .app,
   .app.rail-closed,
@@ -1057,6 +1033,31 @@ body,
 .dock-menu .btn {
   width: 100%;
   justify-content: flex-start;
+}
+
+@media (max-width: 860px) {
+  .dock {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 12px 10px;
+  }
+  .dock-lead {
+    justify-content: space-between;
+    flex: none;
+    width: 100%;
+  }
+  .dock-actions {
+    width: 100%;
+  }
+  .dock-wide {
+    display: none;
+  }
+  .dock-narrow {
+    display: block;
+    margin-left: auto;
+  }
 }
 .dock-stat {
   font-size: 11px;
