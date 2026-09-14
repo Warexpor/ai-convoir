@@ -38,7 +38,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(() =>
-    readBoolPref(PREF_KEYS.railOpen, true),
+    readBoolPref(PREF_KEYS.railOpen, false),
   );
   const [showThoughtsUi, setShowThoughtsUi] = useState(() =>
     readBoolPref(PREF_KEYS.showThoughts, true),

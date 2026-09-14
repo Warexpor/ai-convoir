@@ -14,7 +14,7 @@
 ## Requirements
 
 - [Node.js](https://nodejs.org/) 18+
-- [Rust](https://rustup.rs/) (stable)
+- [Rust](https://rustup.rs/) 1.88+ (stable)
 - Tauri system deps for your OS ([guide](https://v2.tauri.app/start/prerequisites/))
 
 On **Linux** you also need WebKitGTK 4.1 (Debian/Ubuntu):

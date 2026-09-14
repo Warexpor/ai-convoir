@@ -149,6 +149,8 @@ fn parse_responses_event(event: &str, data: &str) -> Vec<StreamPiece> {
         _ => vec![],
     }
 }
+
+fn emit_chunk(
     app_handle: &AppHandle,
     agent: &str,
     turn: u32,
