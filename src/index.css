@@ -774,9 +774,10 @@ body,
 }
 .btn-primary:disabled {
   opacity: 1;
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: transparent;
   background-image: none;
-  color: var(--mute);
+  color: var(--faint);
+  border-color: var(--line);
   box-shadow: none;
 }
 .btn-chrome {
@@ -1980,7 +1981,7 @@ body,
 .modal-card {
   width: 100%;
   max-width: 420px;
-  max-height: min(80vh, 560px);
+  max-height: min(84vh, 640px);
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -2011,7 +2012,7 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 8px;
+  padding: 8px 8px;
   border-bottom: var(--hairline);
   font-size: 13px;
   color: var(--text-2);
