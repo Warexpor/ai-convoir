@@ -1,5 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#1c1c1c"/>
-  <!-- Two vertical bars interrupted by a diagonal slash — same geometry as main -->
-  <path fill="#ececec" fill-rule="evenodd" d="M8 5h6v9.2L7.2 27H2.8l6.6-11.5V5zm10 0h6v10.5L30 27h-4.4L18 15.2V5zM3.5 26.5 28.5 5.5 29.5 6.7 4.5 27.7Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <rect width="1024" height="1024" fill="#121212"/>
+  <!-- Traced from assets/icon-master.png — same mark as README / public/logo.png -->
+  <g transform="translate(0 1024) scale(0.1 -0.1)" fill="#d6d6d6">
+    <path d="M3555 8648 c-4 -27 -1 -3825 4 -3837 2 -6 37 19 446 309 215 152 425 301 467 331 l77 54 1 1588 0 1587 -495 0 -494 0 -6 -32z"/>
+    <path d="M5330 7233 l0 -1446 -259 -261 c-500 -505 -1076 -1139 -1896 -2087 -457 -529 -796 -931 -790 -937 3 -4 240 174 667 499 638 486 887 678 1038 797 l175 138 3 -1188 2 -1188 500 0 500 0 0 1656 0 1656 153 166 c371 404 752 833 1253 1412 84 96 212 245 286 331 357 411 773 909 748 894 -45 -27 -933 -698 -1235 -933 l-130 -101 -3 1019 -2 1020 -505 0 -505 0 0 -1447z"/>
+    <path d="M6525 5109 c-236 -131 -458 -254 -492 -272 l-63 -32 0 -1612 c0 -1073 3 -1613 10 -1613 6 0 231 110 500 245 l490 245 0 1640 c0 902 -3 1640 -7 1639 -5 0 -201 -108 -438 -240z"/>
+  </g>
 </svg>

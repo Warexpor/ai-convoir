@@ -1,4 +1,4 @@
-/** In-app mark + chrome icons. The slash geometry matches main’s icon-master. */
+/** In-app mark + chrome icons. The mark is the README PNG, not a reconstructed path. */
 
 export function SlashMark({
   className,
@@ -8,20 +8,14 @@ export function SlashMark({
   size?: number;
 }) {
   return (
-    <svg
+    <img
       className={className}
+      src="/logo-mark.png"
       width={size}
       height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      aria-hidden
-    >
-      <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M8 5h6v9.2L7.2 27H2.8l6.6-11.5V5zm10 0h6v10.5L30 27h-4.4L18 15.2V5zM3.5 26.5 28.5 5.5 29.5 6.7 4.5 27.7Z"
-      />
-    </svg>
+      alt=""
+      draggable={false}
+    />
   );
 }
 

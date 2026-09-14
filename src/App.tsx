@@ -177,12 +177,21 @@ function App() {
           onDelete={app.handleDeleteChat}
           onClose={() => setRailOpen(false)}
           onRename={refreshChats}
+          agentNames={agentNames}
+          mode={config?.mode ?? "step"}
+          needsKey={needsKey}
+          onUseStarter={(text) => {
+            setFirstDraft(text);
+            if (window.matchMedia("(max-width: 900px)").matches) {
+              setRailOpen(false);
+            }
+          }}
         />
       )}
 
       <header className="topbar">
         <div className="brand">
-          <SlashMark className="brand-logo" size={22} />
+          <SlashMark className="brand-logo" size={24} />
           <div className="brand-text">
             <p className="brand-mark">AI Conversation</p>
             <span className="topbar-sub">

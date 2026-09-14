@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
+import { agentInitials, type ConversationMode } from "../types";
 import RelativeTime from "./RelativeTime";
+import { SlashMark } from "./Marks";
 
 interface Props {
   chats: SavedChat[];
@@ -11,6 +13,33 @@ interface Props {
   onDelete: (id: string) => void;
   onClose: () => void;
   onRename?: () => void;
+  agentNames?: string[];
+  mode?: ConversationMode;
+  needsKey?: boolean;
+  onUseStarter?: (text: string) => void;
+}
+
+const STARTERS: { label: string; text: string }[] = [
+  {
+    label: "Diner at 3am",
+    text: "Two friends wake up in a diner at 3am. The jukebox only plays songs that already happened.",
+  },
+  {
+    label: "Lobby critics",
+    text: "Two theater critics argue in the lobby about a play that has not started.",
+  },
+  {
+    label: "Night train",
+    text: "A quiet night train. Two strangers share a window and a secret.",
+  },
+];
+
+function chatVoices(c: SavedChat): string[] {
+  const names =
+    c.bot_count >= 3
+      ? [c.ai1_config.name, c.ai2_config.name, c.ai3_config.name]
+      : [c.ai1_config.name, c.ai2_config.name];
+  return names.map((n) => n || "Voice");
 }
 
 export default function ChatRail({
@@ -21,10 +50,15 @@ export default function ChatRail({
   onDelete,
   onClose,
   onRename,
+  agentNames = ["Ava", "Jules"],
+  mode = "step",
+  needsKey = false,
+  onUseStarter,
 }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
+  const [query, setQuery] = useState("");
   const renameRef = useRef<HTMLInputElement>(null);
 
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
@@ -51,6 +85,19 @@ export default function ChatRail({
     setRenameText("");
   }, []);
 
+  const q = query.trim().toLowerCase();
+  const shown = useMemo(
+    () =>
+      q
+        ? chats.filter((c) => c.title.toLowerCase().includes(q))
+        : chats,
+    [chats, q],
+  );
+
+  const voices = agentNames.filter(Boolean);
+  const threadLabel =
+    chats.length === 1 ? "1 thread" : `${chats.length} threads`;
+
   return (
     <aside className="rail" aria-label="Saved chats">
       <div className="rail-head">
@@ -68,16 +115,53 @@ export default function ChatRail({
           Hide
         </button>
       </div>
+
+      <div className="rail-tools">
+        <label className="rail-search">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search threads"
+            aria-label="Search threads"
+          />
+        </label>
+      </div>
+
       <div className="rail-scroll">
         {chats.length === 0 && (
           <div className="rail-empty">
-            <span className="mono-cap">Empty</span>
-            <p>Saved threads land here. Double-click a title to rename.</p>
+            <SlashMark className="rail-empty-mark" size={36} />
+            <span className="mono-cap">No threads yet</span>
+            <p>Saved ones land here. Double-click a title to rename.</p>
+            {onUseStarter && (
+              <div className="rail-starters">
+                <span className="mono-cap">Try a first line</span>
+                {STARTERS.map((s) => (
+                  <button
+                    key={s.label}
+                    type="button"
+                    className="rail-starter"
+                    onClick={() => onUseStarter(s.text)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
-        {chats.map((c) => {
+        {chats.length > 0 && shown.length === 0 && (
+          <div className="rail-empty">
+            <span className="mono-cap">No matches</span>
+            <p>Nothing titled like that.</p>
+          </div>
+        )}
+        {shown.length > 0 && <p className="rail-section">Recent</p>}
+        {shown.map((c) => {
           const isConfirming = confirmingId === c.id;
           const isRenaming = renamingId === c.id;
+          const names = chatVoices(c);
 
           return (
             <div
@@ -118,7 +202,16 @@ export default function ChatRail({
                 >
                   <div className="chat-item-title">{c.title}</div>
                   <div className="chat-item-meta">
-                    {c.messages.length} msgs ·{" "}
+                    <span className="chat-item-voices" aria-hidden>
+                      {names.map((n, i) => (
+                        <span key={`${n}-${i}`} className="chat-voice-dot">
+                          {agentInitials(n)}
+                        </span>
+                      ))}
+                    </span>
+                    <span>
+                      {c.messages.length} · {c.mode === "auto" ? "Auto" : "Step"}
+                    </span>
                     <RelativeTime at={c.updated_at} className="" />
                   </div>
                 </button>
@@ -166,6 +259,23 @@ export default function ChatRail({
             </div>
           );
         })}
+      </div>
+
+      <div className="rail-foot">
+        <div className="rail-foot-voices">
+          {voices.map((n) => (
+            <span key={n} className="rail-pill">
+              {n}
+            </span>
+          ))}
+        </div>
+        <p className="rail-foot-line">
+          OpenCode Go · {mode === "auto" ? "Auto" : "Step"}
+        </p>
+        <p className="rail-foot-line rail-foot-mute">
+          {needsKey ? "Key needed" : threadLabel}
+          <span> · B hides this</span>
+        </p>
       </div>
     </aside>
   );

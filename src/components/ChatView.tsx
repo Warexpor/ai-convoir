@@ -129,7 +129,7 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-hero">
-          <SlashMark className="empty-logo" size={44} />
+          <SlashMark className="empty-logo" size={48} />
           <div className="empty-badge">OpenCode Go</div>
           <h2>Start a thread</h2>
           <p>
