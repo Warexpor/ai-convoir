@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { IconArrow, IconStop } from "./Marks";
 import type { AppStatus, ConversationMode } from "../types";
 
 interface Props {
@@ -186,11 +187,12 @@ function ControlBar({
             onClick={() => onOpenSettings?.()}
           >
             Add key
+            <IconArrow />
           </button>
         ) : isStep ? (
           <button
             type="button"
-            className="btn btn-primary"
+            className="btn btn-primary btn-next"
             onClick={onStep}
             disabled={running || !hasMessages}
             title={
@@ -198,23 +200,24 @@ function ControlBar({
             }
           >
             Next
-            {nextName ? (
-              <span className="dock-next-name"> · {nextName}</span>
-            ) : null}
+            {nextName ? <span className="btn-next-who">{nextName}</span> : null}
+            <IconArrow />
           </button>
         ) : (
           <button type="button" className="btn btn-primary" onClick={onToggle}>
             {running ? "Pause" : status === "Paused" ? "Resume" : "Start"}
+            {!running && <IconArrow />}
           </button>
         )}
 
         <button
           type="button"
-          className={`btn ${status === "Idle" ? "btn-ghost" : "btn-danger"}`}
+          className={`btn btn-stop ${status === "Idle" ? "btn-ghost" : "btn-danger"}`}
           onClick={onStop}
           disabled={status === "Idle"}
           title="Stop generation, keep chat"
         >
+          <IconStop />
           Stop
         </button>
 
@@ -234,7 +237,7 @@ function ControlBar({
         <div className="dock-narrow" ref={moreRef}>
           <button
             type="button"
-            className="btn btn-ghost"
+            className="btn btn-chrome"
             aria-haspopup="menu"
             aria-expanded={moreOpen}
             onClick={() => setMoreOpen((o) => !o)}

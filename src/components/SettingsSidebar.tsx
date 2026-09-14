@@ -269,7 +269,7 @@ export default function SettingsSidebar({
         </div>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="btn btn-chrome btn-sm"
           onClick={() => {
             const n = botCount;
             onSave(

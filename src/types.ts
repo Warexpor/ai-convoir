@@ -96,13 +96,13 @@ export function agentAccent(agent: string): string {
     case "ai1":
       return "#e8e8e8";
     case "ai2":
-      return "#c8c9ce";
+      return "#c4c4c4";
     case "ai3":
-      return "#8b8e96";
+      return "#8a8a8a";
     case "seed":
-      return "#7d8187";
+      return "#7a7a7a";
     default:
-      return "#7d8187";
+      return "#7a7a7a";
   }
 }
 

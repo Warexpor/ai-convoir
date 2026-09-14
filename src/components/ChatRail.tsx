@@ -60,7 +60,7 @@ export default function ChatRail({
         </button>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="btn btn-chrome btn-sm"
           onClick={onClose}
           title="Hide chats panel"
           aria-label="Hide chats panel"

@@ -90,7 +90,7 @@ Chats persist in a local SQLite database (app data dir). Browser Vite preview ca
 
 ## Stack
 
-Tauri 2 · React 18 · TypeScript · Tailwind · Rust (`reqwest` SSE, `rusqlite`)
+Tauri 2 · React 19 · TypeScript · Tailwind · Rust (`reqwest` SSE, `rusqlite`)
 
 ## License
 

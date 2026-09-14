@@ -41,7 +41,7 @@ export default function ShortcutsModal({
           <span id="shortcuts-title">Keyboard shortcuts</span>
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-chrome btn-sm"
             onClick={onClose}
           >
             Close

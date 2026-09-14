@@ -24,11 +24,11 @@ def load_master() -> Image.Image:
 
 
 def render(size: int, master: Image.Image) -> Image.Image:
-    """Resize master to exact size on an opaque black square."""
+    """Resize master to exact size on an opaque Cursor-gray square."""
     # Near-neighbor for tiny sizes can look crunchy; LANCZOS is better overall.
     resized = master.resize((size, size), Image.Resampling.LANCZOS)
-    # Force opaque black behind any soft AA fringes
-    bg = Image.new("RGBA", (size, size), (0, 0, 0, 255))
+    # Match the in-app canvas (#1c1c1c), not pitch black.
+    bg = Image.new("RGBA", (size, size), (28, 28, 28, 255))
     bg.alpha_composite(resized)
     # Crush near-black AA to pure black / near-white to white for crisp B&W
     pixels = bg.load()
@@ -38,13 +38,12 @@ def render(size: int, master: Image.Image) -> Image.Image:
             r, g, b, a = pixels[x, y]
             lum = (r + g + b) / 3
             if lum < 40:
-                pixels[x, y] = (0, 0, 0, 255)
+                pixels[x, y] = (28, 28, 28, 255)
             elif lum > 200:
-                pixels[x, y] = (255, 255, 255, 255)
+                pixels[x, y] = (236, 236, 236, 255)
             else:
                 # Mid tones → hard threshold for tiny-icon clarity
-                v = 255 if lum >= 110 else 0
-                pixels[x, y] = (v, v, v, 255)
+                pixels[x, y] = (236, 236, 236, 255) if lum >= 110 else (28, 28, 28, 255)
     return bg
 
 

@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#191919"/>
-  <path fill="#ececec" fill-rule="evenodd" d="M9 5h5.5v22H9zm8.5 0H23v22h-5.5zM2.8 24.6L25.8 6.8l1.7 2.1L4.5 26.7z"/>
+  <rect width="32" height="32" rx="7" fill="#1c1c1c"/>
+  <!-- Two vertical bars interrupted by a diagonal slash — same geometry as main -->
+  <path fill="#ececec" fill-rule="evenodd" d="M8 5h6v9.2L7.2 27H2.8l6.6-11.5V5zm10 0h6v10.5L30 27h-4.4L18 15.2V5zM3.5 26.5 28.5 5.5 29.5 6.7 4.5 27.7Z"/>
 </svg>

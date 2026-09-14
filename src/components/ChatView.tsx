@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { IconArrow, SlashMark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import type { InnerState, Message } from "../types";
 
@@ -128,13 +129,8 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-hero">
-          <img
-            className="empty-logo"
-            src="/logo.png"
-            width={40}
-            height={40}
-            alt=""
-          />
+          <SlashMark className="empty-logo" size={44} />
+          <div className="empty-badge">OpenCode Go</div>
           <h2>Start a thread</h2>
           <p>
             {roster} take turns.{" "}
@@ -143,7 +139,6 @@ function ChatView({
               : "Write the first line and press Begin."}
             {hasSavedChats ? " Saved threads live in Chats." : ""}
           </p>
-          {needsKey && <div className="empty-badge">Key needed</div>}
           <div className="empty-box">
             <textarea
               value={firstDraft}
@@ -160,6 +155,10 @@ function ChatView({
               }}
             />
             <div className="empty-actions">
+              <span className="empty-kbd" aria-hidden>
+                <kbd>Ctrl</kbd>
+                <kbd>Enter</kbd>
+              </span>
               {needsKey ? (
                 <button
                   type="button"
@@ -167,6 +166,7 @@ function ChatView({
                   onClick={() => onOpenSettings?.()}
                 >
                   Add your key
+                  <IconArrow />
                 </button>
               ) : (
                 <button
@@ -176,6 +176,7 @@ function ChatView({
                   onClick={() => onStartFirst?.(firstDraft)}
                 >
                   Begin
+                  <IconArrow />
                 </button>
               )}
             </div>

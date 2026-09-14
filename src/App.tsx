@@ -16,6 +16,7 @@ import {
   writeBoolPref,
   writeZoom,
 } from "./lib/config";
+import { IconChats, IconHelp, IconSliders, SlashMark } from "./components/Marks";
 import { agentLabel, nextAgentId } from "./types";
 
 function App() {
@@ -181,13 +182,7 @@ function App() {
 
       <header className="topbar">
         <div className="brand">
-          <img
-            className="brand-logo"
-            src="/logo.png"
-            width={20}
-            height={20}
-            alt=""
-          />
+          <SlashMark className="brand-logo" size={22} />
           <div className="brand-text">
             <p className="brand-mark">AI Conversation</p>
             <span className="topbar-sub">
@@ -200,30 +195,32 @@ function App() {
         <div className="spacer" />
         <button
           type="button"
-          className="btn btn-ghost"
+          className="btn btn-chrome"
           onClick={() => setRailOpen((p) => !p)}
           title="Toggle chats (B)"
           aria-pressed={railOpen}
         >
+          <IconChats />
           Chats
         </button>
         <button
           type="button"
-          className="btn btn-ghost"
+          className="btn btn-chrome"
           onClick={() => setSettingsOpen((p) => !p)}
           title="Toggle settings (S)"
           aria-pressed={settingsOpen}
         >
+          <IconSliders />
           Settings
         </button>
         <button
           type="button"
-          className="btn btn-ghost btn-icon"
+          className="btn btn-chrome btn-icon"
           onClick={() => setHelpOpen(true)}
           title="Shortcuts (?)"
           aria-label="Keyboard shortcuts"
         >
-          ?
+          <IconHelp />
         </button>
       </header>
 
