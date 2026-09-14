@@ -6,7 +6,7 @@ export default {
         xai: {
           canvas: "#0a0a0a",
           "canvas-soft": "#141414",
-          "canvas-card": "#121212",
+          "canvas-card": "#1c1c1c",
           ink: "#f0f0fa",
           body: "#dadbdf",
           mute: "#7d8187",

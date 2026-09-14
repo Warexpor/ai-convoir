@@ -5,19 +5,19 @@
    Not pitch black. No violet wash. Orange only for live. */
 
 :root {
-  --bg: #121212;
-  --bg-soft: #161616;
-  --panel: rgba(28, 28, 28, 0.78);
-  --panel-2: rgba(34, 34, 34, 0.62);
-  --elev: rgba(40, 40, 40, 0.78);
-  --line: rgba(255, 255, 255, 0.07);
-  --line-2: rgba(255, 255, 255, 0.13);
-  --text: #d4d4d4;
-  --text-2: #b3b3b3;
-  --mute: #767676;
-  --faint: #525252;
-  --accent: #dcdcdc;
-  --accent-2: #e8e8e8;
+  --bg: #1c1c1c;
+  --bg-soft: #222222;
+  --panel: rgba(40, 40, 40, 0.72);
+  --panel-2: rgba(48, 48, 48, 0.58);
+  --elev: rgba(52, 52, 52, 0.78);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --text: #e4e4e4;
+  --text-2: #c6c6c6;
+  --mute: #8a8a8a;
+  --faint: #626262;
+  --accent: #ececec;
+  --accent-2: #f3f3f3;
   --live: #f54e00;
   --danger: #ff5f57;
   --ok: #28c840;
@@ -28,11 +28,11 @@
   --font-read: "Inter", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --hairline: 1px solid var(--line);
-  --glass: rgba(255, 255, 255, 0.055);
-  --glass-strong: rgba(22, 22, 22, 0.82);
-  --blur: blur(40px) saturate(140%);
-  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  --glow: 0 16px 48px rgba(0, 0, 0, 0.38);
+  --glass: rgba(255, 255, 255, 0.09);
+  --glass-strong: rgba(38, 38, 38, 0.74);
+  --blur: blur(40px) saturate(160%);
+  --shine: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  --glow: 0 16px 48px rgba(0, 0, 0, 0.28);
 }
 
 @layer base {
@@ -125,8 +125,8 @@ body,
     "rail main";
   background:
     radial-gradient(
-      820px 400px at 50% -20%,
-      rgba(255, 255, 255, 0.04),
+      980px 460px at 50% -20%,
+      rgba(255, 255, 255, 0.07),
       transparent 62%
     ),
     var(--bg);
@@ -722,19 +722,19 @@ body,
   cursor: not-allowed;
 }
 .btn-primary {
-  background: linear-gradient(180deg, #e6e6e6 0%, #c8c8c8 100%);
-  color: #121212;
+  background: linear-gradient(180deg, #f2f2f2 0%, #d8d8d8 100%);
+  color: #1c1c1c;
   border-color: transparent;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    0 1px 2px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 1px 2px rgba(0, 0, 0, 0.22);
 }
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(180deg, #eeeeee 0%, #d4d4d4 100%);
+  background: linear-gradient(180deg, #fafafa 0%, #e8e8e8 100%);
   border-color: transparent;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 6px 18px rgba(0, 0, 0, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 6px 18px rgba(0, 0, 0, 0.22);
 }
 .btn-chrome {
   height: 32px;
@@ -856,9 +856,9 @@ body,
   color: var(--text-2);
 }
 .seg button.on {
-  background: linear-gradient(180deg, #e6e6e6 0%, #c8c8c8 100%);
-  color: #121212;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  background: linear-gradient(180deg, #f2f2f2 0%, #d8d8d8 100%);
+  color: #1c1c1c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 /* chat stream */
@@ -1044,15 +1044,15 @@ body,
   border-radius: 26px;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    rgba(255, 255, 255, 0.04) 100%
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.055) 100%
   );
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  backdrop-filter: blur(44px) saturate(150%);
-  -webkit-backdrop-filter: blur(44px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(44px) saturate(170%);
+  -webkit-backdrop-filter: blur(44px) saturate(170%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    0 28px 70px rgba(0, 0, 0, 0.38);
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 28px 70px rgba(0, 0, 0, 0.28);
   animation: hero-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @keyframes hero-in {
@@ -2024,7 +2024,7 @@ body,
   .empty-box,
   .toast,
   .modal-card {
-    background: #121212;
+    background: #1c1c1c;
   }
 }
 
