@@ -248,7 +248,7 @@ export function useConversationApp() {
       stream.setTurnCount(0);
       stream.setStatus("Idle");
       setNarration("");
-      setFirstDraft("");
+      setFirstDraft(configRef.current?.seed_prompt || "");
       setActiveChatId(null);
       setActiveChatIdState(null);
       chatIdRef.current = null;
@@ -387,6 +387,7 @@ export function useConversationApp() {
         stream.setTurnCount(0);
         stream.setStatus("Idle");
         setNarration("");
+        setFirstDraft(configRef.current?.seed_prompt || "");
         void api.resetConversation();
       }
       refreshChats();
@@ -403,30 +404,37 @@ export function useConversationApp() {
         toast.show("Write a first line.", 2200);
         return;
       }
-      const next = { ...config, seed_prompt: trimmed };
       setFirstDraft(trimmed);
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
       } catch {
         /* quota */
       }
-      await pushConfig(next);
-      if (missingApiKeys(next)) {
+      if (missingApiKeys(config)) {
         toast.show(
           "Add your OpenCode Go key in Settings, then press Begin.",
           6000,
         );
         return { needSettings: true as const };
       }
+      // Inject the opening line for this run only — do not persist it as
+      // Settings → Default first line.
       try {
-        if (next.mode === "step") await api.stepConversation();
+        await api.updateConfig({ ...config, seed_prompt: trimmed });
+        if (config.mode === "step") await api.stepConversation();
         else await api.startConversation();
       } catch (e) {
         toast.show(String(e));
+      } finally {
+        try {
+          await api.updateConfig(config);
+        } catch {
+          /* restore is best-effort */
+        }
       }
       return { needSettings: false as const };
     },
-    [config, pushConfig, toast],
+    [config, toast],
   );
 
   return {

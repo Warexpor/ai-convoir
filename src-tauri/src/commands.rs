@@ -57,7 +57,7 @@ pub async fn start_conversation(
             }
             StartAction::RejectStepPaused => {
                 return Err(
-                    "Step mode — press Step to advance one turn, or switch to Auto and Start"
+                    "Step mode — press Next to advance one turn, or switch to Auto and Start"
                         .into(),
                 );
             }
@@ -110,9 +110,12 @@ pub async fn start_conversation(
     Ok(())
 }
 
-fn inject_seed_if_any(inner: &mut InnerState) {
+pub(crate) fn inject_seed_if_any(inner: &mut InnerState) {
     let seed = inner.seed_prompt.trim().to_string();
     if seed.is_empty() {
+        return;
+    }
+    if inner.messages.iter().any(|m| m.agent == "seed") {
         return;
     }
     let msg = Message {
@@ -214,6 +217,10 @@ pub async fn reset_conversation(
         "status-update",
         serde_json::json!({ "status": "Idle", "turn": 0 }),
     );
+    let _ = app_handle.emit(
+        "stream-abort",
+        serde_json::json!({ "agent": "", "turn": 0 }),
+    );
     Ok(())
 }
 
@@ -263,7 +270,12 @@ pub async fn load_transcript(
 
     // Persist loaded messages to DB (async, best-effort)
     if !chat_id.is_empty() {
-        let db_path = state_arc.db_path.lock().ok().map(|g| g.clone()).unwrap_or_default();
+        let db_path = state_arc
+            .db_path
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         if !db_path.is_empty() {
             let msgs = messages.clone();
             let cid = chat_id.clone();
@@ -284,6 +296,10 @@ pub async fn load_transcript(
     let _ = app_handle.emit(
         "status-update",
         serde_json::json!({ "status": "Idle", "turn": turn_count }),
+    );
+    let _ = app_handle.emit(
+        "stream-abort",
+        serde_json::json!({ "agent": "", "turn": 0 }),
     );
     // clear reset so future runs work (if no loop was active)
     drop(inner);
@@ -412,11 +428,7 @@ fn with_db<T>(
     state: &Arc<AppState>,
     f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
 ) -> Result<T, String> {
-    let db_path = state
-        .db_path
-        .lock()
-        .map_err(|e| e.to_string())?
-        .clone();
+    let db_path = state.db_path.lock().map_err(|e| e.to_string())?.clone();
     if db_path.is_empty() {
         return Err("Database not ready".into());
     }
@@ -446,7 +458,9 @@ pub async fn upsert_saved_chat(
         .unwrap_or_default();
     let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
     let arc: &Arc<AppState> = &state;
-    with_db(arc, |conn| db::upsert_saved_chat(conn, &chat_id, updated_at, &json, &messages))
+    with_db(arc, |conn| {
+        db::upsert_saved_chat(conn, &chat_id, updated_at, &json, &messages)
+    })
 }
 
 /// List saved chats from SQLite (newest first). Falls back to empty if DB missing.
@@ -525,9 +539,9 @@ pub async fn delete_messages(
     // Remove from in-memory state
     {
         let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
-        inner.messages.retain(|m| {
-            !(m.agent == agent && m.turn == turn && m.created_at == created_at)
-        });
+        inner
+            .messages
+            .retain(|m| !(m.agent == agent && m.turn == turn && m.created_at == created_at));
     }
 
     // Remove from DB (best-effort)
@@ -536,7 +550,12 @@ pub async fn delete_messages(
         inner.active_chat_id.clone()
     };
     if !chat_id.is_empty() {
-        let db_path = arc.db_path.lock().ok().map(|g| g.clone()).unwrap_or_default();
+        let db_path = arc
+            .db_path
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default();
         if !db_path.is_empty() {
             let cid = chat_id.clone();
             let a = agent.clone();
@@ -549,11 +568,14 @@ pub async fn delete_messages(
     }
 
     // Notify FE
-    let _ = app_handle.emit("message-deleted", serde_json::json!({
-        "agent": agent,
-        "turn": turn,
-        "created_at": created_at,
-    }));
+    let _ = app_handle.emit(
+        "message-deleted",
+        serde_json::json!({
+            "agent": agent,
+            "turn": turn,
+            "created_at": created_at,
+        }),
+    );
 
     Ok(())
 }
@@ -571,12 +593,12 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         return false;
     }
 
-    let (bot_count, turn_count, max_turns, config, messages, narration, chat_id) = {
+    let (bot_count, turn_count, max_turns, mode, config, messages, narration, chat_id) = {
         let mut inner = match state.inner.lock() {
             Ok(i) => i,
             Err(_) => return false,
         };
-        if inner.turn_count >= inner.max_turns {
+        if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
             return false;
         }
         let agent = next_speaker(inner.bot_count, inner.turn_count);
@@ -603,6 +625,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             inner.bot_count,
             inner.turn_count,
             inner.max_turns,
+            inner.mode.clone(),
             cfg,
             context_msgs, // ← only send what fits in context window
             narration,
@@ -610,7 +633,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         )
     };
 
-    if turn_count >= max_turns {
+    if mode != ConversationMode::Step && turn_count >= max_turns {
         return false;
     }
 
@@ -630,6 +653,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         } else {
             chat_id.as_str()
         },
+        &state.reset_flag,
     )
     .await;
 
@@ -650,7 +674,12 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                 if !state.reset_flag.load(Ordering::Relaxed) {
                     // Persist to database (non-blocking, best-effort)
                     if !chat_id.is_empty() {
-                        let db_path = state.db_path.lock().ok().map(|g| g.clone()).unwrap_or_default();
+                        let db_path = state
+                            .db_path
+                            .lock()
+                            .ok()
+                            .map(|g| g.clone())
+                            .unwrap_or_default();
                         if !db_path.is_empty() {
                             let msg_for_db = msg.clone();
                             let cid = chat_id.clone();
@@ -683,6 +712,13 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                     let _ = app_handle.emit("narration-cleared", true);
                 }
             }
+        }
+        Err(e) if e == llm::STREAM_ABORTED => {
+            let _ = app_handle.emit(
+                "stream-abort",
+                serde_json::json!({ "agent": agent, "turn": turn_count }),
+            );
+            return false;
         }
         Err(e) => {
             let _ = app_handle.emit(
@@ -735,10 +771,10 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
             continue;
         }
 
-        // Max turns?
+        // Max turns is Auto-only — Step can keep going.
         {
             let inner = state.inner.lock().unwrap();
-            if inner.turn_count >= inner.max_turns {
+            if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
                 break;
             }
             if inner.status == AppStatus::Idle {
@@ -768,10 +804,10 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
                     );
                 }
             }
-            // Stay in loop waiting for next step, or exit if maxed
+            // Stay in loop waiting for next step, or exit if auto-maxed
             let done = {
                 let inner = state.inner.lock().unwrap();
-                inner.turn_count >= inner.max_turns
+                inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns
             };
             if done {
                 break;
@@ -802,8 +838,8 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
         if inner.status != AppStatus::Paused {
             inner.status = AppStatus::Idle;
         }
-        // If max turns hit, force idle
-        if inner.turn_count >= inner.max_turns {
+        // If max turns hit in Auto, force idle
+        if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
             inner.status = AppStatus::Idle;
         }
         let _ = app_handle.emit(
@@ -834,5 +870,35 @@ mod export_tests {
                 "export_dir {dir:?} should be Desktop or home {home:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod seed_tests {
+    use super::inject_seed_if_any;
+    use crate::state::InnerState;
+
+    #[test]
+    fn inject_seed_only_once() {
+        let mut inner = InnerState::default();
+        inner.seed_prompt = "hello there".into();
+        inject_seed_if_any(&mut inner);
+        inject_seed_if_any(&mut inner);
+        let seeds: Vec<_> = inner
+            .messages
+            .iter()
+            .filter(|m| m.agent == "seed")
+            .collect();
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].content, "hello there");
+        assert_eq!(seeds[0].role, "user");
+    }
+
+    #[test]
+    fn inject_seed_skips_blank() {
+        let mut inner = InnerState::default();
+        inner.seed_prompt = "   ".into();
+        inject_seed_if_any(&mut inner);
+        assert!(inner.messages.is_empty());
     }
 }

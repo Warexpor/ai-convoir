@@ -5,7 +5,15 @@ use crate::engine::{
 use crate::state::{AiConfig, Message};
 use futures_util::StreamExt;
 use serde_json::Value;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter};
+
+/// Returned when reset/stop cancels an in-flight SSE stream.
+pub const STREAM_ABORTED: &str = "aborted";
+
+fn aborted(flag: &AtomicBool) -> bool {
+    flag.load(Ordering::Relaxed)
+}
 
 /// Non-streaming call. Returns (content, optional reasoning).
 pub async fn call_llm(
@@ -29,8 +37,8 @@ pub async fn call_llm(
     )
     .json(&body)
     .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    .await
+    .map_err(|e| format!("Request failed: {}", e))?;
 
     let status = res.status();
     let data: Value = res
@@ -47,12 +55,20 @@ pub async fn call_llm(
     }
 
     let msg = &data["choices"][0]["message"];
-    let finish_reason = data["choices"][0]["finish_reason"].as_str().unwrap_or("stop");
+    let finish_reason = data["choices"][0]["finish_reason"]
+        .as_str()
+        .unwrap_or("stop");
 
-    let (content, reasoning): (String, Option<String>) = match extract_text_content(&msg["content"]) {
+    let (content, reasoning): (String, Option<String>) = match extract_text_content(&msg["content"])
+    {
         Some(text) => {
             let mut reasoning = None;
-            for key in ["reasoning_content", "reasoning", "thinking", "reasoning_text"] {
+            for key in [
+                "reasoning_content",
+                "reasoning",
+                "thinking",
+                "reasoning_text",
+            ] {
                 if let Some(t) = extract_text_content(&msg[key]) {
                     reasoning = Some(t);
                     break;
@@ -150,13 +166,7 @@ fn parse_responses_event(event: &str, data: &str) -> Vec<StreamPiece> {
     }
 }
 
-fn emit_chunk(
-    app_handle: &AppHandle,
-    agent: &str,
-    turn: u32,
-    kind: &str,
-    delta: &str,
-) {
+fn emit_chunk(app_handle: &AppHandle, agent: &str, turn: u32, kind: &str, delta: &str) {
     if delta.is_empty() {
         return;
     }
@@ -179,6 +189,7 @@ async fn stream_responses(
     turn: u32,
     app_handle: &AppHandle,
     session_id: &str,
+    abort: &AtomicBool,
 ) -> Result<(String, Option<String>), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -223,6 +234,9 @@ async fn stream_responses(
     let mut full_reasoning = String::new();
 
     while let Some(item) = stream.next().await {
+        if aborted(abort) {
+            return Err(STREAM_ABORTED.into());
+        }
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
         raw.extend_from_slice(&chunk);
         match std::str::from_utf8(&raw) {
@@ -271,6 +285,10 @@ async fn stream_responses(
         }
     }
 
+    if aborted(abort) {
+        return Err(STREAM_ABORTED.into());
+    }
+
     if full.is_empty() && !full_reasoning.is_empty() {
         full = full_reasoning.clone();
     }
@@ -295,6 +313,7 @@ pub async fn stream_llm(
     turn: u32,
     app_handle: &AppHandle,
     session_id: &str,
+    abort: &AtomicBool,
 ) -> Result<(String, Option<String>), String> {
     if uses_responses_api(&config.model) {
         return stream_responses(
@@ -305,6 +324,7 @@ pub async fn stream_llm(
             turn,
             app_handle,
             session_id,
+            abort,
         )
         .await;
     }
@@ -353,35 +373,43 @@ pub async fn stream_llm(
             .await
             .map_err(|e| format!("Parse failed: {}", e))?;
         let msg = &data["choices"][0]["message"];
-        let finish_reason = data["choices"][0]["finish_reason"].as_str().unwrap_or("stop");
+        let finish_reason = data["choices"][0]["finish_reason"]
+            .as_str()
+            .unwrap_or("stop");
 
-        let (text, reasoning): (String, Option<String>) = match extract_text_content(&msg["content"]) {
-            Some(c) => {
-                let mut r = None;
-                for key in ["reasoning_content", "reasoning", "thinking", "reasoning_text"] {
-                    if let Some(t) = extract_text_content(&msg[key]) {
-                        r = Some(t);
-                        break;
+        let (text, reasoning): (String, Option<String>) =
+            match extract_text_content(&msg["content"]) {
+                Some(c) => {
+                    let mut r = None;
+                    for key in [
+                        "reasoning_content",
+                        "reasoning",
+                        "thinking",
+                        "reasoning_text",
+                    ] {
+                        if let Some(t) = extract_text_content(&msg[key]) {
+                            r = Some(t);
+                            break;
+                        }
+                    }
+                    (c, r)
+                }
+                None => {
+                    if let Some(r) = extract_text_content(&msg["reasoning_content"])
+                        .or_else(|| extract_text_content(&msg["reasoning"]))
+                        .or_else(|| extract_text_content(&msg["thinking"]))
+                    {
+                        (r.clone(), Some(r))
+                    } else if let Some(t) = extract_text_content(&data["choices"][0]["text"]) {
+                        (t, None)
+                    } else {
+                        return Err(format!(
+                            "No content in API response (finish_reason: {})",
+                            finish_reason
+                        ));
                     }
                 }
-                (c, r)
-            }
-            None => {
-                if let Some(r) = extract_text_content(&msg["reasoning_content"])
-                    .or_else(|| extract_text_content(&msg["reasoning"]))
-                    .or_else(|| extract_text_content(&msg["thinking"]))
-                {
-                    (r.clone(), Some(r))
-                } else if let Some(t) = extract_text_content(&data["choices"][0]["text"]) {
-                    (t, None)
-                } else {
-                    return Err(format!(
-                        "No content in API response (finish_reason: {})",
-                        finish_reason
-                    ));
-                }
-            }
-        };
+            };
 
         let _ = app_handle.emit(
             "stream-start",
@@ -409,6 +437,9 @@ pub async fn stream_llm(
     let mut full_reasoning = String::new();
 
     while let Some(item) = stream.next().await {
+        if aborted(abort) {
+            return Err(STREAM_ABORTED.into());
+        }
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
         raw.extend_from_slice(&chunk);
 
@@ -458,6 +489,10 @@ pub async fn stream_llm(
                 }
             }
         }
+    }
+
+    if aborted(abort) {
+        return Err(STREAM_ABORTED.into());
     }
 
     if full.is_empty() {

@@ -51,6 +51,7 @@ function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const heightsRef = useRef(new Map<string, number>());
   const measureRaf = useRef(0);
+  const listRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [win, setWin] = useState({ start: 0, end: messages.length });
   const [heightTick, setHeightTick] = useState(0);
@@ -146,6 +147,69 @@ function ChatView({
     };
   }, []);
 
+  useEffect(() => {
+    if (!virtualize) return;
+    const root = listRef.current;
+    if (!root) return;
+
+    const apply = (el: HTMLElement) => {
+      const key = el.dataset.msgKey;
+      if (!key) return false;
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (heightsRef.current.get(key) === h) return false;
+      heightsRef.current.set(key, h);
+      return el.dataset.streaming !== "1";
+    };
+
+    const schedule = () => {
+      if (measureRaf.current) return;
+      measureRaf.current = requestAnimationFrame(() => {
+        measureRaf.current = 0;
+        setHeightTick((n) => n + 1);
+      });
+    };
+
+    const ro = new ResizeObserver((entries) => {
+      let changed = false;
+      for (const entry of entries) {
+        if (apply(entry.target as HTMLElement)) changed = true;
+      }
+      if (changed) schedule();
+    });
+
+    const observed = new Set<HTMLElement>();
+    const observeAll = () => {
+      const next = new Set<HTMLElement>();
+      for (const el of root.querySelectorAll<HTMLElement>("[data-msg-key]")) {
+        next.add(el);
+        if (!observed.has(el)) ro.observe(el);
+      }
+      for (const el of observed) {
+        if (!next.has(el)) ro.unobserve(el);
+      }
+      observed.clear();
+      next.forEach((el) => observed.add(el));
+    };
+    observeAll();
+
+    const mo = new MutationObserver(observeAll);
+    mo.observe(root, { childList: true, subtree: false });
+
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+    };
+  }, [virtualize]);
+
+  useEffect(() => {
+    if (!virtualize || streamingTail?.streaming) return;
+    if (measureRaf.current) return;
+    measureRaf.current = requestAnimationFrame(() => {
+      measureRaf.current = 0;
+      setHeightTick((n) => n + 1);
+    });
+  }, [virtualize, messages.length, streamingTail?.streaming]);
+
   const jumpLatest = useCallback(() => {
     setAutoScroll(true);
     requestAnimationFrame(() => stickToBottom(true));
@@ -174,21 +238,6 @@ function ChatView({
       ),
     };
   }, [messages, win.start, win.end, autoScroll, virtualize, prefixes]);
-
-  const measure = useCallback((key: string, streaming: boolean) => {
-    return (el: HTMLDivElement | null) => {
-      if (!el) return;
-      const h = el.offsetHeight;
-      if (heightsRef.current.get(key) === h) return;
-      heightsRef.current.set(key, h);
-      if (streaming) return;
-      if (measureRaf.current) return;
-      measureRaf.current = requestAnimationFrame(() => {
-        measureRaf.current = 0;
-        setHeightTick((n) => n + 1);
-      });
-    };
-  }, []);
 
   if (messages.length === 0) {
     const names = agentNames.filter(Boolean).slice(0, 3);
@@ -272,12 +321,19 @@ function ChatView({
               aria-hidden
             />
           )}
-          <div className={`chat-list ${virtualize ? "is-virt" : ""}`}>
+          <div
+            ref={listRef}
+            className={`chat-list ${virtualize ? "is-virt" : ""}`}
+          >
             {slice.map((msg, i) => {
               const idx = sliceStart + i;
               const key = msgKey(msg, idx);
               return (
-                <div key={key} ref={measure(key, !!msg.streaming)}>
+                <div
+                  key={key}
+                  data-msg-key={key}
+                  data-streaming={msg.streaming ? "1" : "0"}
+                >
                   <MessageBubble
                     message={msg}
                     config={config}
