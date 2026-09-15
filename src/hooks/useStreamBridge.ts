@@ -158,8 +158,10 @@ export function useStreamBridge({
 
     const applyStreamChunk = ({ agent, turn, delta, kind }: StreamChunk) => {
       if (!delta) return;
-      lastMsgTime.current = Date.now();
       const k = `${agent}:${turn}`;
+      // Ignore late chunks after abort/reset — do not resurrect a stream buffer.
+      if (!streamBuf.current.has(k) && !streamReasonBuf.current.has(k)) return;
+      lastMsgTime.current = Date.now();
       if (kind === "reasoning") {
         streamReasonBuf.current.set(
           k,

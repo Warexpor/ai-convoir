@@ -40,6 +40,14 @@ async function tryInvoke<T>(
   }
 }
 
+/** Mutations must surface IPC failures instead of looking like they succeeded. */
+async function invokeCmd<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  return invoke<T>(cmd, args);
+}
+
 export async function getMessages(): Promise<Message[]> {
   if (!isTauri()) return getEngineMessages();
   return (await tryInvoke<Message[]>("get_messages")) ?? [];
@@ -59,7 +67,7 @@ export async function updateConfig(cfg: InnerState): Promise<void> {
     setEngineConfig(cfg);
     return;
   }
-  await tryInvoke("update_config", {
+  await invokeCmd("update_config", {
     ai1Config: cfg.ai1_config,
     ai2Config: cfg.ai2_config,
     ai3Config: cfg.ai3_config,
@@ -92,7 +100,7 @@ export async function pauseConversation(): Promise<void> {
     await enginePause();
     return;
   }
-  await tryInvoke("pause_conversation");
+  await invokeCmd("pause_conversation");
 }
 
 export async function stopConversation(): Promise<void> {
@@ -100,7 +108,7 @@ export async function stopConversation(): Promise<void> {
     await engineStop();
     return;
   }
-  await tryInvoke("stop_conversation");
+  await invokeCmd("stop_conversation");
 }
 
 export async function resetConversation(): Promise<void> {
@@ -108,7 +116,7 @@ export async function resetConversation(): Promise<void> {
     await engineReset();
     return;
   }
-  await tryInvoke("reset_conversation");
+  await invokeCmd("reset_conversation");
 }
 
 export async function loadTranscript(args: {
@@ -120,7 +128,7 @@ export async function loadTranscript(args: {
     await engineLoadTranscript(args.messages, args.turnCount, args.chatId);
     return;
   }
-  await tryInvoke("load_transcript", {
+  await invokeCmd("load_transcript", {
     messages: args.messages,
     turnCount: args.turnCount,
     chatId: args.chatId,
@@ -132,7 +140,7 @@ export async function setActiveChat(chatId: string): Promise<void> {
     setEngineSession(chatId);
     return;
   }
-  await tryInvoke("set_active_chat", { chatId });
+  await invokeCmd("set_active_chat", { chatId });
 }
 
 export async function setNarration(text: string): Promise<void> {
@@ -140,7 +148,7 @@ export async function setNarration(text: string): Promise<void> {
     await engineSetNarration(text);
     return;
   }
-  await tryInvoke("set_narration", { text });
+  await invokeCmd("set_narration", { text });
 }
 
 export async function exportChat(content: string): Promise<string> {
@@ -167,7 +175,11 @@ export async function deleteMessage(args: {
     await engineDeleteMessage(args.agent, args.turn, args.created_at);
     return;
   }
-  await tryInvoke("delete_messages", args);
+  await invokeCmd("delete_messages", {
+    agent: args.agent,
+    turn: args.turn,
+    createdAt: args.created_at,
+  });
 }
 
 export async function fetchModels(args: {
@@ -175,11 +187,12 @@ export async function fetchModels(args: {
   apiKey: string;
 }): Promise<string[]> {
   if (!isTauri()) return engineFetchModels(args.baseUrl, args.apiKey);
-  return invoke<string[]>("fetch_models", args);
+  return invokeCmd<string[]>("fetch_models", args);
 }
 
 export async function upsertSavedChat(snapshot: unknown): Promise<void> {
-  await tryInvoke("upsert_saved_chat", { snapshot });
+  if (!isTauri()) return;
+  await invokeCmd("upsert_saved_chat", { snapshot });
 }
 
 export async function listSavedChats(): Promise<unknown[] | null> {
@@ -187,7 +200,8 @@ export async function listSavedChats(): Promise<unknown[] | null> {
 }
 
 export async function deleteSavedChat(chatId: string): Promise<void> {
-  await tryInvoke("delete_saved_chat", { chatId });
+  if (!isTauri()) return;
+  await invokeCmd("delete_saved_chat", { chatId });
 }
 
 export type { AiConfig, ConversationMode };

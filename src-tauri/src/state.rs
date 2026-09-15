@@ -37,8 +37,8 @@ impl ReasoningEffort {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ConversationMode {
-    #[default]
     Auto,
+    #[default]
     Step,
 }
 
@@ -62,19 +62,26 @@ fn default_agent_name() -> String {
     "Agent".into()
 }
 
+fn default_agent(name: &str, system_prompt: &str) -> AiConfig {
+    AiConfig {
+        name: name.into(),
+        system_prompt: system_prompt.into(),
+        model: "muse-spark-1.3-contributor".into(),
+        api_base_url: "https://opencode.ai/zen/go/v1".into(),
+        api_key: String::new(),
+        temperature: 0.85,
+        max_tokens: 2048,
+        reasoning_effort: ReasoningEffort::None,
+        response_length: ResponseLength::Normal,
+    }
+}
+
 impl Default for AiConfig {
     fn default() -> Self {
-        Self {
-            name: "Agent 1".into(),
-            system_prompt: "You are a thoughtful, articulate AI. Engage in a deep and interesting conversation with the other AI.".into(),
-            model: "muse-spark-1.3-contributor".into(),
-            api_base_url: "https://opencode.ai/zen/go/v1".into(),
-            api_key: String::new(),
-            temperature: 0.7,
-            max_tokens: 1024,
-            reasoning_effort: ReasoningEffort::None,
-            response_length: ResponseLength::Normal,
-        }
+        default_agent(
+            "Agent",
+            "You are a thoughtful, articulate AI. Engage in a deep and interesting conversation with the other AI.",
+        )
     }
 }
 
@@ -132,27 +139,25 @@ fn default_bot_count() -> u8 {
 impl Default for InnerState {
     fn default() -> Self {
         Self {
-            ai1_config: AiConfig {
-                name: "Agent 1".into(),
-                ..Default::default()
-            },
-            ai2_config: AiConfig {
-                name: "Agent 2".into(),
-                system_prompt: "You are a sharp, witty AI who loves debate and pushing ideas further. Engage with the other AI critically but constructively.".into(),
-                ..Default::default()
-            },
-            ai3_config: AiConfig {
-                name: "Agent 3".into(),
-                system_prompt: "You are a calm mediator AI. Synthesize viewpoints, spot blind spots, and keep the discussion grounded.".into(),
-                ..Default::default()
-            },
+            ai1_config: default_agent(
+                "Ava",
+                "You are Ava — warm, curious, slightly mischievous. Speak naturally in first person when in character.",
+            ),
+            ai2_config: default_agent(
+                "Jules",
+                "You are Jules — dry humor, observant, pushes back gently. Keep replies chatty and human.",
+            ),
+            ai3_config: default_agent(
+                "Rin",
+                "You are Rin — quiet, precise, reframes the room when needed.",
+            ),
             bot_count: 2,
             messages: Vec::new(),
             status: AppStatus::Idle,
             turn_count: 0,
-            max_turns: 20,
-            delay_ms: 1000,
-            mode: ConversationMode::Auto,
+            max_turns: 40,
+            delay_ms: 800,
+            mode: ConversationMode::Step,
             seed_prompt: String::new(),
             pending_narration: String::new(),
             active_chat_id: String::new(),
@@ -192,5 +197,27 @@ impl AppState {
             loop_active: AtomicBool::new(false),
             db_path: Mutex::new(String::new()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_roster_matches_frontend() {
+        let s = InnerState::default();
+        assert_eq!(s.ai1_config.name, "Ava");
+        assert_eq!(s.ai2_config.name, "Jules");
+        assert_eq!(s.ai3_config.name, "Rin");
+        assert_eq!(s.max_turns, 40);
+        assert_eq!(s.delay_ms, 800);
+        assert_eq!(s.mode, ConversationMode::Step);
+        assert_eq!(s.ai1_config.temperature, 0.85);
+        assert_eq!(s.ai1_config.max_tokens, 2048);
+        assert_eq!(s.ai1_config.model, "muse-spark-1.3-contributor");
+        assert!(s.ai1_config.system_prompt.contains("Ava"));
+        assert!(s.ai2_config.system_prompt.contains("Jules"));
+        assert!(s.ai3_config.system_prompt.contains("Rin"));
     }
 }

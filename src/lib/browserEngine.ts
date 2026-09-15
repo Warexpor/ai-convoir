@@ -423,6 +423,7 @@ export async function engineReset() {
   state.pendingNarration = "";
   state.status = "Idle";
   emitStatus();
+  emit("stream-abort", { agent: "", turn: 0 });
 }
 
 export async function engineLoadTranscript(messages: Message[], turnCount: number, chatId: string) {
@@ -436,6 +437,7 @@ export async function engineLoadTranscript(messages: Message[], turnCount: numbe
   state.pendingNarration = "";
   setEngineSession(chatId);
   emitStatus();
+  emit("stream-abort", { agent: "", turn: 0 });
   state.reset = false;
 }
 

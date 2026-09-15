@@ -1,7 +1,9 @@
 //! Pure conversation orchestration helpers (no I/O).
 //! Covered by unit tests in this module.
 
-use crate::state::{AiConfig, AppStatus, ConversationMode, Message, ReasoningEffort, ResponseLength};
+use crate::state::{
+    AiConfig, AppStatus, ConversationMode, Message, ReasoningEffort, ResponseLength,
+};
 use serde_json::{json, Value};
 
 /// OpenCode Zen OpenAI-compatible base URL.
@@ -167,7 +169,10 @@ pub fn parse_sse_data_payload(data: &str) -> Vec<StreamPiece> {
         return vec![];
     };
 
-    let Some(choice) = v.get("choices").and_then(|c| c.as_array()).and_then(|a| a.first())
+    let Some(choice) = v
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
     else {
         return vec![];
     };
@@ -330,7 +335,7 @@ pub fn prepare_step(
     turn_count: u32,
     max_turns: u32,
 ) -> Result<ConversationMode, String> {
-    if turn_count >= max_turns {
+    if mode != ConversationMode::Step && turn_count >= max_turns {
         return Err("Max turns reached".into());
     }
     // Intentionally return the same mode — step_once handles single-turn pause.
@@ -351,7 +356,10 @@ fn context_window_for(model: &str) -> u32 {
         _ => {}
     }
     // Prefix match
-    if model.starts_with("gpt-4o") || model.starts_with("gpt-4-turbo") || model.starts_with("gpt-3.5") {
+    if model.starts_with("gpt-4o")
+        || model.starts_with("gpt-4-turbo")
+        || model.starts_with("gpt-3.5")
+    {
         return 128000;
     }
     if model.starts_with("claude") || model.starts_with("o1") || model.starts_with("o3") {
@@ -405,8 +413,8 @@ pub fn trim_messages_for_context(
     let mut kept: Vec<crate::state::Message> = Vec::new();
 
     for m in all_messages.iter().rev() {
-        let msg_tokens = estimate_tokens(&m.content)
-            + m.reasoning.as_deref().map_or(0, estimate_tokens);
+        let msg_tokens =
+            estimate_tokens(&m.content) + m.reasoning.as_deref().map_or(0, estimate_tokens);
         if used + msg_tokens > budget {
             break;
         }
@@ -561,10 +569,7 @@ mod tests {
 
     #[test]
     fn extract_text_string_and_array() {
-        assert_eq!(
-            extract_text_content(&json!("hi")).as_deref(),
-            Some("hi")
-        );
+        assert_eq!(extract_text_content(&json!("hi")).as_deref(), Some("hi"));
         assert_eq!(
             extract_text_content(&json!([{"type":"text","text":"x"},{"type":"text","text":"y"}]))
                 .as_deref(),
@@ -647,6 +652,12 @@ mod tests {
     fn prepare_step_rejects_max_turns() {
         assert!(prepare_step(ConversationMode::Auto, 10, 10).is_err());
         assert!(prepare_step(ConversationMode::Auto, 11, 10).is_err());
+    }
+
+    #[test]
+    fn prepare_step_allows_past_max_in_step_mode() {
+        assert!(prepare_step(ConversationMode::Step, 10, 10).is_ok());
+        assert!(prepare_step(ConversationMode::Step, 40, 40).is_ok());
     }
 
     #[test]
