@@ -50,6 +50,8 @@ export interface StatusPayload {
 export interface StreamStart {
   agent: string;
   turn: number;
+  /** Backend-owned identity for delete; optional for older payloads. */
+  created_at?: number;
 }
 
 export interface StreamChunk {

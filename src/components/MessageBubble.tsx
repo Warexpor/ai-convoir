@@ -145,4 +145,20 @@ function MessageBubble({
   );
 }
 
-export default memo(MessageBubble);
+export default memo(MessageBubble, (a, b) => {
+  const ma = a.message;
+  const mb = b.message;
+  return (
+    ma === mb ||
+    (ma.agent === mb.agent &&
+      ma.turn === mb.turn &&
+      ma.created_at === mb.created_at &&
+      ma.content === mb.content &&
+      ma.reasoning === mb.reasoning &&
+      ma.streaming === mb.streaming &&
+      a.showThoughtsUi === b.showThoughtsUi &&
+      a.enter === b.enter &&
+      a.onDelete === b.onDelete &&
+      a.config === b.config)
+  );
+});

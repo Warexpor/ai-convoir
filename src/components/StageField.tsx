@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
+import { isScrollBusy, onScrollBusy } from "../lib/scrollBusy";
 
 const VERT = `
 attribute vec2 a_pos;
@@ -56,6 +57,11 @@ void main() {
 }
 `;
 
+/** Lacquer under glass: short intro, then freeze. A 60fps loop under backdrop-filter
+ *  forces every glass surface to re-blur every frame → steady low UI FPS on WebKit. */
+const INTRO_MS = 2400;
+const FRAME_MS = 200;
+
 function compile(gl: WebGLRenderingContext, type: number, src: string) {
   const sh = gl.createShader(type);
   if (!sh) return null;
@@ -68,7 +74,7 @@ function compile(gl: WebGLRenderingContext, type: number, src: string) {
   return sh;
 }
 
-export default function StageField() {
+function StageField() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -85,6 +91,8 @@ export default function StageField() {
         stencil: false,
         premultipliedAlpha: false,
         powerPreference: "low-power",
+        desynchronized: true,
+        preserveDrawingBuffer: false,
       }) ||
       (canvas.getContext("experimental-webgl", {
         alpha: false,
@@ -123,64 +131,120 @@ export default function StageField() {
 
     const motionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
     let raf = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let scrolling = isScrollBusy();
+    let frozen = false;
+    let freezeAt = 0;
     const start = performance.now();
 
-    const live = () => !document.hidden && !motionMq.matches;
+    const canAnimate = () =>
+      !frozen &&
+      !document.hidden &&
+      !motionMq.matches &&
+      !scrolling;
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+      const dpr = Math.min(window.devicePixelRatio || 1, 1);
       const w = Math.max(1, Math.floor(wrap.clientWidth * dpr));
       const h = Math.max(1, Math.floor(wrap.clientHeight * dpr));
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w;
         canvas.height = h;
         gl.viewport(0, 0, w, h);
+        return true;
       }
+      return false;
     };
 
-    const draw = (now: number) => {
-      resize();
+    const draw = (now: number, motion: boolean) => {
+      const t = frozen ? freezeAt : (now - start) * 0.001;
       gl.uniform2f(uRes, canvas.width, canvas.height);
-      gl.uniform1f(uTime, (now - start) * 0.001);
-      gl.uniform1f(uMotion, live() ? 1 : 0);
+      gl.uniform1f(uTime, t);
+      gl.uniform1f(uMotion, motion ? 1 : 0);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     };
 
-    const loop = (now: number) => {
-      draw(now);
-      if (live()) raf = requestAnimationFrame(loop);
-      else raf = 0;
+    const freeze = (now: number) => {
+      if (frozen) return;
+      frozen = true;
+      freezeAt = (now - start) * 0.001;
+      draw(now, true);
     };
 
-    const kick = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(loop);
+    const stopLoop = () => {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (timer != null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const schedule = () => {
+      if (!canAnimate() || raf || timer != null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        raf = requestAnimationFrame((now) => {
+          raf = 0;
+          if (!canAnimate()) {
+            draw(now, false);
+            return;
+          }
+          if (now - start >= INTRO_MS) {
+            freeze(now);
+            return;
+          }
+          draw(now, true);
+          schedule();
+        });
+      }, FRAME_MS);
     };
 
     const onVis = () => {
-      if (live()) kick();
-      else {
-        if (raf) cancelAnimationFrame(raf);
-        raf = 0;
-        draw(performance.now());
+      if (document.hidden || motionMq.matches || scrolling) {
+        stopLoop();
+        draw(performance.now(), false);
+        return;
       }
+      if (frozen) {
+        draw(performance.now(), true);
+        return;
+      }
+      schedule();
     };
-    const onMotion = () => onVis();
+
+    resize();
+    if (motionMq.matches) {
+      frozen = true;
+      freezeAt = 0;
+      draw(performance.now(), false);
+    } else {
+      draw(performance.now(), true);
+      schedule();
+    }
 
     const ro = new ResizeObserver(() => {
-      if (!raf) draw(performance.now());
+      if (!resize()) return;
+      draw(performance.now(), frozen || !motionMq.matches);
     });
     ro.observe(wrap);
 
+    const unscroll = onScrollBusy((v) => {
+      scrolling = v;
+      onVis();
+    });
+
     document.addEventListener("visibilitychange", onVis);
-    motionMq.addEventListener("change", onMotion);
-    kick();
+    motionMq.addEventListener("change", onVis);
 
     return () => {
-      if (raf) cancelAnimationFrame(raf);
+      stopLoop();
       ro.disconnect();
+      unscroll();
       document.removeEventListener("visibilitychange", onVis);
-      motionMq.removeEventListener("change", onMotion);
+      motionMq.removeEventListener("change", onVis);
       gl.deleteProgram(prog);
       gl.deleteShader(vs);
       gl.deleteShader(fs);
@@ -194,3 +258,5 @@ export default function StageField() {
     </div>
   );
 }
+
+export default memo(StageField);

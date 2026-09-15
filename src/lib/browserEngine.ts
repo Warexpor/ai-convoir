@@ -20,6 +20,8 @@ type EngineState = {
   stepOnce: boolean;
   paused: boolean;
   reset: boolean;
+  /** Bumped on stop/reset/load so late commits are discarded. */
+  streamEpoch: number;
 };
 
 const state: EngineState = {
@@ -34,7 +36,12 @@ const state: EngineState = {
   stepOnce: false,
   paused: false,
   reset: false,
+  streamEpoch: 0,
 };
+
+function bumpEpoch() {
+  state.streamEpoch += 1;
+}
 
 function nowMs(): number {
   return Date.now();
@@ -62,7 +69,7 @@ function nextSpeaker(): string {
 function lockAgent(cfg: AiConfig): AiConfig {
   return {
     ...cfg,
-    model: MUSE_SPARK_13_CONTRIBUTOR,
+    model: cfg.model?.trim() || MUSE_SPARK_13_CONTRIBUTOR,
     api_base_url: cfg.api_base_url || "https://opencode.ai/zen/go/v1",
   };
 }
@@ -160,7 +167,13 @@ function parseResponsesDelta(eventName: string, data: string): { kind: StreamKin
   return null;
 }
 
-async function streamResponses(cfg: AiConfig, speaking: string, turn: number) {
+async function streamResponses(
+  cfg: AiConfig,
+  speaking: string,
+  turn: number,
+  createdAt: number,
+  epochAtStart: number,
+) {
   if (!usesResponsesApi(cfg.model)) {
     throw new Error(
       `${cfg.model} is not enabled. This app uses Muse Spark 1.3 contributor.`,
@@ -175,13 +188,13 @@ async function streamResponses(cfg: AiConfig, speaking: string, turn: number) {
   const ac = new AbortController();
   state.abort = ac;
 
-  emit("stream-start", { agent: speaking, turn });
+  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
 
   const res = await fetch(url, {
     method: "POST",
     headers: goHeaders(cfg.api_key),
     body: JSON.stringify({
-      model: MUSE_SPARK_13_CONTRIBUTOR,
+      model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
       instructions,
       input,
       stream: true,
@@ -241,7 +254,9 @@ async function streamResponses(cfg: AiConfig, speaking: string, turn: number) {
   };
 
   while (true) {
-    if (state.reset) throw new DOMException("Aborted", "AbortError");
+    if (state.reset || state.streamEpoch !== epochAtStart) {
+      throw new DOMException("Aborted", "AbortError");
+    }
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
@@ -253,6 +268,10 @@ async function streamResponses(cfg: AiConfig, speaking: string, turn: number) {
     }
   }
   if (buffer.trim()) flushEvent(buffer);
+
+  if (state.reset || state.streamEpoch !== epochAtStart) {
+    throw new DOMException("Aborted", "AbortError");
+  }
 
   if (!content && reasoning) content = reasoning;
   if (!content) throw new Error("Empty model reply");
@@ -269,9 +288,17 @@ async function runOneTurn(): Promise<boolean> {
   const agent = lockAgent(agentConfig(speaking) || cfg.ai1_config);
   const turn = state.turnCount;
   const narration = state.pendingNarration;
+  const createdAt = nowMs();
+  const epochAtStart = state.streamEpoch;
   try {
-    const { content, reasoning } = await streamResponses(agent, speaking, turn);
-    if (state.reset) return false;
+    const { content, reasoning } = await streamResponses(
+      agent,
+      speaking,
+      turn,
+      createdAt,
+      epochAtStart,
+    );
+    if (state.reset || state.streamEpoch !== epochAtStart) return false;
     if (narration && state.pendingNarration === narration) {
       state.pendingNarration = "";
       emit("narration-cleared", true);
@@ -281,7 +308,7 @@ async function runOneTurn(): Promise<boolean> {
       role: "assistant",
       content,
       turn,
-      created_at: nowMs(),
+      created_at: createdAt,
       reasoning,
     };
     state.messages.push(msg);
@@ -405,6 +432,7 @@ export async function enginePause() {
 }
 
 export async function engineStop() {
+  bumpEpoch();
   state.paused = true;
   state.stepOnce = false;
   state.status = "Idle";
@@ -414,6 +442,7 @@ export async function engineStop() {
 }
 
 export async function engineReset() {
+  bumpEpoch();
   state.reset = true;
   state.paused = true;
   state.stepOnce = false;
@@ -427,6 +456,7 @@ export async function engineReset() {
 }
 
 export async function engineLoadTranscript(messages: Message[], turnCount: number, chatId: string) {
+  bumpEpoch();
   state.reset = true;
   state.paused = true;
   state.stepOnce = false;
@@ -449,10 +479,16 @@ export async function engineDeleteMessage(
   agent: string,
   turn: number,
   created_at: number,
-) {
+): Promise<boolean> {
+  const before = state.messages.length;
   state.messages = state.messages.filter(
     (m) => !(m.agent === agent && m.turn === turn && m.created_at === created_at),
   );
+  const removed = before !== state.messages.length;
+  if (removed) {
+    emit("message-deleted", { agent, turn, created_at });
+  }
+  return removed;
 }
 
 export async function engineFetchModels(baseUrl: string, apiKey: string): Promise<string[]> {

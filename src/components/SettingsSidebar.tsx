@@ -12,11 +12,12 @@ import {
   agentAccent,
 } from "../types";
 import { fetchModels } from "../lib/api";
+import { defaultConfig } from "../lib/config";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
 
 interface Props {
   open: boolean;
-  config: InnerState;
+  config: InnerState | null;
   onSave: (config: InnerState) => void;
   onClose: () => void;
   showThoughtsUi: boolean;
@@ -168,7 +169,8 @@ export default function SettingsSidebar({
   showThoughtsUi,
   onShowThoughtsUiChange,
 }: Props) {
-  const [local, setLocal] = useState(config);
+  const ready = !!config;
+  const [local, setLocal] = useState<InnerState>(() => config ?? defaultConfig());
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
   const [saved, setSaved] = useState(false);
   const [sessionMore, setSessionMore] = useState(false);
@@ -180,9 +182,11 @@ export default function SettingsSidebar({
   localRef.current = local;
   useFocusTrap(open, panelRef);
 
-  useEffect(() => setLocal(config), [config]);
   useEffect(() => {
-    if (!open) return undefined;
+    if (config) setLocal(config);
+  }, [config]);
+  useEffect(() => {
+    if (!open || !ready) return undefined;
     return () => {
       const cfg = localRef.current;
       const n = cfg.bot_count >= 3 ? 3 : 2;
@@ -198,7 +202,7 @@ export default function SettingsSidebar({
         ),
       );
     };
-  }, [open, onSave]);
+  }, [open, onSave, ready]);
   useEffect(() => {
     const r = () => setApis(listApis());
     window.addEventListener("apis-changed", r);
@@ -212,6 +216,7 @@ export default function SettingsSidebar({
     local.ai3_config.api_key ||
     "";
   const dirty =
+    !!config &&
     JSON.stringify({
       n: botCount,
       d: local.delay_ms,
@@ -222,16 +227,16 @@ export default function SettingsSidebar({
       a2: local.ai2_config,
       a3: botCount === 3 ? local.ai3_config : null,
     }) !==
-    JSON.stringify({
-      n: config.bot_count >= 3 ? 3 : 2,
-      d: config.delay_ms,
-      t: config.max_turns,
-      s: config.seed_prompt,
-      m: config.mode,
-      a1: config.ai1_config,
-      a2: config.ai2_config,
-      a3: config.bot_count >= 3 ? config.ai3_config : null,
-    });
+      JSON.stringify({
+        n: config.bot_count >= 3 ? 3 : 2,
+        d: config.delay_ms,
+        t: config.max_turns,
+        s: config.seed_prompt,
+        m: config.mode,
+        a1: config.ai1_config,
+        a2: config.ai2_config,
+        a3: config.bot_count >= 3 ? config.ai3_config : null,
+      });
 
   const verifyKey = async () => {
     setLoading(true);
@@ -273,6 +278,10 @@ export default function SettingsSidebar({
           type="button"
           className="btn btn-chrome btn-sm"
           onClick={() => {
+            if (!ready) {
+              onClose();
+              return;
+            }
             const n = botCount;
             onSave(
               withSharedKey(
@@ -291,7 +300,12 @@ export default function SettingsSidebar({
         </button>
       </div>
       <div className="settings-body">
-        <div className="key-card glass-card">
+        {!ready && (
+          <p className="mono-cap settings-kicker" style={{ marginBottom: 12 }}>
+            Loading settings…
+          </p>
+        )}
+        <div className="key-card glass-card" aria-disabled={!ready}>
           <p className="mono-cap settings-kicker">OpenCode Go</p>
           <p className="key-card-lead">
             Paste your API key once. Every voice uses it. The model is Muse
@@ -309,6 +323,7 @@ export default function SettingsSidebar({
               data-form-type="other"
               spellCheck={false}
               value={sharedKey}
+              disabled={!ready}
               onChange={(e) => setLocal(withSharedKey(local, e.target.value))}
               placeholder="sk-…"
             />
@@ -318,7 +333,7 @@ export default function SettingsSidebar({
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={verifyKey}
-              disabled={loading || !sharedKey.trim()}
+              disabled={!ready || loading || !sharedKey.trim()}
             >
               {loading ? "Checking…" : "Check key"}
             </button>

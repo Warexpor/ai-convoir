@@ -170,12 +170,11 @@ export async function deleteMessage(args: {
   agent: string;
   turn: number;
   created_at: number;
-}): Promise<void> {
+}): Promise<boolean> {
   if (!isTauri()) {
-    await engineDeleteMessage(args.agent, args.turn, args.created_at);
-    return;
+    return engineDeleteMessage(args.agent, args.turn, args.created_at);
   }
-  await invokeCmd("delete_messages", {
+  return invokeCmd<boolean>("delete_messages", {
     agent: args.agent,
     turn: args.turn,
     createdAt: args.created_at,

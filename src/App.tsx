@@ -143,7 +143,7 @@ function App() {
     <div
       className={[
         "app",
-        settingsOpen && config ? "settings-open" : "",
+        settingsOpen ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
         railOpen ? "rail-open-mobile" : "",
       ]
@@ -314,16 +314,14 @@ function App() {
         )}
       </div>
 
-      {config && (
-        <SettingsSidebar
-          open={settingsOpen}
-          config={config}
-          onSave={pushConfig}
-          onClose={() => setSettingsOpen(false)}
-          showThoughtsUi={showThoughtsUi}
-          onShowThoughtsUiChange={setShowThoughtsUi}
-        />
-      )}
+      <SettingsSidebar
+        open={settingsOpen}
+        config={config}
+        onSave={pushConfig}
+        onClose={() => setSettingsOpen(false)}
+        showThoughtsUi={showThoughtsUi}
+        onShowThoughtsUiChange={setShowThoughtsUi}
+      />
 
       <ShortcutsModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>

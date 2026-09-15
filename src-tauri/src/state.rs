@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -179,6 +179,8 @@ pub struct AppState {
     pub inner: Mutex<InnerState>,
     pub pause_flag: AtomicBool,
     pub reset_flag: AtomicBool,
+    /// Bumped on stop/reset/load so in-flight SSE + commits are discarded.
+    pub stream_epoch: AtomicU64,
     /// When true, auto-loop should only do one step then pause (used by step command).
     pub step_once: AtomicBool,
     /// Prevents spawning multiple concurrent conversation loops.
@@ -193,10 +195,25 @@ impl AppState {
             inner: Mutex::new(InnerState::default()),
             pause_flag: AtomicBool::new(false),
             reset_flag: AtomicBool::new(false),
+            stream_epoch: AtomicU64::new(0),
             step_once: AtomicBool::new(false),
             loop_active: AtomicBool::new(false),
             db_path: Mutex::new(String::new()),
         }
+    }
+
+    /// Clear reset only when no conversation loop is active (avoids races with abort).
+    pub fn clear_reset_if_idle(&self) {
+        if !self.loop_active.load(std::sync::atomic::Ordering::SeqCst) {
+            self.reset_flag
+                .store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    pub fn bump_stream_epoch(&self) -> u64 {
+        self.stream_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
     }
 }
 

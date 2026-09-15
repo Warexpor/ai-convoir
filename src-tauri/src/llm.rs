@@ -5,14 +5,24 @@ use crate::engine::{
 use crate::state::{AiConfig, Message};
 use futures_util::StreamExt;
 use serde_json::Value;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
 
 /// Returned when reset/stop cancels an in-flight SSE stream.
 pub const STREAM_ABORTED: &str = "aborted";
 
-fn aborted(flag: &AtomicBool) -> bool {
-    flag.load(Ordering::Relaxed)
+/// Cancel signal for an in-flight stream: reset clears transcript; epoch bumps on stop/switch.
+pub struct StreamCancel<'a> {
+    pub reset: &'a AtomicBool,
+    pub epoch: &'a AtomicU64,
+    pub epoch_at_start: u64,
+}
+
+impl StreamCancel<'_> {
+    pub fn is_cancelled(&self) -> bool {
+        self.reset.load(Ordering::Relaxed)
+            || self.epoch.load(Ordering::Relaxed) != self.epoch_at_start
+    }
 }
 
 /// Non-streaming call. Returns (content, optional reasoning).
@@ -133,8 +143,13 @@ fn responses_body(
             input.push(serde_json::json!({ "role": role, "content": content }));
         }
     }
+    let model = if config.model.trim().is_empty() {
+        "muse-spark-1.3-contributor"
+    } else {
+        config.model.as_str()
+    };
     serde_json::json!({
-        "model": "muse-spark-1.3-contributor",
+        "model": model,
         "instructions": instructions,
         "input": input,
         "stream": stream,
@@ -181,15 +196,27 @@ fn emit_chunk(app_handle: &AppHandle, agent: &str, turn: u32, kind: &str, delta:
     );
 }
 
+fn emit_stream_start(app_handle: &AppHandle, agent: &str, turn: u32, created_at: u64) {
+    let _ = app_handle.emit(
+        "stream-start",
+        serde_json::json!({
+            "agent": agent,
+            "turn": turn,
+            "created_at": created_at,
+        }),
+    );
+}
+
 async fn stream_responses(
     config: &AiConfig,
     speaking_agent: &str,
     messages_context: &[Message],
     narration: Option<&str>,
     turn: u32,
+    created_at: u64,
     app_handle: &AppHandle,
     session_id: &str,
-    abort: &AtomicBool,
+    cancel: &StreamCancel<'_>,
 ) -> Result<(String, Option<String>), String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(300))
@@ -222,10 +249,7 @@ async fn stream_responses(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
-    let _ = app_handle.emit(
-        "stream-start",
-        serde_json::json!({ "agent": speaking_agent, "turn": turn }),
-    );
+    emit_stream_start(app_handle, speaking_agent, turn, created_at);
 
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
@@ -234,7 +258,7 @@ async fn stream_responses(
     let mut full_reasoning = String::new();
 
     while let Some(item) = stream.next().await {
-        if aborted(abort) {
+        if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
@@ -285,7 +309,7 @@ async fn stream_responses(
         }
     }
 
-    if aborted(abort) {
+    if cancel.is_cancelled() {
         return Err(STREAM_ABORTED.into());
     }
 
@@ -304,6 +328,7 @@ async fn stream_responses(
 }
 
 /// Stream chat completions via SSE.
+/// Cancelled when `reset` is set or `stream_epoch` diverges from `epoch_at_start` (stop/switch).
 /// Returns (answer content, optional full reasoning text).
 pub async fn stream_llm(
     config: &AiConfig,
@@ -311,9 +336,10 @@ pub async fn stream_llm(
     messages_context: &[Message],
     narration: Option<&str>,
     turn: u32,
+    created_at: u64,
     app_handle: &AppHandle,
     session_id: &str,
-    abort: &AtomicBool,
+    cancel: &StreamCancel<'_>,
 ) -> Result<(String, Option<String>), String> {
     if uses_responses_api(&config.model) {
         return stream_responses(
@@ -322,9 +348,10 @@ pub async fn stream_llm(
             messages_context,
             narration,
             turn,
+            created_at,
             app_handle,
             session_id,
-            abort,
+            cancel,
         )
         .await;
     }
@@ -411,10 +438,10 @@ pub async fn stream_llm(
                 }
             };
 
-        let _ = app_handle.emit(
-            "stream-start",
-            serde_json::json!({ "agent": speaking_agent, "turn": turn }),
-        );
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
+        emit_stream_start(app_handle, speaking_agent, turn, created_at);
         if let Some(ref r) = reasoning {
             emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
         }
@@ -422,13 +449,7 @@ pub async fn stream_llm(
         return Ok((text, reasoning));
     }
 
-    let _ = app_handle.emit(
-        "stream-start",
-        serde_json::json!({
-            "agent": speaking_agent,
-            "turn": turn,
-        }),
-    );
+    emit_stream_start(app_handle, speaking_agent, turn, created_at);
 
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
@@ -437,7 +458,7 @@ pub async fn stream_llm(
     let mut full_reasoning = String::new();
 
     while let Some(item) = stream.next().await {
-        if aborted(abort) {
+        if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
@@ -491,15 +512,15 @@ pub async fn stream_llm(
         }
     }
 
-    if aborted(abort) {
+    if cancel.is_cancelled() {
         return Err(STREAM_ABORTED.into());
     }
 
+    // Empty SSE: fall back to non-stream without emitting stream-abort (avoids UI flicker).
     if full.is_empty() {
-        let _ = app_handle.emit(
-            "stream-abort",
-            serde_json::json!({ "agent": speaking_agent, "turn": turn }),
-        );
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
         return call_llm(config, speaking_agent, messages_context, narration).await;
     }
 
@@ -543,4 +564,37 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
     }
 
     parse_models_response(&data)
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+
+    #[test]
+    fn stream_cancel_detects_epoch_bump() {
+        let reset = AtomicBool::new(false);
+        let epoch = AtomicU64::new(3);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 3,
+        };
+        assert!(!c.is_cancelled());
+        epoch.fetch_add(1, Ordering::Relaxed);
+        assert!(c.is_cancelled());
+    }
+
+    #[test]
+    fn stream_cancel_detects_reset() {
+        let reset = AtomicBool::new(false);
+        let epoch = AtomicU64::new(1);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 1,
+        };
+        assert!(!c.is_cancelled());
+        reset.store(true, Ordering::Relaxed);
+        assert!(c.is_cancelled());
+    }
 }

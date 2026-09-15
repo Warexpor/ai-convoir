@@ -63,7 +63,7 @@ pub async fn start_conversation(
             }
             StartAction::ResumeAuto | StartAction::ContinueIdle => {
                 let turn = inner.turn_count;
-                state_arc.reset_flag.store(false, Ordering::Relaxed);
+                state_arc.clear_reset_if_idle();
                 state_arc.pause_flag.store(false, Ordering::Relaxed);
                 state_arc.step_once.store(false, Ordering::Relaxed);
                 inner.status = AppStatus::Running;
@@ -83,7 +83,7 @@ pub async fn start_conversation(
 
     // Fresh start
     state_arc.pause_flag.store(false, Ordering::Relaxed);
-    state_arc.reset_flag.store(false, Ordering::Relaxed);
+    state_arc.clear_reset_if_idle();
     state_arc.step_once.store(false, Ordering::Relaxed);
 
     {
@@ -107,6 +107,7 @@ pub async fn start_conversation(
     let _ = app_handle.emit("status-update", status_emit);
 
     spawn_loop_if_needed(state_arc, app_handle);
+    tracing::info!(target: "commands", "start_conversation");
     Ok(())
 }
 
@@ -167,10 +168,11 @@ pub async fn step_conversation(
         inner.status = AppStatus::Running;
     }
 
-    state_arc.reset_flag.store(false, Ordering::Relaxed);
+    state_arc.clear_reset_if_idle();
     state_arc.step_once.store(true, Ordering::Relaxed);
     state_arc.pause_flag.store(false, Ordering::Relaxed);
 
+    tracing::info!(target: "commands", "step_conversation");
     let _ = app_handle.emit(
         "status-update",
         serde_json::json!({ "status": "Running", "turn": state_arc.inner.lock().unwrap().turn_count }),
@@ -204,6 +206,7 @@ pub async fn reset_conversation(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
+    arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Relaxed);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
@@ -225,14 +228,15 @@ pub async fn reset_conversation(
 }
 
 /// Hard stop: end the run, keep transcript (Step/Start can continue).
-/// Uses Idle + pause so the loop exits cleanly — does **not** set reset_flag
-/// (that raced Step/Start by blocking spawn while loop_active was still true).
+/// Bumps stream_epoch so in-flight SSE aborts without clearing the transcript.
 #[tauri::command]
 pub async fn stop_conversation(
     state: tauri::State<'_, Arc<AppState>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
+    let epoch = arc.bump_stream_epoch();
+    tracing::info!(target: "commands", epoch, "stop_conversation");
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
 
@@ -264,6 +268,7 @@ pub async fn load_transcript(
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
     let state_arc = Arc::clone(arc);
+    arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Relaxed);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
@@ -303,9 +308,7 @@ pub async fn load_transcript(
     );
     // clear reset so future runs work (if no loop was active)
     drop(inner);
-    if !arc.loop_active.load(Ordering::SeqCst) {
-        arc.reset_flag.store(false, Ordering::Relaxed);
-    }
+    arc.clear_reset_if_idle();
     Ok(())
 }
 
@@ -526,6 +529,7 @@ pub async fn delete_saved_chat(
 
 /// Delete a single message from the current chat by agent + turn + created_at.
 /// Removes from both in-memory state and SQLite DB.
+/// Returns true if a message was removed from the in-memory transcript.
 #[tauri::command]
 pub async fn delete_messages(
     state: tauri::State<'_, Arc<AppState>>,
@@ -533,16 +537,17 @@ pub async fn delete_messages(
     agent: String,
     turn: u32,
     created_at: u64,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let arc: &Arc<AppState> = &state;
 
-    // Remove from in-memory state
-    {
+    let removed = {
         let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
+        let before = inner.messages.len();
         inner
             .messages
             .retain(|m| !(m.agent == agent && m.turn == turn && m.created_at == created_at));
-    }
+        before != inner.messages.len()
+    };
 
     // Remove from DB (best-effort)
     let chat_id = {
@@ -577,7 +582,20 @@ pub async fn delete_messages(
         }),
     );
 
+    Ok(removed)
+}
+
+/// Accept a log line from the webview and write it through the Rust logger.
+#[tauri::command]
+pub fn frontend_log(level: String, message: String, source: Option<String>) -> Result<(), String> {
+    crate::logging::write_frontend(&level, &message, source.as_deref());
     Ok(())
+}
+
+/// Absolute path to the on-disk log file (if initialized).
+#[tauri::command]
+pub fn get_log_path() -> Result<Option<String>, String> {
+    Ok(crate::logging::log_path().map(|p| p.display().to_string()))
 }
 
 fn now_ms() -> u64 {
@@ -592,6 +610,9 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     if state.reset_flag.load(Ordering::Relaxed) {
         return false;
     }
+
+    let epoch_at_start = state.stream_epoch.load(Ordering::Relaxed);
+    let created_at = now_ms();
 
     let (bot_count, turn_count, max_turns, mode, config, messages, narration, chat_id) = {
         let mut inner = match state.inner.lock() {
@@ -639,6 +660,11 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
     let agent = next_speaker(bot_count, turn_count);
     let narr_ref = narration.as_deref();
+    let cancel = llm::StreamCancel {
+        reset: &state.reset_flag,
+        epoch: &state.stream_epoch,
+        epoch_at_start,
+    };
 
     // Prefer SSE streaming; falls back to non-stream if empty
     let result = llm::stream_llm(
@@ -647,31 +673,32 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         &messages,
         narr_ref,
         turn_count,
+        created_at,
         app_handle,
         if chat_id.is_empty() {
             "ai-conversation"
         } else {
             chat_id.as_str()
         },
-        &state.reset_flag,
+        &cancel,
     )
     .await;
 
     match result {
         Ok((content, reasoning)) => {
+            if cancel.is_cancelled() {
+                return false;
+            }
             let msg = Message {
                 agent: agent.into(),
                 role: "assistant".into(),
                 content,
                 turn: turn_count,
-                created_at: now_ms(),
+                created_at,
                 reasoning,
             };
-            if state.reset_flag.load(Ordering::Relaxed) {
-                return false;
-            }
             if let Ok(mut inner) = state.inner.lock() {
-                if !state.reset_flag.load(Ordering::Relaxed) {
+                if !cancel.is_cancelled() {
                     // Persist to database (non-blocking, best-effort)
                     if !chat_id.is_empty() {
                         let db_path = state
@@ -714,6 +741,12 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             }
         }
         Err(e) if e == llm::STREAM_ABORTED => {
+            tracing::info!(
+                target: "commands",
+                agent,
+                turn = turn_count,
+                "stream aborted"
+            );
             let _ = app_handle.emit(
                 "stream-abort",
                 serde_json::json!({ "agent": agent, "turn": turn_count }),
@@ -721,6 +754,13 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             return false;
         }
         Err(e) => {
+            tracing::error!(
+                target: "commands",
+                agent,
+                turn = turn_count,
+                error = %e,
+                "stream error"
+            );
             let _ = app_handle.emit(
                 "stream-abort",
                 serde_json::json!({ "agent": agent, "turn": turn_count }),
@@ -900,5 +940,69 @@ mod seed_tests {
         inner.seed_prompt = "   ".into();
         inject_seed_if_any(&mut inner);
         assert!(inner.messages.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod epoch_tests {
+    use crate::llm::StreamCancel;
+    use crate::state::{AppState, Message};
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn bump_stream_epoch_invalidates_inflight_cancel() {
+        let state = AppState::new();
+        let start = state.stream_epoch.load(Ordering::Relaxed);
+        let cancel = StreamCancel {
+            reset: &state.reset_flag,
+            epoch: &state.stream_epoch,
+            epoch_at_start: start,
+        };
+        assert!(!cancel.is_cancelled());
+        state.bump_stream_epoch();
+        assert!(cancel.is_cancelled());
+    }
+
+    #[test]
+    fn clear_reset_if_idle_skips_while_loop_active() {
+        let state = AppState::new();
+        state.reset_flag.store(true, Ordering::Relaxed);
+        state.loop_active.store(true, Ordering::SeqCst);
+        state.clear_reset_if_idle();
+        assert!(state.reset_flag.load(Ordering::Relaxed));
+        state.loop_active.store(false, Ordering::SeqCst);
+        state.clear_reset_if_idle();
+        assert!(!state.reset_flag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn delete_identity_matches_stable_created_at() {
+        let created = 1_700_000_000_000u64;
+        let msg = Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "hi".into(),
+            turn: 2,
+            created_at: created,
+            reasoning: None,
+        };
+        let mut msgs = vec![msg];
+        let before = msgs.len();
+        msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == created));
+        assert_eq!(before - 1, msgs.len());
+        // Mismatched stamp (old FE bug) would miss:
+        let msg2 = Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "hi".into(),
+            turn: 2,
+            created_at: created,
+            reasoning: None,
+        };
+        msgs.push(msg2);
+        let wrong_stamp = created + 5;
+        let len = msgs.len();
+        msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == wrong_stamp));
+        assert_eq!(msgs.len(), len);
     }
 }

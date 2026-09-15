@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationMode, InnerState, Message } from "../types";
 import * as api from "../lib/api";
+import { log } from "../lib/log";
 import {
   defaultConfig,
   loadPersistedConfig,
@@ -42,7 +43,10 @@ export function useConversationApp() {
   const [narration, setNarration] = useState("");
   const onNarrationCleared = useCallback(() => setNarration(""), []);
   const onStreamError = useCallback(
-    (msg: string) => toast.show(msg, 9000),
+    (msg: string) => {
+      log.error(msg, "stream");
+      toast.show(msg, 9000);
+    },
     [toast],
   );
 
@@ -222,15 +226,23 @@ export function useConversationApp() {
 
   const handleStop = useCallback(async () => {
     try {
+      log.info("stop requested", "session");
       await api.stopConversation();
       stream.setStatus("Idle");
       stream.setIsThinking(false);
       stream.setMessages((prev) => prev.filter((m) => !m.streaming));
       autoSave();
     } catch (e) {
+      log.error(String(e), "session");
       toast.show(String(e));
     }
-  }, [autoSave, stream, toast]);
+  }, [
+    autoSave,
+    stream.setStatus,
+    stream.setIsThinking,
+    stream.setMessages,
+    toast,
+  ]);
 
   const handleReset = useCallback(async () => {
     try {
@@ -256,7 +268,14 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(String(e));
     }
-  }, [autoSave, refreshChats, stream, toast]);
+  }, [
+    autoSave,
+    refreshChats,
+    stream.setMessages,
+    stream.setTurnCount,
+    stream.setStatus,
+    toast,
+  ]);
 
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
@@ -291,7 +310,7 @@ export function useConversationApp() {
   const handleDeleteMessage = useCallback(
     async (agent: string, turn: number, created_at: number) => {
       try {
-        await api.deleteMessage({ agent, turn, created_at });
+        const removed = await api.deleteMessage({ agent, turn, created_at });
         stream.setMessages((prev) =>
           prev.filter(
             (m) =>
@@ -302,11 +321,14 @@ export function useConversationApp() {
               ),
           ),
         );
+        if (!removed) {
+          toast.show("Message was already gone on the server.", 2800);
+        }
       } catch (e) {
         toast.show(`Delete failed: ${e}`);
       }
     },
-    [stream, toast],
+    [stream.setMessages, toast],
   );
 
   const handleRetry = useCallback(async () => {
@@ -318,7 +340,7 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(String(e), 8000);
     }
-  }, [stream, toast]);
+  }, [stream.lastFailed, stream.clearFailed, toast]);
 
   const handleSaveChat = useCallback(() => {
     autoSave();
@@ -372,14 +394,25 @@ export function useConversationApp() {
         toast.show(String(e));
       }
     },
-    [autoSave, pushConfig, stream, toast],
+    [
+      autoSave,
+      pushConfig,
+      stream.setMessages,
+      stream.setTurnCount,
+      stream.setStatus,
+      toast,
+    ],
   );
 
   const handleDeleteChat = useCallback(
-    (id: string) => {
+    async (id: string) => {
       skipAutosaveUntil.current = Date.now() + 2500;
+      const wasActive = activeChatId === id || chatIdRef.current === id;
+      if (wasActive) {
+        await api.stopConversation().catch(() => undefined);
+      }
       deleteChat(id);
-      if (activeChatId === id || chatIdRef.current === id) {
+      if (wasActive) {
         setActiveChatIdState(null);
         chatIdRef.current = null;
         setActiveChatId(null);
@@ -393,7 +426,14 @@ export function useConversationApp() {
       refreshChats();
       toast.show("Chat deleted.", 1800);
     },
-    [activeChatId, refreshChats, stream, toast],
+    [
+      activeChatId,
+      refreshChats,
+      stream.setMessages,
+      stream.setTurnCount,
+      stream.setStatus,
+      toast,
+    ],
   );
 
   const handleStartFirst = useCallback(

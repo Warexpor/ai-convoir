@@ -40,6 +40,10 @@ export function useStreamBridge({
   const streamBuf = useRef(new Map<string, string>());
   const streamReasonBuf = useRef(new Map<string, string>());
   const streamRaf = useRef<number | null>(null);
+  const streamTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamFlushAt = useRef(0);
+  /** Cap UI paint rate while tokens arrive — every RAF floods WebKit. */
+  const STREAM_FLUSH_MS = 50;
 
   useEffect(() => {
     if (status !== "Running") {
@@ -48,37 +52,69 @@ export function useStreamBridge({
     }
     const id = setInterval(() => {
       if (Date.now() - lastMsgTime.current > 1200) setIsThinking(true);
-    }, 300);
+    }, 400);
     return () => clearInterval(id);
   }, [status]);
 
   useEffect(() => {
-    const flushStreamBuf = () => {
-      streamRaf.current = null;
-      const snap = new Map(streamBuf.current);
-      const rsnap = new Map(streamReasonBuf.current);
-      if (snap.size === 0 && rsnap.size === 0) return;
-      setMessages((prev) =>
-        prev.map((m) => {
-          if (!m.streaming) return m;
-          const k = `${m.agent}:${m.turn}`;
-          const content = snap.get(k);
-          const reasoning = rsnap.get(k);
-          let next = m;
-          if (content !== undefined) next = { ...next, content };
-          if (reasoning !== undefined)
-            next = { ...next, reasoning: reasoning || null };
-          return next;
-        }),
-      );
-    };
-
-    const applyNewMessage = (m: Message) => {
-      const k = `${m.agent}:${m.turn}`;
+    const clearStreamSched = () => {
+      if (streamTimer.current != null) {
+        clearTimeout(streamTimer.current);
+        streamTimer.current = null;
+      }
       if (streamRaf.current != null) {
         cancelAnimationFrame(streamRaf.current);
         streamRaf.current = null;
       }
+    };
+
+    const flushStreamBuf = () => {
+      streamRaf.current = null;
+      streamFlushAt.current = performance.now();
+      const snap = new Map(streamBuf.current);
+      const rsnap = new Map(streamReasonBuf.current);
+      if (snap.size === 0 && rsnap.size === 0) return;
+      setMessages((prev) => {
+        let changed = false;
+        const next = prev.map((m) => {
+          if (!m.streaming) return m;
+          const k = `${m.agent}:${m.turn}`;
+          const content = snap.get(k);
+          const reasoning = rsnap.get(k);
+          let row = m;
+          if (content !== undefined && content !== m.content) {
+            row = { ...row, content };
+            changed = true;
+          }
+          if (
+            reasoning !== undefined &&
+            (reasoning || null) !== (m.reasoning || null)
+          ) {
+            row = { ...row, reasoning: reasoning || null };
+            changed = true;
+          }
+          return row;
+        });
+        return changed ? next : prev;
+      });
+    };
+
+    const scheduleFlush = () => {
+      if (streamRaf.current != null || streamTimer.current != null) return;
+      const wait = STREAM_FLUSH_MS - (performance.now() - streamFlushAt.current);
+      if (wait <= 0) {
+        streamRaf.current = requestAnimationFrame(flushStreamBuf);
+        return;
+      }
+      streamTimer.current = setTimeout(() => {
+        streamTimer.current = null;
+        streamRaf.current = requestAnimationFrame(flushStreamBuf);
+      }, wait);
+    };
+
+    const applyNewMessage = (m: Message) => {
+      const k = `${m.agent}:${m.turn}`;
+      clearStreamSched();
       const streamed = streamBuf.current.get(k) || "";
       const streamedReason = streamReasonBuf.current.get(k) || "";
       streamBuf.current.delete(k);
@@ -107,7 +143,7 @@ export function useStreamBridge({
             content: finalContent,
             reasoning: finalReason || undefined,
             streaming: false,
-            created_at: next[idx].created_at || m.created_at,
+            created_at: m.created_at || next[idx].created_at,
           };
           return next;
         }
@@ -133,11 +169,12 @@ export function useStreamBridge({
         : null;
     };
 
-    const applyStreamStart = ({ agent, turn }: StreamStart) => {
+    const applyStreamStart = ({ agent, turn, created_at }: StreamStart) => {
       setIsThinking(false);
       lastMsgTime.current = Date.now();
       streamBuf.current.set(`${agent}:${turn}`, "");
       streamReasonBuf.current.set(`${agent}:${turn}`, "");
+      const stamp = created_at || Date.now();
       setMessages((prev) => {
         if (prev.some((m) => m.streaming && m.agent === agent && m.turn === turn))
           return prev;
@@ -149,11 +186,28 @@ export function useStreamBridge({
             content: "",
             reasoning: "",
             turn,
-            created_at: Date.now(),
+            created_at: stamp,
             streaming: true,
           },
         ];
       });
+    };
+
+    const applyMessageDeleted = (payload: {
+      agent: string;
+      turn: number;
+      created_at: number;
+    }) => {
+      setMessages((prev) =>
+        prev.filter(
+          (m) =>
+            !(
+              m.agent === payload.agent &&
+              m.turn === payload.turn &&
+              m.created_at === payload.created_at
+            ),
+        ),
+      );
     };
 
     const applyStreamChunk = ({ agent, turn, delta, kind }: StreamChunk) => {
@@ -170,26 +224,18 @@ export function useStreamBridge({
       } else {
         streamBuf.current.set(k, (streamBuf.current.get(k) || "") + delta);
       }
-      if (streamRaf.current == null) {
-        streamRaf.current = requestAnimationFrame(flushStreamBuf);
-      }
+      scheduleFlush();
     };
 
     const applyAbort = () => {
       streamBuf.current.clear();
       streamReasonBuf.current.clear();
-      if (streamRaf.current != null) {
-        cancelAnimationFrame(streamRaf.current);
-        streamRaf.current = null;
-      }
+      clearStreamSched();
       setMessages((prev) => prev.filter((m) => !m.streaming));
     };
 
     const applyStreamDone = () => {
-      if (streamRaf.current != null) {
-        cancelAnimationFrame(streamRaf.current);
-        streamRaf.current = null;
-      }
+      clearStreamSched();
       flushStreamBuf();
     };
 
@@ -211,13 +257,15 @@ export function useStreamBridge({
         onBus("stream-abort", () => applyAbort()),
         onBus("narration-cleared", () => onNarrationCleared()),
         onBus("stream-done", () => applyStreamDone()),
+        onBus("message-deleted", (payload) =>
+          applyMessageDeleted(
+            payload as { agent: string; turn: number; created_at: number },
+          ),
+        ),
       ];
       return () => {
         unsubs.forEach((u) => u());
-        if (streamRaf.current != null) {
-          cancelAnimationFrame(streamRaf.current);
-          streamRaf.current = null;
-        }
+        clearStreamSched();
       };
     }
 
@@ -237,6 +285,10 @@ export function useStreamBridge({
         listen("stream-abort", () => applyAbort()),
         listen("narration-cleared", () => onNarrationCleared()),
         listen("stream-done", () => applyStreamDone()),
+        listen<{ agent: string; turn: number; created_at: number }>(
+          "message-deleted",
+          (e) => applyMessageDeleted(e.payload),
+        ),
       ]);
 
       if (cancelled) {
@@ -251,10 +303,7 @@ export function useStreamBridge({
     return () => {
       cancelled = true;
       unsubs.forEach((u) => u());
-      if (streamRaf.current != null) {
-        cancelAnimationFrame(streamRaf.current);
-        streamRaf.current = null;
-      }
+      clearStreamSched();
     };
   }, [onError, onNarrationCleared, turnRef]);
 

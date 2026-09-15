@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconChevronDown, IconKey, IconReturn, SlashMark } from "./Marks";
 import MessageBubble from "./MessageBubble";
+import { pulseScrollBusy } from "../lib/scrollBusy";
 import type { InnerState, Message } from "../types";
 
 interface Props {
@@ -21,8 +22,8 @@ interface Props {
 
 const EST_MSG = 168;
 const GAP = 28;
-const OVERSCAN = 12;
-const VIRTUALIZE_AFTER = 28;
+const OVERSCAN = 6;
+const VIRTUALIZE_AFTER = 16;
 const NEAR_PX = 96;
 
 function msgKey(msg: Message, idx: number) {
@@ -51,15 +52,18 @@ function ChatView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const heightsRef = useRef(new Map<string, number>());
   const measureRaf = useRef(0);
+  const scrollRaf = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const autoScrollRef = useRef(true);
+  const winRef = useRef({ start: 0, end: messages.length });
   const [autoScroll, setAutoScroll] = useState(true);
   const [win, setWin] = useState({ start: 0, end: messages.length });
   const [heightTick, setHeightTick] = useState(0);
 
   const virtualize = messages.length >= VIRTUALIZE_AFTER;
   const streamingTail = messages[messages.length - 1];
-  const streamLen = streamingTail?.streaming
-    ? streamingTail.content.length
+  const streamSig = streamingTail?.streaming
+    ? streamingTail.content.length + (streamingTail.reasoning?.length ?? 0)
     : 0;
 
   const heightOf = useCallback(
@@ -78,10 +82,24 @@ function ChatView({
     return p;
   }, [messages, heightOf]);
 
-  const updateWindow = useCallback(
+  const applyWin = useCallback((start: number, end: number) => {
+    const prev = winRef.current;
+    if (prev.start === start && prev.end === end) return;
+    const next = { start, end };
+    winRef.current = next;
+    setWin(next);
+  }, []);
+
+  const applyAutoScroll = useCallback((next: boolean) => {
+    if (autoScrollRef.current === next) return;
+    autoScrollRef.current = next;
+    setAutoScroll(next);
+  }, []);
+
+  const computeWindow = useCallback(
     (el: HTMLElement, atBottom: boolean) => {
       if (!virtualize) {
-        setWin({ start: 0, end: messages.length });
+        applyWin(0, messages.length);
         return;
       }
       const top = el.scrollTop;
@@ -98,18 +116,23 @@ function ChatView({
       while (end < messages.length && prefixes[end] < limit) end++;
       end = Math.min(messages.length, end + OVERSCAN);
       if (atBottom) end = messages.length;
-      setWin({ start, end });
+      applyWin(start, end);
     },
-    [messages.length, prefixes, virtualize],
+    [applyWin, messages.length, prefixes, virtualize],
   );
 
   const onScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atBottom = nearBottom(el);
-    setAutoScroll(atBottom);
-    updateWindow(el, atBottom);
-  }, [updateWindow]);
+    pulseScrollBusy();
+    if (scrollRaf.current) return;
+    scrollRaf.current = requestAnimationFrame(() => {
+      scrollRaf.current = 0;
+      const el = scrollRef.current;
+      if (!el) return;
+      const atBottom = nearBottom(el);
+      applyAutoScroll(atBottom);
+      if (virtualize) computeWindow(el, atBottom);
+    });
+  }, [applyAutoScroll, computeWindow, virtualize]);
 
   const stickToBottom = useCallback((smooth: boolean) => {
     const el = scrollRef.current;
@@ -121,29 +144,37 @@ function ChatView({
   useEffect(() => {
     if (!autoScroll) return;
     stickToBottom(false);
-  }, [messages.length, streamLen, isThinking, autoScroll, stickToBottom]);
+  }, [messages.length, streamSig, isThinking, autoScroll, stickToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     if (!virtualize) {
-      setWin({ start: 0, end: messages.length });
+      applyWin(0, messages.length);
       return;
     }
     if (autoScroll) {
       const visible = Math.ceil(el.clientHeight / EST_MSG) + OVERSCAN * 2;
-      setWin({
-        start: Math.max(0, messages.length - visible),
-        end: messages.length,
-      });
+      applyWin(
+        Math.max(0, messages.length - visible),
+        messages.length,
+      );
       return;
     }
-    updateWindow(el, false);
-  }, [messages.length, autoScroll, virtualize, updateWindow]);
+    computeWindow(el, false);
+  }, [
+    messages.length,
+    streamSig,
+    autoScroll,
+    virtualize,
+    applyWin,
+    computeWindow,
+  ]);
 
   useEffect(() => {
     return () => {
       if (measureRaf.current) cancelAnimationFrame(measureRaf.current);
+      if (scrollRaf.current) cancelAnimationFrame(scrollRaf.current);
     };
   }, []);
 
@@ -211,9 +242,9 @@ function ChatView({
   }, [virtualize, messages.length, streamingTail?.streaming]);
 
   const jumpLatest = useCallback(() => {
-    setAutoScroll(true);
+    applyAutoScroll(true);
     requestAnimationFrame(() => stickToBottom(true));
-  }, [stickToBottom]);
+  }, [applyAutoScroll, stickToBottom]);
 
   const { slice, sliceStart, topPad, bottomPad } = useMemo(() => {
     if (!virtualize) {
