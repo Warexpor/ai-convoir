@@ -1,5 +1,5 @@
 import type { AiConfig, InnerState, Message, StreamKind } from "../types";
-import { LENGTH_INSTRUCTIONS } from "../types";
+import { LENGTH_INSTRUCTIONS, remapAgentsForCast } from "../types";
 import { emit } from "./bus";
 import {
   MUSE_SPARK_13_CONTRIBUTOR,
@@ -380,8 +380,14 @@ function requestLoop() {
 }
 
 export function setEngineConfig(cfg: InnerState) {
+  const prevCount = state.config?.bot_count ?? cfg.bot_count;
+  const nextCount = cfg.bot_count >= 3 ? 3 : 2;
+  if (prevCount !== nextCount && state.messages.length > 0) {
+    state.messages = remapAgentsForCast(state.messages, nextCount);
+  }
   state.config = {
     ...cfg,
+    bot_count: nextCount,
     ai1_config: lockAgent(cfg.ai1_config),
     ai2_config: lockAgent(cfg.ai2_config),
     ai3_config: lockAgent(cfg.ai3_config),

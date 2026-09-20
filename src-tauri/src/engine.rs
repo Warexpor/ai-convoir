@@ -26,6 +26,24 @@ pub fn next_speaker(bot_count: u8, turns_completed: u32) -> &'static str {
     ids[(turns_completed as usize) % n]
 }
 
+/// Remap cast agent ids (`ai1`/`ai2`/`ai3`) when bot_count changes mid-thread.
+/// Seed / narrator / other roles are left alone. Agent turns are reassigned in
+/// order onto the new cast cycle so history stays coherent with the new roster.
+pub fn remap_agents_for_cast(messages: &mut [crate::state::Message], new_bot_count: u8) {
+    let ids = agent_ids(new_bot_count);
+    let n = ids.len().max(1);
+    let mut i = 0usize;
+    for m in messages.iter_mut() {
+        match m.agent.as_str() {
+            "ai1" | "ai2" | "ai3" => {
+                m.agent = ids[i % n].to_string();
+                i += 1;
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Simulate step sequence for `steps` turns; returns agent id list.
 #[cfg(test)]
 pub fn simulate_turn_order(bot_count: u8, steps: u32) -> Vec<&'static str> {
@@ -467,6 +485,69 @@ mod tests {
         assert_eq!(agent_ids(3).len(), 3);
         assert_eq!(agent_ids(1).len(), 2); // invalid falls back to 2
         assert_eq!(agent_ids(99).len(), 2);
+    }
+
+    #[test]
+    fn remap_agents_3_to_2_and_2_to_3() {
+        let mut msgs = vec![
+            Message {
+                agent: "seed".into(),
+                role: "user".into(),
+                content: "hi".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "a".into(),
+                turn: 0,
+                created_at: 2,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "b".into(),
+                turn: 1,
+                created_at: 3,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai3".into(),
+                role: "assistant".into(),
+                content: "c".into(),
+                turn: 2,
+                created_at: 4,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "d".into(),
+                turn: 3,
+                created_at: 5,
+                reasoning: None,
+            },
+        ];
+        remap_agents_for_cast(&mut msgs, 2);
+        assert_eq!(msgs[0].agent, "seed");
+        assert_eq!(
+            msgs[1..]
+                .iter()
+                .map(|m| m.agent.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ai1", "ai2", "ai1", "ai2"]
+        );
+        remap_agents_for_cast(&mut msgs, 3);
+        assert_eq!(
+            msgs[1..]
+                .iter()
+                .map(|m| m.agent.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ai1", "ai2", "ai3", "ai1"]
+        );
     }
 
     #[test]

@@ -122,6 +122,22 @@ export function nextAgentId(config: InnerState | null, turnCount: number): strin
   return ids[turnCount % n];
 }
 
+/** Remap cast agent ids when bot_count changes mid-thread (seed/narrator untouched). */
+export function remapAgentsForCast(
+  messages: Message[],
+  newBotCount: number,
+): Message[] {
+  const n = newBotCount >= 3 ? 3 : 2;
+  const ids = n === 3 ? ["ai1", "ai2", "ai3"] : ["ai1", "ai2"];
+  let i = 0;
+  return messages.map((m) => {
+    if (m.agent !== "ai1" && m.agent !== "ai2" && m.agent !== "ai3") return m;
+    const agent = ids[i % n];
+    i += 1;
+    return agent === m.agent ? m : { ...m, agent };
+  });
+}
+
 // ── Token estimation ──────────────────────────────────────────────
 
 /** Rough token estimation: ~4 chars per token for English text. */

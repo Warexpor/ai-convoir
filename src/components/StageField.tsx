@@ -58,8 +58,32 @@ void main() {
 `;
 
 /** Cap lacquer refresh — enough motion, far cheaper than uncapped RAF. */
-const TARGET_FPS = 24;
-const FRAME_MS = 1000 / TARGET_FPS;
+const TARGET_FPS_DEFAULT = 24;
+/** WebKitGTK / Linux desktop: keep the stage quieter to cut paint cost. */
+const TARGET_FPS_QUIET = 15;
+
+function detectQuietGpu(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isLinux = /Linux/i.test(ua) && !/Android/i.test(ua);
+  const isWebKit =
+    /AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg\//i.test(ua);
+  const saveData = Boolean(
+    (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+      ?.saveData,
+  );
+  return (
+    saveData ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+    window.matchMedia("(update: slow)").matches ||
+    (isLinux && isWebKit) ||
+    isLinux
+  );
+}
+
+function targetFrameMs(): number {
+  return 1000 / (detectQuietGpu() ? TARGET_FPS_QUIET : TARGET_FPS_DEFAULT);
+}
 
 function compile(gl: WebGLRenderingContext, type: number, src: string) {
   const sh = gl.createShader(type);
@@ -83,12 +107,13 @@ function maxDpr(): number {
   const lowPower =
     window.matchMedia("(prefers-reduced-transparency: reduce)").matches ||
     window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-    conn?.saveData === true;
+    conn?.saveData === true ||
+    detectQuietGpu();
   return Math.min(raw, lowPower ? 1 : 1.25);
 }
 
 interface Props {
-  /** Freeze lacquer when chrome covers most of the stage (rail / settings). */
+  /** Freeze lacquer when chrome covers the stage, help is open, or a stream is live. */
   paused?: boolean;
 }
 
@@ -154,6 +179,7 @@ export default function StageField({ paused = false }: Props) {
     );
     let raf = 0;
     let lastDraw = 0;
+    const frameMs = targetFrameMs();
     const start = performance.now();
     let scrollBusy = false;
 
@@ -190,7 +216,7 @@ export default function StageField({ paused = false }: Props) {
         draw(now, 0);
         return;
       }
-      if (now - lastDraw >= FRAME_MS) draw(now, 1);
+      if (now - lastDraw >= frameMs) draw(now, 1);
       raf = requestAnimationFrame(loop);
     };
 

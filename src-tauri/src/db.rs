@@ -5,6 +5,17 @@ use rusqlite::{params, Connection};
 pub fn open(path: &str) -> Result<Connection, String> {
     let conn = Connection::open(path).map_err(|e| format!("DB open: {}", e))?;
 
+    // Serialize writers across connections; tolerate brief lock contention.
+    conn
+        .execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            PRAGMA busy_timeout=5000;
+            PRAGMA synchronous=NORMAL;
+            ",
+        )
+        .map_err(|e| format!("DB pragma: {}", e))?;
+
     conn.execute_batch(
         "
         CREATE TABLE IF NOT EXISTS messages (

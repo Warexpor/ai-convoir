@@ -189,6 +189,8 @@ pub struct AppState {
     pub loop_generation: AtomicU64,
     /// Path to the SQLite database file.
     pub db_path: Mutex<String>,
+    /// Serializes all SQLite open/read/write so stream saves and chat upserts cannot race.
+    pub db_lock: Mutex<()>,
 }
 
 impl AppState {
@@ -202,6 +204,7 @@ impl AppState {
             loop_active: AtomicBool::new(false),
             loop_generation: AtomicU64::new(0),
             db_path: Mutex::new(String::new()),
+            db_lock: Mutex::new(()),
         }
     }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ConversationMode, InnerState, Message } from "../types";
+import { remapAgentsForCast } from "../types";
 import * as api from "../lib/api";
 import { log } from "../lib/log";
 import {
@@ -85,10 +86,20 @@ export function useConversationApp() {
 
   const pushConfig = useCallback(async (cfg: InnerState) => {
     const n = normalizeConfig(cfg);
+    const prev = configRef.current;
+    const prevCount = prev?.bot_count ?? n.bot_count;
+    const nextCount = n.bot_count >= 3 ? 3 : 2;
+    if (prev && prevCount !== nextCount) {
+      const remapped = remapAgentsForCast(messagesRef.current, nextCount);
+      if (remapped !== messagesRef.current) {
+        stream.setMessages(remapped);
+        messagesRef.current = remapped;
+      }
+    }
     await api.updateConfig(n);
     setConfig(n);
     persistConfig(n);
-  }, []);
+  }, [stream.setMessages]);
 
   const refreshChats = useCallback(() => setChats(listChats()), []);
 

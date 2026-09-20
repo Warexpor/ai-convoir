@@ -313,23 +313,13 @@ pub async fn load_transcript(
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
 
-    // Persist loaded messages to DB (async, best-effort)
+    // Persist loaded messages to DB (async, serialized)
     if !chat_id.is_empty() {
-        let db_path = state_arc
-            .db_path
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        if !db_path.is_empty() {
-            let msgs = messages.clone();
-            let cid = chat_id.clone();
-            std::thread::spawn(move || {
-                if let Ok(conn) = db::open(&db_path) {
-                    let _ = db::save_messages(&conn, &cid, &msgs);
-                }
-            });
-        }
+        let msgs = messages.clone();
+        let cid = chat_id.clone();
+        spawn_db_write(&state_arc, move |conn| {
+            let _ = db::save_messages(conn, &cid, &msgs);
+        });
     }
 
     let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
@@ -396,7 +386,11 @@ pub async fn update_config(
         inner.ai3_config = c;
     }
     if let Some(n) = bot_count {
-        inner.bot_count = if n >= 3 { 3 } else { 2 };
+        let next = if n >= 3 { 3 } else { 2 };
+        if next != inner.bot_count && !inner.messages.is_empty() {
+            crate::engine::remap_agents_for_cast(&mut inner.messages, next);
+        }
+        inner.bot_count = next;
     }
     inner.max_turns = max_turns.max(1);
     inner.delay_ms = delay_ms;
@@ -475,8 +469,34 @@ fn with_db<T>(
     if db_path.is_empty() {
         return Err("Database not ready".into());
     }
+    // Hold the process-wide DB lock for the whole open+work window so
+    // per-turn inserts cannot interleave with replace/delete/upsert.
+    let _guard = state.db_lock.lock().map_err(|e| e.to_string())?;
     let conn = db::open(&db_path)?;
     f(&conn)
+}
+
+/// Best-effort background DB write that still serializes through `db_lock`.
+fn spawn_db_write(state: &Arc<AppState>, work: impl FnOnce(&rusqlite::Connection) + Send + 'static) {
+    let db_path = state
+        .db_path
+        .lock()
+        .ok()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    if db_path.is_empty() {
+        return;
+    }
+    let lock = Arc::clone(state);
+    std::thread::spawn(move || {
+        let _guard = match lock.db_lock.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if let Ok(conn) = db::open(&db_path) {
+            work(&conn);
+        }
+    });
 }
 
 /// Persist a full saved-chat JSON snapshot (sidebar + transcript).
@@ -595,21 +615,11 @@ pub async fn delete_messages(
         inner.active_chat_id.clone()
     };
     if !chat_id.is_empty() {
-        let db_path = arc
-            .db_path
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        if !db_path.is_empty() {
-            let cid = chat_id.clone();
-            let a = agent.clone();
-            let _ = std::thread::spawn(move || {
-                if let Ok(conn) = db::open(&db_path) {
-                    let _ = db::delete_message(&conn, &cid, &a, turn, created_at);
-                }
-            });
-        }
+        let cid = chat_id.clone();
+        let a = agent.clone();
+        spawn_db_write(arc, move |conn| {
+            let _ = db::delete_message(conn, &cid, &a, turn, created_at);
+        });
     }
 
     // Notify FE
@@ -739,23 +749,13 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             };
             if let Ok(mut inner) = state.inner.lock() {
                 if !cancel.is_cancelled() {
-                    // Persist to database (non-blocking, best-effort)
+                    // Persist to database (non-blocking, serialized)
                     if !chat_id.is_empty() {
-                        let db_path = state
-                            .db_path
-                            .lock()
-                            .ok()
-                            .map(|g| g.clone())
-                            .unwrap_or_default();
-                        if !db_path.is_empty() {
-                            let msg_for_db = msg.clone();
-                            let cid = chat_id.clone();
-                            std::thread::spawn(move || {
-                                if let Ok(conn) = db::open(&db_path) {
-                                    let _ = db::save_message(&conn, &cid, &msg_for_db);
-                                }
-                            });
-                        }
+                        let msg_for_db = msg.clone();
+                        let cid = chat_id.clone();
+                        spawn_db_write(state, move |conn| {
+                            let _ = db::save_message(conn, &cid, &msg_for_db);
+                        });
                     }
 
                     inner.messages.push(msg.clone());

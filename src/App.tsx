@@ -140,20 +140,23 @@ function App() {
     : null;
 
   return (
-    <div
-      className={[
-        "app",
-        settingsOpen ? "settings-open" : "",
-        railOpen ? "" : "rail-closed",
-        railOpen ? "rail-open-mobile" : "",
-        stream.status === "Running" ? "is-busy" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ zoom }}
-    >
-      {/* Freeze lacquer when chrome covers the stage, help is open, or the tab is hidden. */}
-      <StageField paused={settingsOpen || railOpen || helpOpen} />
+    <div className="app-shell">
+      {/* Stage sits outside CSS zoom so lacquer canvas is not stretched/blurred. */}
+      <StageField
+        paused={settingsOpen || railOpen || helpOpen || stream.status === "Running"}
+      />
+      <div
+        className={[
+          "app",
+          settingsOpen ? "settings-open" : "",
+          railOpen ? "" : "rail-closed",
+          railOpen ? "rail-open-mobile" : "",
+          stream.status === "Running" ? "is-busy" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        style={{ zoom }}
+      >
       <a className="skip-link" href="#main">
         Skip to transcript
       </a>
@@ -326,6 +329,7 @@ function App() {
       />
 
       <ShortcutsModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      </div>
     </div>
   );
 }
