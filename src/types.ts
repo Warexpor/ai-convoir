@@ -130,12 +130,16 @@ export function remapAgentsForCast(
   const n = newBotCount >= 3 ? 3 : 2;
   const ids = n === 3 ? ["ai1", "ai2", "ai3"] : ["ai1", "ai2"];
   let i = 0;
-  return messages.map((m) => {
+  let changed = false;
+  const next = messages.map((m) => {
     if (m.agent !== "ai1" && m.agent !== "ai2" && m.agent !== "ai3") return m;
     const agent = ids[i % n];
     i += 1;
-    return agent === m.agent ? m : { ...m, agent };
+    if (agent === m.agent) return m;
+    changed = true;
+    return { ...m, agent };
   });
+  return changed ? next : messages;
 }
 
 // ── Token estimation ──────────────────────────────────────────────

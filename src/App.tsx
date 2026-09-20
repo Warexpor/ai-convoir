@@ -143,7 +143,13 @@ function App() {
     <div className="app-shell">
       {/* Stage sits outside CSS zoom so lacquer canvas is not stretched/blurred. */}
       <StageField
-        paused={settingsOpen || railOpen || helpOpen || stream.status === "Running"}
+        paused={
+          settingsOpen ||
+          railOpen ||
+          helpOpen ||
+          stream.status === "Running" ||
+          stream.messages.some((m) => m.streaming)
+        }
       />
       <div
         className={[

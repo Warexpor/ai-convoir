@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import { agentInitials, type ConversationMode } from "../types";
@@ -63,6 +63,19 @@ export default function ChatRail({
   const [query, setQuery] = useState("");
   const renameRef = useRef<HTMLInputElement>(null);
   const ignoreBlurRef = useRef(false);
+
+  useEffect(() => {
+    if (!confirmingId) return undefined;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setConfirmingId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [confirmingId]);
 
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
     setRenamingId(id);

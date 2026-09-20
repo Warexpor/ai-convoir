@@ -56,10 +56,19 @@ export function useAppKeyboard(opts: KeyboardOptions) {
         o.onSaveChat();
       }
       if (e.code === "Escape") {
-        if (o.helpOpen) o.onCloseHelp();
-        else if (o.settingsOpen) o.onCloseSettings();
-        else if (o.railOpen) o.onCloseRail();
-        else if (o.status === "Running" && !inField) o.onStop();
+        if (o.helpOpen) {
+          e.preventDefault();
+          o.onCloseHelp();
+        } else if (o.settingsOpen) {
+          e.preventDefault();
+          o.onCloseSettings();
+        } else if (o.railOpen) {
+          e.preventDefault();
+          o.onCloseRail();
+        } else if (o.status === "Running" && !inField) {
+          e.preventDefault();
+          o.onStop();
+        }
         return;
       }
       if (inField) return;

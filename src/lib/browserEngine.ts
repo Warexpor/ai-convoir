@@ -379,10 +379,18 @@ function requestLoop() {
   void loop();
 }
 
-export function setEngineConfig(cfg: InnerState) {
+export function setEngineConfig(
+  cfg: InnerState,
+  opts?: { remapCast?: boolean },
+) {
+  const remapCast = opts?.remapCast !== false;
   const prevCount = state.config?.bot_count ?? cfg.bot_count;
   const nextCount = cfg.bot_count >= 3 ? 3 : 2;
-  if (prevCount !== nextCount && state.messages.length > 0) {
+  if (
+    remapCast &&
+    prevCount !== nextCount &&
+    state.messages.length > 0
+  ) {
     state.messages = remapAgentsForCast(state.messages, nextCount);
   }
   state.config = {

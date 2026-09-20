@@ -377,18 +377,27 @@ pub async fn update_config(
     delay_ms: u64,
     mode: Option<ConversationMode>,
     seed_prompt: Option<String>,
+    // When false, only apply bot_count — do not rewrite in-memory agent ids
+    // (used when loading a saved thread that already has correct cast labels).
+    remap_cast: Option<bool>,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
+    let should_remap = remap_cast.unwrap_or(true);
     let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
     inner.ai1_config = ai1_config;
     inner.ai2_config = ai2_config;
     if let Some(c) = ai3_config {
         inner.ai3_config = c;
     }
+    let mut remapped_for_db: Option<(String, Vec<Message>)> = None;
     if let Some(n) = bot_count {
         let next = if n >= 3 { 3 } else { 2 };
-        if next != inner.bot_count && !inner.messages.is_empty() {
+        if should_remap && next != inner.bot_count && !inner.messages.is_empty() {
             crate::engine::remap_agents_for_cast(&mut inner.messages, next);
+            let cid = inner.active_chat_id.clone();
+            if !cid.is_empty() {
+                remapped_for_db = Some((cid, inner.messages.clone()));
+            }
         }
         inner.bot_count = next;
     }
@@ -399,6 +408,14 @@ pub async fn update_config(
     }
     if let Some(s) = seed_prompt {
         inner.seed_prompt = s;
+    }
+    drop(inner);
+    // Persist remapped agent rows promptly so a reload before FE autosave
+    // does not resurrect pre-cast ids from the messages table.
+    if let Some((cid, msgs)) = remapped_for_db {
+        spawn_db_write(arc, move |conn| {
+            let _ = db::save_messages(conn, &cid, &msgs);
+        });
     }
     Ok(())
 }

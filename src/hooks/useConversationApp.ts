@@ -84,42 +84,56 @@ export function useConversationApp() {
     };
   }, []);
 
-  const pushConfig = useCallback(async (cfg: InnerState) => {
-    const n = normalizeConfig(cfg);
-    const prev = configRef.current;
-    const prevCount = prev?.bot_count ?? n.bot_count;
-    const nextCount = n.bot_count >= 3 ? 3 : 2;
-    if (prev && prevCount !== nextCount) {
-      const remapped = remapAgentsForCast(messagesRef.current, nextCount);
-      if (remapped !== messagesRef.current) {
-        stream.setMessages(remapped);
-        messagesRef.current = remapped;
-      }
-    }
-    await api.updateConfig(n);
-    setConfig(n);
-    persistConfig(n);
-  }, [stream.setMessages]);
-
   const refreshChats = useCallback(() => setChats(listChats()), []);
+
+  /** Write chat snapshot now (localStorage + SQLite). Bypasses autosave skip window. */
+  const flushSnapshot = useCallback(
+    (cfg: InnerState, msgs: Message[], turn: number) => {
+      const clean = msgs.filter((m) => !m.streaming);
+      if (clean.length === 0 && !cfg.seed_prompt) return;
+      const saved = saveChatSnapshot(chatIdRef.current, cfg, clean, turn);
+      setActiveChatIdState(saved.id);
+      chatIdRef.current = saved.id;
+      void api.setActiveChat(saved.id);
+      refreshChats();
+    },
+    [refreshChats],
+  );
+
+  const pushConfig = useCallback(
+    async (cfg: InnerState, opts?: { remapCast?: boolean }) => {
+      const remapCast = opts?.remapCast !== false;
+      const n = normalizeConfig(cfg);
+      const prev = configRef.current;
+      const prevCount = prev?.bot_count ?? n.bot_count;
+      const nextCount = n.bot_count >= 3 ? 3 : 2;
+      let didRemap = false;
+      if (remapCast && prev && prevCount !== nextCount) {
+        const remapped = remapAgentsForCast(messagesRef.current, nextCount);
+        if (remapped !== messagesRef.current) {
+          stream.setMessages(remapped);
+          messagesRef.current = remapped;
+          didRemap = true;
+        }
+      }
+      await api.updateConfig(n, { remapCast });
+      configRef.current = n;
+      setConfig(n);
+      persistConfig(n);
+      // Cast remap must hit SQLite immediately — do not wait for the 600ms autosave.
+      if (didRemap) {
+        flushSnapshot(n, messagesRef.current, turnRef.current);
+      }
+    },
+    [flushSnapshot, stream.setMessages],
+  );
 
   const autoSave = useCallback(() => {
     if (Date.now() < skipAutosaveUntil.current) return;
     const cfg = configRef.current;
     if (!cfg) return;
-    const msgs = messagesRef.current.filter((m) => !m.streaming);
-    if (msgs.length === 0 && !cfg.seed_prompt) return;
-    const saved = saveChatSnapshot(
-      chatIdRef.current,
-      cfg,
-      msgs,
-      turnRef.current,
-    );
-    setActiveChatIdState(saved.id);
-    chatIdRef.current = saved.id;
-    void api.setActiveChat(saved.id);
-    refreshChats();
-  }, [refreshChats]);
+    flushSnapshot(cfg, messagesRef.current, turnRef.current);
+  }, [flushSnapshot]);
 
   useEffect(() => {
     if (!stream.messages.length || stream.messages.some((m) => m.streaming))
@@ -172,7 +186,12 @@ export function useConversationApp() {
             seed_prompt: resume.seed_prompt,
           };
         }
-        if (cfg || resume) await pushConfig(merged);
+        if (cfg || resume) {
+          await pushConfig(
+            merged,
+            resume ? { remapCast: false } : undefined,
+          );
+        }
         else {
           setConfig(merged);
           await api.updateConfig(merged);
@@ -381,7 +400,7 @@ export function useConversationApp() {
           mode: chat.mode,
           seed_prompt: chat.seed_prompt,
         };
-        await pushConfig(cfg);
+        await pushConfig(cfg, { remapCast: false });
         await api.loadTranscript({
           messages: chat.messages,
           turnCount: chat.turn_count,

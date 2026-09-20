@@ -62,9 +62,13 @@ export async function getConfig(): Promise<InnerState | null> {
   return tryInvoke<InnerState>("get_config");
 }
 
-export async function updateConfig(cfg: InnerState): Promise<void> {
+export async function updateConfig(
+  cfg: InnerState,
+  opts?: { remapCast?: boolean },
+): Promise<void> {
+  const remapCast = opts?.remapCast !== false;
   if (!isTauri()) {
-    setEngineConfig(cfg);
+    setEngineConfig(cfg, { remapCast });
     return;
   }
   await invokeCmd("update_config", {
@@ -76,6 +80,7 @@ export async function updateConfig(cfg: InnerState): Promise<void> {
     delayMs: cfg.delay_ms,
     mode: cfg.mode,
     seedPrompt: cfg.seed_prompt,
+    remapCast,
   });
 }
 
