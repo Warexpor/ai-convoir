@@ -206,13 +206,20 @@ fn emit_chunk(app_handle: &AppHandle, agent: &str, turn: u32, kind: &str, delta:
     );
 }
 
-fn emit_stream_start(app_handle: &AppHandle, agent: &str, turn: u32, created_at: u64) {
+fn emit_stream_start(
+    app_handle: &AppHandle,
+    agent: &str,
+    turn: u32,
+    created_at: u64,
+    epoch: u64,
+) {
     let _ = app_handle.emit(
         "stream-start",
         serde_json::json!({
             "agent": agent,
             "turn": turn,
             "created_at": created_at,
+            "epoch": epoch,
         }),
     );
 }
@@ -259,7 +266,7 @@ async fn stream_responses(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
-    emit_stream_start(app_handle, speaking_agent, turn, created_at);
+    emit_stream_start(app_handle, speaking_agent, turn, created_at, cancel.epoch_at_start);
 
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
@@ -451,7 +458,7 @@ pub async fn stream_llm(
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
-        emit_stream_start(app_handle, speaking_agent, turn, created_at);
+        emit_stream_start(app_handle, speaking_agent, turn, created_at, cancel.epoch_at_start);
         if let Some(ref r) = reasoning {
             emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
         }
@@ -459,7 +466,7 @@ pub async fn stream_llm(
         return Ok((text, reasoning));
     }
 
-    emit_stream_start(app_handle, speaking_agent, turn, created_at);
+    emit_stream_start(app_handle, speaking_agent, turn, created_at, cancel.epoch_at_start);
 
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();

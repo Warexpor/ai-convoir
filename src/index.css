@@ -605,6 +605,10 @@ body,
 .thoughts-toggle.open {
   color: var(--text-2);
 }
+.thoughts.is-suppressed {
+  /* Pref toggled off: keep React tree (no remount) but take no layout. */
+  display: none !important;
+}
 .thoughts-body {
   margin-top: 8px;
   padding: 10px 12px;
@@ -1016,7 +1020,7 @@ body,
 }
 .chat-list.is-virt .msg:not(.streaming) {
   content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
+  contain-intrinsic-size: auto 168px;
 }
 .msg.msg-static {
   animation: none;

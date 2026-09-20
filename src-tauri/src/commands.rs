@@ -65,6 +65,9 @@ pub async fn start_conversation(
             StartAction::ResumeAuto | StartAction::ContinueIdle => {
                 let turn = inner.turn_count;
                 state_arc.clear_reset_if_idle();
+                // Bump so a late pause/stop abort (older epoch) cannot wipe the
+                // next stream-start in the UI.
+                let _resume_epoch = state_arc.bump_stream_epoch();
                 state_arc.pause_flag.store(false, Ordering::Relaxed);
                 state_arc.step_once.store(false, Ordering::Relaxed);
                 inner.status = AppStatus::Running;
@@ -235,7 +238,7 @@ pub async fn pause_conversation(
     );
     let _ = app_handle.emit(
         "stream-abort",
-        serde_json::json!({ "agent": "", "turn": 0 }),
+        serde_json::json!({ "agent": "", "turn": 0, "epoch": epoch }),
     );
     Ok(())
 }
@@ -246,7 +249,7 @@ pub async fn reset_conversation(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
-    arc.bump_stream_epoch();
+    let epoch = arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Relaxed);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
@@ -262,7 +265,7 @@ pub async fn reset_conversation(
     );
     let _ = app_handle.emit(
         "stream-abort",
-        serde_json::json!({ "agent": "", "turn": 0 }),
+        serde_json::json!({ "agent": "", "turn": 0, "epoch": epoch }),
     );
     Ok(())
 }
@@ -292,7 +295,7 @@ pub async fn stop_conversation(
     }
     let _ = app_handle.emit(
         "stream-abort",
-        serde_json::json!({ "agent": "", "turn": 0 }),
+        serde_json::json!({ "agent": "", "turn": 0, "epoch": epoch }),
     );
     Ok(())
 }
@@ -308,7 +311,7 @@ pub async fn load_transcript(
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
     let state_arc = Arc::clone(arc);
-    arc.bump_stream_epoch();
+    let epoch = arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Relaxed);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
@@ -334,7 +337,7 @@ pub async fn load_transcript(
     );
     let _ = app_handle.emit(
         "stream-abort",
-        serde_json::json!({ "agent": "", "turn": 0 }),
+        serde_json::json!({ "agent": "", "turn": 0, "epoch": epoch }),
     );
     // clear reset so future runs work (if no loop was active)
     drop(inner);
@@ -811,7 +814,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             );
             let _ = app_handle.emit(
                 "stream-abort",
-                serde_json::json!({ "agent": agent, "turn": turn_count }),
+                serde_json::json!({ "agent": agent, "turn": turn_count, "epoch": state.stream_epoch.load(Ordering::Relaxed) }),
             );
             return false;
         }
@@ -825,7 +828,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             );
             let _ = app_handle.emit(
                 "stream-abort",
-                serde_json::json!({ "agent": agent, "turn": turn_count }),
+                serde_json::json!({ "agent": agent, "turn": turn_count, "epoch": state.stream_epoch.load(Ordering::Relaxed) }),
             );
             let _ = app_handle.emit("error", &format!("{} error: {}", agent, e));
             if let Ok(mut inner) = state.inner.lock() {
@@ -1114,5 +1117,13 @@ mod epoch_tests {
         inner.status = AppStatus::Paused;
         super::apply_loop_exit_status(&mut inner, 1, 1);
         assert_eq!(inner.status, AppStatus::Paused);
+    }
+
+    #[test]
+    fn resume_bump_makes_pause_abort_epoch_stale() {
+        let state = AppState::new();
+        let pause_epoch = state.bump_stream_epoch();
+        let resume_epoch = state.bump_stream_epoch();
+        assert!(pause_epoch < resume_epoch);
     }
 }

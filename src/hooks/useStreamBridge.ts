@@ -6,9 +6,11 @@ import type {
   StatusPayload,
   StreamChunk,
   StreamStart,
+  StreamAbort,
 } from "../types";
 import { isTauri } from "../lib/api";
 import { on as onBus } from "../lib/bus";
+import { shouldApplyAbort } from "../lib/streamEpoch";
 
 type FailedTurn = { agent: string; turn: number } | null;
 
@@ -42,6 +44,8 @@ export function useStreamBridge({
   const streamRaf = useRef<number | null>(null);
   const streamTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamFlushAt = useRef(0);
+  /** Latest stream-start epoch; stale aborts below this are ignored. */
+  const lastStartEpoch = useRef(0);
   /** Cap UI paint rate while tokens arrive — every RAF floods WebKit. */
   const STREAM_FLUSH_MS = 50;
 
@@ -180,7 +184,9 @@ export function useStreamBridge({
       );
     };
 
-    const applyStreamStart = ({ agent, turn, created_at }: StreamStart) => {
+    const applyStreamStart = ({ agent, turn, created_at, epoch }: StreamStart) => {
+      if (typeof epoch === "number") lastStartEpoch.current = epoch;
+      else lastStartEpoch.current += 1;
       setIsThinking(false);
       lastMsgTime.current = Date.now();
       streamBuf.current.set(`${agent}:${turn}`, "");
@@ -238,7 +244,11 @@ export function useStreamBridge({
       scheduleFlush();
     };
 
-    const applyAbort = () => {
+    const applyAbort = (payload?: StreamAbort | null) => {
+      const abortEpoch = payload?.epoch;
+      if (!shouldApplyAbort(abortEpoch, lastStartEpoch.current)) {
+        return;
+      }
       streamBuf.current.clear();
       streamReasonBuf.current.clear();
       clearStreamSched();
@@ -265,7 +275,7 @@ export function useStreamBridge({
         onBus("stream-chunk", (payload) =>
           applyStreamChunk(payload as StreamChunk),
         ),
-        onBus("stream-abort", () => applyAbort()),
+        onBus("stream-abort", (payload) => applyAbort(payload as StreamAbort)),
         onBus("narration-cleared", () => onNarrationCleared()),
         onBus("stream-done", () => applyStreamDone()),
         onBus("message-deleted", (payload) =>
@@ -293,7 +303,7 @@ export function useStreamBridge({
         listen<string>("error", (e) => applyError(e.payload)),
         listen<StreamStart>("stream-start", (e) => applyStreamStart(e.payload)),
         listen<StreamChunk>("stream-chunk", (e) => applyStreamChunk(e.payload)),
-        listen("stream-abort", () => applyAbort()),
+        listen<StreamAbort>("stream-abort", (e) => applyAbort(e.payload)),
         listen("narration-cleared", () => onNarrationCleared()),
         listen("stream-done", () => applyStreamDone()),
         listen<{ agent: string; turn: number; created_at: number }>(

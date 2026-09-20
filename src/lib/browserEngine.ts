@@ -190,7 +190,7 @@ async function streamResponses(
   const ac = new AbortController();
   state.abort = ac;
 
-  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
+  emit("stream-start", { agent: speaking, turn, created_at: createdAt, epoch: state.streamEpoch });
 
   const res = await fetch(url, {
     method: "POST",
@@ -321,10 +321,10 @@ async function runOneTurn(): Promise<boolean> {
     return true;
   } catch (e) {
     if ((e as Error).name === "AbortError") {
-      emit("stream-abort", { agent: speaking, turn });
+      emit("stream-abort", { agent: speaking, turn, epoch: state.streamEpoch });
       return false;
     }
-    emit("stream-abort", { agent: speaking, turn });
+    emit("stream-abort", { agent: speaking, turn, epoch: state.streamEpoch });
     emit("error", `${speaking} error: ${e instanceof Error ? e.message : e}`);
     state.status = "Paused";
     state.paused = true;
@@ -361,7 +361,13 @@ async function loop() {
         continue;
       }
       const delay = state.config?.delay_ms ?? 800;
-      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if (delay > 0) {
+        const slices = Math.max(1, Math.ceil(delay / 40));
+        for (let i = 0; i < slices; i++) {
+          if (state.paused || state.reset || state.stepOnce) break;
+          await new Promise((r) => setTimeout(r, 40));
+        }
+      }
     }
   } finally {
     state.loopActive = false;
@@ -428,6 +434,10 @@ export async function engineStart(opening?: string) {
     bumpEpoch();
     state.turnCount = 0;
     injectSeed(opening);
+  } else {
+    // Resume after pause/stop: advance epoch so a late stream-abort cannot
+    // clear the next turn's streaming bubble.
+    bumpEpoch();
   }
   if (state.config?.mode === "step") {
     state.status = "Paused";
@@ -459,7 +469,7 @@ export async function enginePause() {
   state.status = "Paused";
   state.abort?.abort();
   emitStatus();
-  emit("stream-abort", { agent: "", turn: 0 });
+  emit("stream-abort", { agent: "", turn: 0, epoch: state.streamEpoch });
 }
 
 export async function engineStop() {
@@ -469,7 +479,7 @@ export async function engineStop() {
   state.status = "Idle";
   state.abort?.abort();
   emitStatus();
-  emit("stream-abort", { agent: "", turn: 0 });
+  emit("stream-abort", { agent: "", turn: 0, epoch: state.streamEpoch });
 }
 
 export async function engineReset() {
@@ -483,7 +493,7 @@ export async function engineReset() {
   state.pendingNarration = "";
   state.status = "Idle";
   emitStatus();
-  emit("stream-abort", { agent: "", turn: 0 });
+  emit("stream-abort", { agent: "", turn: 0, epoch: state.streamEpoch });
 }
 
 export async function engineLoadTranscript(messages: Message[], turnCount: number, chatId: string) {
@@ -498,7 +508,7 @@ export async function engineLoadTranscript(messages: Message[], turnCount: numbe
   state.pendingNarration = "";
   setEngineSession(chatId);
   emitStatus();
-  emit("stream-abort", { agent: "", turn: 0 });
+  emit("stream-abort", { agent: "", turn: 0, epoch: state.streamEpoch });
   state.reset = false;
 }
 

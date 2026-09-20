@@ -52,6 +52,15 @@ export interface StreamStart {
   turn: number;
   /** Backend-owned identity for delete; optional for older payloads. */
   created_at?: number;
+  /** Stream epoch when this turn began (for ignoring stale aborts). */
+  epoch?: number;
+}
+
+export interface StreamAbort {
+  agent?: string;
+  turn?: number;
+  /** Epoch captured when pause/stop/reset bumped the stream. */
+  epoch?: number;
 }
 
 export interface StreamChunk {

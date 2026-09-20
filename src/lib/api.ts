@@ -158,7 +158,7 @@ export async function setNarration(text: string): Promise<void> {
 
 export async function exportChat(content: string): Promise<string> {
   if (!isTauri()) {
-    const name = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
+    const name = `AI-ConvoIR-${Date.now()}.md`;
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

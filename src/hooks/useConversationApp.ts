@@ -68,6 +68,7 @@ export function useConversationApp() {
   );
   const skipAutosaveUntil = useRef(0);
   const messagesRef = useRef(stream.messages);
+  const beginBusyRef = useRef(false);
   const configRef = useRef(config);
   const chatIdRef = useRef(activeChatId);
   messagesRef.current = stream.messages;
@@ -463,6 +464,7 @@ export function useConversationApp() {
   const handleStartFirst = useCallback(
     async (text: string) => {
       if (!config) return;
+      if (beginBusyRef.current) return;
       const trimmed = text.trim();
       const opening = trimmed || config.seed_prompt.trim();
       if (!opening) {
@@ -482,11 +484,14 @@ export function useConversationApp() {
         );
         return { needSettings: true as const };
       }
+      beginBusyRef.current = true;
       try {
         if (config.mode === "step") await api.stepConversation(opening);
         else await api.startConversation(opening);
       } catch (e) {
         toast.show(String(e));
+      } finally {
+        beginBusyRef.current = false;
       }
       return { needSettings: false as const };
     },

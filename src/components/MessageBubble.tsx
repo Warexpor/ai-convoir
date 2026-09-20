@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { InnerState, Message } from "../types";
 import { agentAccent, agentInitials, agentLabel } from "../types";
 import MarkdownBody from "./MarkdownBody";
+import { shouldShowContentBubble } from "../lib/streamEpoch";
 import RelativeTime from "./RelativeTime";
 import { IconCheck, IconChevron, IconCopy } from "./Marks";
 
@@ -29,7 +30,13 @@ function MessageBubble({
   const isSeed = message.agent === "seed";
   const isStream = !!message.streaming;
   const reasoning = (message.reasoning || "").trim();
-  const hasThoughts = showThoughtsUi && reasoning.length > 0;
+  const hasReasoning = reasoning.length > 0;
+  const showBubble = shouldShowContentBubble({
+    content: message.content,
+    reasoning,
+    streaming: isStream,
+    showThoughtsUi,
+  });
 
   useEffect(() => {
     if (isStream && reasoning && !autoOpenedRef.current) {
@@ -115,8 +122,11 @@ function MessageBubble({
           </div>
         </div>
 
-        {hasThoughts && (
-          <div className="thoughts">
+        {hasReasoning && (
+          <div
+            className={`thoughts${showThoughtsUi ? "" : " is-suppressed"}`}
+            hidden={!showThoughtsUi}
+          >
             <button
               type="button"
               className={`thoughts-toggle ${thoughtsOpen ? "open" : ""}`}
@@ -129,18 +139,19 @@ function MessageBubble({
                 <span className="thoughts-pending">thinking</span>
               )}
             </button>
-            {thoughtsOpen && (
-              <div className="thoughts-body">
-                <MarkdownBody
-                  content={reasoning}
-                  streaming={isStream && !message.content}
-                />
-              </div>
-            )}
+            <div
+              className={`thoughts-body${thoughtsOpen ? " is-open" : ""}`}
+              hidden={!thoughtsOpen}
+            >
+              <MarkdownBody
+                content={reasoning}
+                streaming={isStream && !message.content}
+              />
+            </div>
           </div>
         )}
 
-        {(message.content || !hasThoughts) && (
+        {showBubble && (
           <div className="msg-bubble">
             <MarkdownBody content={message.content} streaming={isStream} />
           </div>
