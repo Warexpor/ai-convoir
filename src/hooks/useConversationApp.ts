@@ -271,6 +271,7 @@ export function useConversationApp() {
 
   const handleReset = useCallback(async () => {
     try {
+      beginBusyRef.current = false;
       const msgs = messagesRef.current.filter((m) => !m.streaming);
       if (msgs.length > 0) autoSave();
       skipAutosaveUntil.current = Date.now() + 2500;
@@ -284,6 +285,7 @@ export function useConversationApp() {
       stream.setMessages([]);
       stream.setTurnCount(0);
       stream.setStatus("Idle");
+      stream.setIsThinking(false);
       setNarration("");
       setFirstDraft("");
       setActiveChatId(null);
@@ -299,6 +301,7 @@ export function useConversationApp() {
     stream.setMessages,
     stream.setTurnCount,
     stream.setStatus,
+    stream.setIsThinking,
     toast,
   ]);
 

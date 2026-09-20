@@ -1,7 +1,28 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { IconChevronDown, IconKey, IconReturn, SlashMark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
+import {
+  EST_MSG,
+  GAP,
+  OVERSCAN,
+  VIRTUALIZE_AFTER,
+  bottomPinnedWindow,
+  buildPrefixes,
+  computeVirtualWindow,
+  estimateMessageHeight,
+  nearBottom as nearBottomMetrics,
+  scrollAnchorDelta,
+  slicePads,
+} from "../lib/chatVirtual";
 import type { InnerState, Message } from "../types";
 
 interface Props {
@@ -20,18 +41,12 @@ interface Props {
   agentNames?: string[];
 }
 
-const EST_MSG = 168;
-const GAP = 28;
-const OVERSCAN = 6;
-const VIRTUALIZE_AFTER = 16;
-const NEAR_PX = 96;
-
 function msgKey(msg: Message, idx: number) {
   return `${msg.agent}-${msg.turn}-${msg.created_at || idx}`;
 }
 
 function nearBottom(el: HTMLElement) {
-  return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
+  return nearBottomMetrics(el.scrollHeight, el.scrollTop, el.clientHeight);
 }
 
 function ChatView({
@@ -51,18 +66,27 @@ function ChatView({
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const heightsRef = useRef(new Map<string, number>());
+  const thoughtsOpenRef = useRef(new Map<string, boolean>());
   const measureRaf = useRef(0);
   const scrollRaf = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const winRef = useRef({ start: 0, end: messages.length });
+  const prefixesRef = useRef<number[]>([0]);
+  const pendingAnchorRef = useRef<{
+    prevPrefixes: number[];
+    anchor: number;
+    prevTop: number;
+    wasAuto: boolean;
+  } | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [win, setWin] = useState({ start: 0, end: messages.length });
   const [heightTick, setHeightTick] = useState(0);
 
   const virtualize = messages.length >= VIRTUALIZE_AFTER;
   const streamingTail = messages[messages.length - 1];
-  const streamSig = streamingTail?.streaming
+  const streamLive = !!streamingTail?.streaming;
+  const streamSig = streamLive
     ? streamingTail.content.length + (streamingTail.reasoning?.length ?? 0)
     : 0;
 
@@ -70,17 +94,23 @@ function ChatView({
     (i: number) => {
       const m = messages[i];
       if (!m) return EST_MSG + GAP;
-      return (heightsRef.current.get(msgKey(m, i)) ?? EST_MSG) + GAP;
+      const key = msgKey(m, i);
+      const measured = heightsRef.current.get(key);
+      if (measured != null) return measured + GAP;
+      const open = thoughtsOpenRef.current.get(key) === true;
+      return estimateMessageHeight(m, open) + GAP;
     },
     [messages, heightTick],
   );
 
   const prefixes = useMemo(() => {
-    const p = new Array<number>(messages.length + 1);
-    p[0] = 0;
-    for (let i = 0; i < messages.length; i++) p[i + 1] = p[i] + heightOf(i);
+    const p = buildPrefixes(messages.length, heightOf);
     return p;
   }, [messages, heightOf]);
+
+  useLayoutEffect(() => {
+    prefixesRef.current = prefixes;
+  }, [prefixes]);
 
   const applyWin = useCallback((start: number, end: number) => {
     const prev = winRef.current;
@@ -97,28 +127,22 @@ function ChatView({
   }, []);
 
   const computeWindow = useCallback(
-    (el: HTMLElement, atBottom: boolean) => {
+    (el: HTMLElement, pinEnd: boolean) => {
       if (!virtualize) {
         applyWin(0, messages.length);
         return;
       }
-      const top = el.scrollTop;
-      let lo = 0;
-      let hi = messages.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (prefixes[mid] < top) lo = mid + 1;
-        else hi = mid;
-      }
-      const start = Math.max(0, lo - 1 - OVERSCAN);
-      const limit = top + el.clientHeight;
-      let end = start;
-      while (end < messages.length && prefixes[end] < limit) end++;
-      end = Math.min(messages.length, end + OVERSCAN);
-      if (atBottom) end = messages.length;
-      applyWin(start, end);
+      const next = computeVirtualWindow({
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight,
+        count: messages.length,
+        prefixes: prefixesRef.current,
+        overscan: OVERSCAN,
+        pinEnd,
+      });
+      applyWin(next.start, next.end);
     },
-    [applyWin, messages.length, prefixes, virtualize],
+    [applyWin, messages.length, virtualize],
   );
 
   const onScroll = useCallback(() => {
@@ -141,10 +165,30 @@ function ChatView({
     else el.scrollTop = el.scrollHeight;
   }, []);
 
-  useEffect(() => {
-    if (!autoScroll) return;
+  // Layout phase: avoid one-frame jumps when tokens append at bottom.
+  useLayoutEffect(() => {
+    if (!autoScrollRef.current) return;
     stickToBottom(false);
-  }, [messages.length, streamSig, isThinking, autoScroll, stickToBottom]);
+  }, [messages.length, streamSig, isThinking, autoScroll, heightTick, stickToBottom]);
+
+  // After measured heights rebuild pads, keep stick OR anchor scrollTop.
+  useLayoutEffect(() => {
+    const pending = pendingAnchorRef.current;
+    if (!pending) return;
+    pendingAnchorRef.current = null;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    if (pending.wasAuto || autoScrollRef.current) {
+      stickToBottom(false);
+      return;
+    }
+    const delta = scrollAnchorDelta(
+      pending.prevPrefixes,
+      prefixes,
+      pending.anchor,
+    );
+    if (delta !== 0) scroller.scrollTop = pending.prevTop + delta;
+  }, [heightTick, prefixes, stickToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -154,17 +198,15 @@ function ChatView({
       return;
     }
     if (autoScroll) {
-      const visible = Math.ceil(el.clientHeight / EST_MSG) + OVERSCAN * 2;
-      applyWin(
-        Math.max(0, messages.length - visible),
-        messages.length,
-      );
+      const pinned = bottomPinnedWindow(messages.length, el.clientHeight);
+      applyWin(pinned.start, pinned.end);
       return;
     }
     computeWindow(el, false);
+    // Intentionally omit streamSig: token appends must not recompute the
+    // window while the user has scrolled up (avoids fighting their position).
   }, [
     messages.length,
-    streamSig,
     autoScroll,
     virtualize,
     applyWin,
@@ -185,27 +227,46 @@ function ChatView({
 
     const apply = (el: HTMLElement) => {
       const key = el.dataset.msgKey;
-      if (!key) return false;
+      if (!key) return "none" as const;
+      const open = el.dataset.thoughtsOpen === "1";
+      thoughtsOpenRef.current.set(key, open);
       const h = Math.round(el.getBoundingClientRect().height);
-      if (heightsRef.current.get(key) === h) return false;
+      if (heightsRef.current.get(key) === h) return "none" as const;
       heightsRef.current.set(key, h);
-      return el.dataset.streaming !== "1";
+      // Streaming rows change every token; keep the map warm but avoid a
+      // prefixes rebuild on every SSE chunk (stick uses real scrollHeight).
+      if (el.dataset.streaming === "1") return "stream" as const;
+      return "stable" as const;
     };
 
     const schedule = () => {
       if (measureRaf.current) return;
       measureRaf.current = requestAnimationFrame(() => {
         measureRaf.current = 0;
+        const el = scrollRef.current;
+        pendingAnchorRef.current = {
+          prevPrefixes: prefixesRef.current.slice(),
+          anchor: winRef.current.start,
+          prevTop: el?.scrollTop ?? 0,
+          wasAuto: autoScrollRef.current,
+        };
         setHeightTick((n) => n + 1);
       });
     };
 
     const ro = new ResizeObserver((entries) => {
-      let changed = false;
+      let stable = false;
+      let stream = false;
       for (const entry of entries) {
-        if (apply(entry.target as HTMLElement)) changed = true;
+        const kind = apply(entry.target as HTMLElement);
+        if (kind === "stable") stable = true;
+        else if (kind === "stream") stream = true;
       }
-      if (changed) schedule();
+      if (stable) schedule();
+      else if (stream && autoScrollRef.current) {
+        // Live bubble grew: stick without rebuilding all row pads.
+        stickToBottom(false);
+      }
     });
 
     const observed = new Set<HTMLElement>();
@@ -230,21 +291,35 @@ function ChatView({
       mo.disconnect();
       ro.disconnect();
     };
-  }, [virtualize]);
+  }, [virtualize, stickToBottom]);
 
   useEffect(() => {
-    if (!virtualize || streamingTail?.streaming) return;
+    if (!virtualize || streamLive) return;
     if (measureRaf.current) return;
     measureRaf.current = requestAnimationFrame(() => {
       measureRaf.current = 0;
       setHeightTick((n) => n + 1);
     });
-  }, [virtualize, messages.length, streamingTail?.streaming]);
+  }, [virtualize, messages.length, streamLive]);
 
   const jumpLatest = useCallback(() => {
     applyAutoScroll(true);
     requestAnimationFrame(() => stickToBottom(true));
   }, [applyAutoScroll, stickToBottom]);
+
+  const onThoughtsOpenChange = useCallback(
+    (key: string, open: boolean) => {
+      thoughtsOpenRef.current.set(key, open);
+      // Nudge estimate immediately so pads don't lag a full RO cycle badly.
+      if (!virtualize) return;
+      if (measureRaf.current) return;
+      measureRaf.current = requestAnimationFrame(() => {
+        measureRaf.current = 0;
+        setHeightTick((n) => n + 1);
+      });
+    },
+    [virtualize],
+  );
 
   const { slice, sliceStart, topPad, bottomPad } = useMemo(() => {
     if (!virtualize) {
@@ -255,18 +330,18 @@ function ChatView({
         bottomPad: 0,
       };
     }
+    // Stick-to-bottom (and only then) pins the live streaming row + caret.
+    // Scrolled-up users keep a normal window so we do not mount the whole tail.
     const end = autoScroll
       ? messages.length
       : Math.min(Math.max(win.end, win.start + 1), messages.length);
     const start = Math.min(win.start, Math.max(0, end - 1));
+    const pads = slicePads(messages.length, start, end, prefixes);
     return {
       slice: messages.slice(start, end),
       sliceStart: start,
-      topPad: prefixes[start] ?? start * (EST_MSG + GAP),
-      bottomPad: Math.max(
-        0,
-        (prefixes[messages.length] ?? 0) - (prefixes[end] ?? 0),
-      ),
+      topPad: pads.topPad,
+      bottomPad: pads.bottomPad,
     };
   }, [messages, win.start, win.end, autoScroll, virtualize, prefixes]);
 
@@ -341,7 +416,7 @@ function ChatView({
         ref={scrollRef}
         onScroll={onScroll}
         className="chat"
-        aria-busy={isThinking || !!streamingTail?.streaming}
+        aria-busy={isThinking || streamLive}
       >
         <div className="chat-inner">
           {topPad > 0 && (
@@ -363,6 +438,9 @@ function ChatView({
                   key={key}
                   data-msg-key={key}
                   data-streaming={msg.streaming ? "1" : "0"}
+                  data-thoughts-open={
+                    thoughtsOpenRef.current.get(key) ? "1" : "0"
+                  }
                 >
                   <MessageBubble
                     message={msg}
@@ -370,6 +448,13 @@ function ChatView({
                     showThoughtsUi={showThoughtsUi}
                     onDelete={onDeleteMessage}
                     enter={idx === messages.length - 1}
+                    onThoughtsOpenChange={(open) => {
+                      const row = listRef.current?.querySelector(
+                        `[data-msg-key="${CSS.escape(key)}"]`,
+                      ) as HTMLElement | null;
+                      if (row) row.dataset.thoughtsOpen = open ? "1" : "0";
+                      onThoughtsOpenChange(key, open);
+                    }}
                   />
                 </div>
               );

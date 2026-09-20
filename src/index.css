@@ -1018,10 +1018,8 @@ body,
   animation: msg-in var(--dur-med) var(--ease-out) both;
   contain: layout style;
 }
-.chat-list.is-virt .msg:not(.streaming) {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 168px;
-}
+/* Virtualization already windows rows; avoid content-visibility here —
+   it fights ResizeObserver height estimates (Thoughts expand / stream). */
 .msg.msg-static {
   animation: none;
 }

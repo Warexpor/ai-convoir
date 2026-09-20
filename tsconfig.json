@@ -26,6 +26,7 @@
   ],
   "exclude": [
     "src/**/*.test.ts",
-    "src/lib/streamEpoch.test.ts"
+    "src/lib/streamEpoch.test.ts",
+    "src/lib/chatVirtual.test.ts"
   ]
 }

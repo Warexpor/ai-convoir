@@ -12,6 +12,7 @@ interface Props {
   showThoughtsUi: boolean;
   onDelete?: (agent: string, turn: number, created_at: number) => void;
   enter?: boolean;
+  onThoughtsOpenChange?: (open: boolean) => void;
 }
 
 function MessageBubble({
@@ -20,11 +21,14 @@ function MessageBubble({
   showThoughtsUi,
   onDelete,
   enter = true,
+  onThoughtsOpenChange,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
   const autoOpenedRef = useRef(false);
+  const thoughtsCbRef = useRef(onThoughtsOpenChange);
+  thoughtsCbRef.current = onThoughtsOpenChange;
   const label = agentLabel(message.agent, config);
   const accent = agentAccent(message.agent);
   const isSeed = message.agent === "seed";
@@ -42,9 +46,23 @@ function MessageBubble({
     if (isStream && reasoning && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       setThoughtsOpen(true);
+      thoughtsCbRef.current?.(true);
     }
     if (!isStream) autoOpenedRef.current = false;
   }, [isStream, reasoning]);
+
+  useEffect(() => {
+    if (!confirming) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        setConfirming(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [confirming]);
 
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -130,7 +148,13 @@ function MessageBubble({
             <button
               type="button"
               className={`thoughts-toggle ${thoughtsOpen ? "open" : ""}`}
-              onClick={() => setThoughtsOpen((o) => !o)}
+              onClick={() =>
+                setThoughtsOpen((o) => {
+                  const next = !o;
+                  thoughtsCbRef.current?.(next);
+                  return next;
+                })
+              }
               aria-expanded={thoughtsOpen}
             >
               <IconChevron />
