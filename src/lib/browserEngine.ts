@@ -20,8 +20,9 @@ type EngineState = {
   stepOnce: boolean;
   paused: boolean;
   reset: boolean;
-  /** Bumped on stop/reset/load so late commits are discarded. */
+  /** Bumped on stop/reset/load/pause so late commits are discarded. */
   streamEpoch: number;
+  loopGeneration: number;
 };
 
 const state: EngineState = {
@@ -37,6 +38,7 @@ const state: EngineState = {
   paused: false,
   reset: false,
   streamEpoch: 0,
+  loopGeneration: 0,
 };
 
 function bumpEpoch() {
@@ -74,8 +76,8 @@ function lockAgent(cfg: AiConfig): AiConfig {
   };
 }
 
-function injectSeed() {
-  const seed = state.config?.seed_prompt?.trim() || "";
+function injectSeed(opening?: string) {
+  const seed = opening?.trim() || state.config?.seed_prompt?.trim() || "";
   if (!seed) return;
   if (state.messages.some((m) => m.agent === "seed")) return;
   const msg: Message = {
@@ -334,6 +336,7 @@ async function runOneTurn(): Promise<boolean> {
 async function loop() {
   if (state.loopActive) return;
   state.loopActive = true;
+  const generation = state.loopGeneration;
   try {
     for (const m of state.messages) {
       if (m.agent === "seed") emit("new-message", m);
@@ -362,8 +365,18 @@ async function loop() {
     }
   } finally {
     state.loopActive = false;
+    state.reset = false;
     state.abort = null;
+    const stale = state.loopGeneration !== generation;
+    const shouldRespawn =
+      stale && (state.status === "Running" || state.stepOnce);
+    if (shouldRespawn) void loop();
   }
+}
+
+function requestLoop() {
+  state.loopGeneration += 1;
+  void loop();
 }
 
 export function setEngineConfig(cfg: InnerState) {
@@ -387,7 +400,7 @@ export function getEngineStatus(): ["Idle" | "Running" | "Paused", number] {
   return [state.status, state.turnCount];
 }
 
-export async function engineStart() {
+export async function engineStart(opening?: string) {
   if (state.status === "Running") throw new Error("Conversation is already running");
   if (state.config?.mode === "step" && state.status === "Paused") {
     throw new Error(
@@ -398,8 +411,9 @@ export async function engineStart() {
   state.paused = false;
   state.stepOnce = false;
   if (state.messages.length === 0) {
+    bumpEpoch();
     state.turnCount = 0;
-    injectSeed();
+    injectSeed(opening);
   }
   if (state.config?.mode === "step") {
     state.status = "Paused";
@@ -408,27 +422,30 @@ export async function engineStart() {
     state.status = "Running";
   }
   emitStatus();
-  void loop();
+  requestLoop();
 }
 
-export async function engineStep() {
+export async function engineStep(opening?: string) {
   if (state.messages.length === 0) {
     state.turnCount = 0;
-    injectSeed();
+    injectSeed(opening);
   }
   state.reset = false;
   state.stepOnce = true;
   state.paused = false;
   state.status = "Running";
   emitStatus();
-  void loop();
+  requestLoop();
 }
 
 export async function enginePause() {
+  bumpEpoch();
   state.paused = true;
   state.stepOnce = false;
   state.status = "Paused";
+  state.abort?.abort();
   emitStatus();
+  emit("stream-abort", { agent: "", turn: 0 });
 }
 
 export async function engineStop() {

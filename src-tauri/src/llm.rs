@@ -6,6 +6,7 @@ use crate::state::{AiConfig, Message};
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 /// Returned when reset/stop cancels an in-flight SSE stream.
@@ -22,6 +23,15 @@ impl StreamCancel<'_> {
     pub fn is_cancelled(&self) -> bool {
         self.reset.load(Ordering::Relaxed)
             || self.epoch.load(Ordering::Relaxed) != self.epoch_at_start
+    }
+}
+
+async fn wait_until_cancelled(cancel: &StreamCancel<'_>) {
+    loop {
+        if cancel.is_cancelled() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(40)).await;
     }
 }
 
@@ -517,11 +527,21 @@ pub async fn stream_llm(
     }
 
     // Empty SSE: fall back to non-stream without emitting stream-abort (avoids UI flicker).
+    // Drop the fallback future as soon as Stop/Pause/Reset bumps the epoch.
     if full.is_empty() {
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
-        return call_llm(config, speaking_agent, messages_context, narration).await;
+        return tokio::select! {
+            result = call_llm(config, speaking_agent, messages_context, narration) => {
+                if cancel.is_cancelled() {
+                    Err(STREAM_ABORTED.into())
+                } else {
+                    result
+                }
+            }
+            _ = wait_until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
+        };
     }
 
     let reasoning = if full_reasoning.is_empty() {

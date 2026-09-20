@@ -8,7 +8,7 @@ const ROWS: { keys: string; action: string }[] = [
   { keys: "S", action: "Settings" },
   { keys: "B", action: "Saved chats" },
   { keys: "?", action: "This help" },
-  { keys: "Esc", action: "Stop run → close help → close settings → hide chats" },
+  { keys: "Esc", action: "Close help / settings / chats, then stop the run" },
   { keys: "Ctrl+Shift+R", action: "New chat" },
   { keys: "Ctrl+E", action: "Export transcript" },
   { keys: "Ctrl+S", action: "Save chat" },

@@ -79,20 +79,20 @@ export async function updateConfig(cfg: InnerState): Promise<void> {
   });
 }
 
-export async function startConversation(): Promise<void> {
+export async function startConversation(opening?: string): Promise<void> {
   if (!isTauri()) {
-    await engineStart();
+    await engineStart(opening);
     return;
   }
-  await invoke("start_conversation");
+  await invoke("start_conversation", { opening: opening ?? null });
 }
 
-export async function stepConversation(): Promise<void> {
+export async function stepConversation(opening?: string): Promise<void> {
   if (!isTauri()) {
-    await engineStep();
+    await engineStep(opening);
     return;
   }
-  await invoke("step_conversation");
+  await invoke("step_conversation", { opening: opening ?? null });
 }
 
 export async function pauseConversation(): Promise<void> {

@@ -44,6 +44,7 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 pub async fn start_conversation(
     state: tauri::State<'_, Arc<AppState>>,
     app_handle: AppHandle,
+    opening: Option<String>,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
     let state_arc = Arc::clone(arc);
@@ -72,7 +73,7 @@ pub async fn start_conversation(
                     "status-update",
                     serde_json::json!({ "status": "Running", "turn": turn }),
                 );
-                spawn_loop_if_needed(state_arc, app_handle);
+                request_loop(state_arc, app_handle);
                 return Ok(());
             }
             StartAction::FreshStart => {
@@ -81,7 +82,9 @@ pub async fn start_conversation(
         }
     }
 
-    // Fresh start
+    // Fresh start — abort any leftover stream so late commits cannot land
+    // on the new transcript.
+    state_arc.bump_stream_epoch();
     state_arc.pause_flag.store(false, Ordering::Relaxed);
     state_arc.clear_reset_if_idle();
     state_arc.step_once.store(false, Ordering::Relaxed);
@@ -97,7 +100,7 @@ pub async fn start_conversation(
         } else {
             inner.status = AppStatus::Running;
         }
-        inject_seed_if_any(&mut inner);
+        inject_seed_if_any(&mut inner, opening.as_deref());
     }
 
     let status_emit = {
@@ -106,13 +109,19 @@ pub async fn start_conversation(
     };
     let _ = app_handle.emit("status-update", status_emit);
 
-    spawn_loop_if_needed(state_arc, app_handle);
+    request_loop(state_arc, app_handle);
     tracing::info!(target: "commands", "start_conversation");
     Ok(())
 }
 
-pub(crate) fn inject_seed_if_any(inner: &mut InnerState) {
-    let seed = inner.seed_prompt.trim().to_string();
+/// Opening line for this run: explicit `opening` wins, else Settings seed.
+/// Does not mutate `seed_prompt`.
+pub(crate) fn inject_seed_if_any(inner: &mut InnerState, opening: Option<&str>) {
+    let seed = opening
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| inner.seed_prompt.trim().to_string());
     if seed.is_empty() {
         return;
     }
@@ -130,6 +139,12 @@ pub(crate) fn inject_seed_if_any(inner: &mut InnerState) {
     inner.messages.push(msg);
 }
 
+/// Mark a new run so an exiting loop will respawn instead of forcing Idle.
+fn request_loop(state_arc: Arc<AppState>, app_handle: AppHandle) {
+    state_arc.bump_loop_generation();
+    spawn_loop_if_needed(state_arc, app_handle);
+}
+
 fn spawn_loop_if_needed(state_arc: Arc<AppState>, app_handle: AppHandle) {
     // Only one loop at a time
     if state_arc
@@ -139,9 +154,24 @@ fn spawn_loop_if_needed(state_arc: Arc<AppState>, app_handle: AppHandle) {
     {
         return;
     }
+    let generation = state_arc.loop_generation.load(Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
-        run_conversation_loop(state_arc.clone(), app_handle).await;
+        run_conversation_loop(state_arc.clone(), app_handle.clone(), generation).await;
         state_arc.loop_active.store(false, Ordering::SeqCst);
+        // Always clear reset on teardown so the next Start/Step is not stuck.
+        state_arc.reset_flag.store(false, Ordering::Relaxed);
+        let stale = state_arc.loop_generation.load(Ordering::SeqCst) != generation;
+        let should_respawn = stale
+            && (state_arc.step_once.load(Ordering::Relaxed)
+                || state_arc
+                    .inner
+                    .lock()
+                    .ok()
+                    .map(|inner| inner.status == AppStatus::Running)
+                    .unwrap_or(false));
+        if should_respawn {
+            spawn_loop_if_needed(state_arc, app_handle);
+        }
     });
 }
 
@@ -150,6 +180,7 @@ fn spawn_loop_if_needed(state_arc: Arc<AppState>, app_handle: AppHandle) {
 pub async fn step_conversation(
     state: tauri::State<'_, Arc<AppState>>,
     app_handle: AppHandle,
+    opening: Option<String>,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
     let state_arc = Arc::clone(arc);
@@ -159,7 +190,7 @@ pub async fn step_conversation(
         if inner.status == AppStatus::Idle && inner.messages.is_empty() {
             // first step starts the conversation
             inner.turn_count = 0;
-            inject_seed_if_any(&mut inner);
+            inject_seed_if_any(&mut inner, opening.as_deref());
         }
         // Never overwrite conversation mode — step_once alone drives a single turn.
         let mode = prepare_step(inner.mode.clone(), inner.turn_count, inner.max_turns)?;
@@ -178,8 +209,8 @@ pub async fn step_conversation(
         serde_json::json!({ "status": "Running", "turn": state_arc.inner.lock().unwrap().turn_count }),
     );
 
-    // Always spawn — loop exits when idle; multiple loops are ok if they exit on idle
-    spawn_loop_if_needed(state_arc, app_handle);
+    // Always spawn — loop exits when idle; a live loop is claimed via generation.
+    request_loop(state_arc, app_handle);
     Ok(())
 }
 
@@ -189,13 +220,22 @@ pub async fn pause_conversation(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
+    // Abort the in-flight turn — testers expect Pause to stop tokens now,
+    // not after the current reply finishes.
+    let epoch = arc.bump_stream_epoch();
+    tracing::info!(target: "commands", epoch, "pause_conversation");
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
     let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
     inner.status = AppStatus::Paused;
+    let turn = inner.turn_count;
     let _ = app_handle.emit(
         "status-update",
-        serde_json::json!({ "status": "Paused", "turn": inner.turn_count }),
+        serde_json::json!({ "status": "Paused", "turn": turn }),
+    );
+    let _ = app_handle.emit(
+        "stream-abort",
+        serde_json::json!({ "agent": "", "turn": 0 }),
     );
     Ok(())
 }
@@ -615,7 +655,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     let created_at = now_ms();
 
     let (bot_count, turn_count, max_turns, mode, config, messages, narration, chat_id) = {
-        let mut inner = match state.inner.lock() {
+        let inner = match state.inner.lock() {
             Ok(i) => i,
             Err(_) => return false,
         };
@@ -624,13 +664,13 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         }
         let agent = next_speaker(inner.bot_count, inner.turn_count);
         let cfg = inner.config_for_agent(agent).clone();
+        // Snapshot the director note without consuming it. Clear only after a
+        // successful commit so Stop/Pause/abort can retry the same note.
         let narration = {
             let n = inner.pending_narration.trim().to_string();
             if n.is_empty() {
                 None
             } else {
-                // consume one-shot
-                inner.pending_narration.clear();
                 Some(n)
             }
         };
@@ -720,6 +760,11 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
                     inner.messages.push(msg.clone());
                     inner.turn_count += 1;
+                    if let Some(n) = narration.as_deref() {
+                        if inner.pending_narration.trim() == n {
+                            inner.pending_narration.clear();
+                        }
+                    }
                     let _ = app_handle.emit("new-message", &msg);
                     let _ = app_handle.emit(
                         "stream-done",
@@ -781,7 +826,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     true
 }
 
-async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
+async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle, generation: u64) {
     // Emit any seed message already present
     {
         if let Ok(inner) = state.inner.lock() {
@@ -875,13 +920,11 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
     }
 
     if let Ok(mut inner) = state.inner.lock() {
-        if inner.status != AppStatus::Paused {
-            inner.status = AppStatus::Idle;
-        }
-        // If max turns hit in Auto, force idle
-        if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
-            inner.status = AppStatus::Idle;
-        }
+        apply_loop_exit_status(
+            &mut inner,
+            generation,
+            state.loop_generation.load(Ordering::SeqCst),
+        );
         let _ = app_handle.emit(
             "status-update",
             serde_json::json!({
@@ -889,6 +932,23 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
                 "turn": inner.turn_count,
             }),
         );
+    }
+}
+
+/// An exiting loop must not force Idle if Start/Step already claimed a newer generation.
+pub(crate) fn apply_loop_exit_status(
+    inner: &mut InnerState,
+    my_generation: u64,
+    current_generation: u64,
+) {
+    if my_generation != current_generation {
+        return;
+    }
+    if inner.status != AppStatus::Paused {
+        inner.status = AppStatus::Idle;
+    }
+    if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
+        inner.status = AppStatus::Idle;
     }
 }
 
@@ -922,8 +982,8 @@ mod seed_tests {
     fn inject_seed_only_once() {
         let mut inner = InnerState::default();
         inner.seed_prompt = "hello there".into();
-        inject_seed_if_any(&mut inner);
-        inject_seed_if_any(&mut inner);
+        inject_seed_if_any(&mut inner, None);
+        inject_seed_if_any(&mut inner, None);
         let seeds: Vec<_> = inner
             .messages
             .iter()
@@ -938,15 +998,30 @@ mod seed_tests {
     fn inject_seed_skips_blank() {
         let mut inner = InnerState::default();
         inner.seed_prompt = "   ".into();
-        inject_seed_if_any(&mut inner);
+        inject_seed_if_any(&mut inner, None);
         assert!(inner.messages.is_empty());
+    }
+
+    #[test]
+    fn inject_opening_overrides_settings_seed() {
+        let mut inner = InnerState::default();
+        inner.seed_prompt = "from settings".into();
+        inject_seed_if_any(&mut inner, Some("typed opening"));
+        let seeds: Vec<_> = inner
+            .messages
+            .iter()
+            .filter(|m| m.agent == "seed")
+            .collect();
+        assert_eq!(seeds.len(), 1);
+        assert_eq!(seeds[0].content, "typed opening");
+        assert_eq!(inner.seed_prompt, "from settings");
     }
 }
 
 #[cfg(test)]
 mod epoch_tests {
     use crate::llm::StreamCancel;
-    use crate::state::{AppState, Message};
+    use crate::state::{AppState, AppStatus, InnerState, Message};
     use std::sync::atomic::Ordering;
 
     #[test]
@@ -1004,5 +1079,23 @@ mod epoch_tests {
         let len = msgs.len();
         msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == wrong_stamp));
         assert_eq!(msgs.len(), len);
+    }
+
+    #[test]
+    fn loop_exit_skips_idle_when_generation_is_stale() {
+        let mut inner = InnerState::default();
+        inner.status = AppStatus::Running;
+        super::apply_loop_exit_status(&mut inner, 1, 2);
+        assert_eq!(inner.status, AppStatus::Running);
+        super::apply_loop_exit_status(&mut inner, 2, 2);
+        assert_eq!(inner.status, AppStatus::Idle);
+    }
+
+    #[test]
+    fn loop_exit_keeps_paused() {
+        let mut inner = InnerState::default();
+        inner.status = AppStatus::Paused;
+        super::apply_loop_exit_status(&mut inner, 1, 1);
+        assert_eq!(inner.status, AppStatus::Paused);
     }
 }

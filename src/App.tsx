@@ -47,19 +47,6 @@ function App() {
   const [zoom, setZoom] = useState(readZoom);
   const [zoomMsg, setZoomMsg] = useState("");
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.matchMedia("(max-width: 900px)").matches,
-  );
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
-    const onChange = () => setNarrow(mq.matches);
-    onChange();
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   useEffect(() => writeBoolPref(PREF_KEYS.railOpen, railOpen), [railOpen]);
   useEffect(
@@ -159,14 +146,14 @@ function App() {
         settingsOpen ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
         railOpen ? "rail-open-mobile" : "",
+        stream.status === "Running" ? "is-busy" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       style={{ zoom }}
     >
-      {/* Pause lacquer only when chrome fully covers the stage (narrow overlay).
-          Desktop Settings leaves the main column open — keep grain moving there. */}
-      <StageField paused={narrow && (settingsOpen || railOpen)} />
+      {/* Freeze lacquer when chrome covers the stage, help is open, or the tab is hidden. */}
+      <StageField paused={settingsOpen || railOpen || helpOpen} />
       <a className="skip-link" href="#main">
         Skip to transcript
       </a>
@@ -319,7 +306,7 @@ function App() {
             onSaveChat={app.handleSaveChat}
             tokenUsed={tokenUsed}
             tokenCapacity={tokenCapacity}
-            retryTarget={stream.lastFailed.current}
+            retryTarget={stream.lastFailed}
             onRetry={app.handleRetry}
             hasMessages
             nextName={nextName}

@@ -96,11 +96,11 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 export function agentAccent(agent: string): string {
   switch (agent) {
     case "ai1":
-      return "#ececec";
+      return "#e8e8e8";
     case "ai2":
-      return "#cfcfcf";
+      return "#7eb6d9";
     case "ai3":
-      return "#9a9a9a";
+      return "#d4b483";
     case "seed":
       return "#8a8a8a";
     default:

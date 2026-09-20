@@ -20,8 +20,11 @@ pub fn init(app_data: &std::path::Path) -> Result<PathBuf, String> {
         .open(&path)
         .map_err(|e| format!("open log file: {e}"))?;
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("ai_conversation=info,ai_conversation_lib=info,warn"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(
+            "ai_conversation=info,ai_conversation_lib=info,commands=info,frontend=info,warn",
+        )
+    });
 
     let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)

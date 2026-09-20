@@ -60,9 +60,7 @@ export function useConversationApp() {
   turnRef.current = stream.turnCount;
 
   const [config, setConfig] = useState<InnerState | null>(null);
-  const [firstDraft, setFirstDraft] = useState(
-    () => bootResume.current?.seed_prompt || "",
-  );
+  const [firstDraft, setFirstDraft] = useState("");
   const [chats, setChats] = useState<SavedChat[]>(() => listChats());
   const [activeChatId, setActiveChatIdState] = useState<string | null>(
     () => bootResume.current?.id ?? getActiveChatId(),
@@ -169,12 +167,7 @@ export function useConversationApp() {
           await api.updateConfig(merged);
         }
         if (cancelled) return;
-        if (!resume) {
-          const skipped =
-            typeof localStorage !== "undefined" &&
-            !!localStorage.getItem(SKIP_RESUME_KEY);
-          setFirstDraft(skipped ? "" : merged.seed_prompt || "");
-        }
+        if (!resume) setFirstDraft("");
 
         if (resume) {
           await api.loadTranscript({
@@ -209,10 +202,11 @@ export function useConversationApp() {
         if (narration.trim()) await api.setNarration(narration.trim());
         await api.startConversation();
       }
+      stream.setIsThinking(false);
     } catch (e) {
       toast.show(String(e));
     }
-  }, [stream.status, narration, toast]);
+  }, [stream.status, narration, toast, stream.setIsThinking]);
 
   const handleStep = useCallback(async () => {
     try {
@@ -260,7 +254,7 @@ export function useConversationApp() {
       stream.setTurnCount(0);
       stream.setStatus("Idle");
       setNarration("");
-      setFirstDraft(configRef.current?.seed_prompt || "");
+      setFirstDraft("");
       setActiveChatId(null);
       setActiveChatIdState(null);
       chatIdRef.current = null;
@@ -332,7 +326,7 @@ export function useConversationApp() {
   );
 
   const handleRetry = useCallback(async () => {
-    if (!stream.lastFailed.current) return;
+    if (!stream.lastFailed) return;
     stream.clearFailed();
     toast.clear();
     try {
@@ -420,7 +414,7 @@ export function useConversationApp() {
         stream.setTurnCount(0);
         stream.setStatus("Idle");
         setNarration("");
-        setFirstDraft(configRef.current?.seed_prompt || "");
+        setFirstDraft("");
         void api.resetConversation();
       }
       refreshChats();
@@ -440,11 +434,12 @@ export function useConversationApp() {
     async (text: string) => {
       if (!config) return;
       const trimmed = text.trim();
-      if (!trimmed) {
+      const opening = trimmed || config.seed_prompt.trim();
+      if (!opening) {
         toast.show("Write a first line.", 2200);
         return;
       }
-      setFirstDraft(trimmed);
+      setFirstDraft(opening);
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
       } catch {
@@ -457,20 +452,11 @@ export function useConversationApp() {
         );
         return { needSettings: true as const };
       }
-      // Inject the opening line for this run only — do not persist it as
-      // Settings → Default first line.
       try {
-        await api.updateConfig({ ...config, seed_prompt: trimmed });
-        if (config.mode === "step") await api.stepConversation();
-        else await api.startConversation();
+        if (config.mode === "step") await api.stepConversation(opening);
+        else await api.startConversation(opening);
       } catch (e) {
         toast.show(String(e));
-      } finally {
-        try {
-          await api.updateConfig(config);
-        } catch {
-          /* restore is best-effort */
-        }
       }
       return { needSettings: false as const };
     },

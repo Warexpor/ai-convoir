@@ -85,6 +85,12 @@
   }
 }
 
+.app.is-busy {
+  --blur: none;
+  --blur-float: none;
+  --blur-scrim: none;
+}
+
 .skip-link {
   position: absolute;
   left: 12px;

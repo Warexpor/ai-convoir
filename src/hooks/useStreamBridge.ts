@@ -35,7 +35,7 @@ export function useStreamBridge({
   const [status, setStatus] = useState<AppStatus>("Idle");
   const [turnCount, setTurnCount] = useState(initialTurnCount);
   const [isThinking, setIsThinking] = useState(false);
-  const lastFailed = useRef<FailedTurn>(null);
+  const [lastFailed, setLastFailed] = useState<FailedTurn>(null);
   const lastMsgTime = useRef(Date.now());
   const streamBuf = useRef(new Map<string, string>());
   const streamReasonBuf = useRef(new Map<string, string>());
@@ -51,7 +51,9 @@ export function useStreamBridge({
       return;
     }
     const id = setInterval(() => {
-      if (Date.now() - lastMsgTime.current > 1200) setIsThinking(true);
+      if (Date.now() - lastMsgTime.current > 1200) {
+        setIsThinking((prev) => (prev ? prev : true));
+      }
     }, 400);
     return () => clearInterval(id);
   }, [status]);
@@ -137,6 +139,15 @@ export function useStreamBridge({
             ? m.reasoning
             : prevReason) || null;
         if (idx >= 0) {
+          const cur = prev[idx];
+          if (
+            !cur.streaming &&
+            cur.content === finalContent &&
+            (cur.reasoning || null) === (finalReason || null) &&
+            cur.created_at === (m.created_at || cur.created_at)
+          ) {
+            return prev;
+          }
           const next = [...prev];
           next[idx] = {
             ...m,
@@ -164,9 +175,9 @@ export function useStreamBridge({
     const applyError = (msg: string) => {
       onError(msg);
       const match = msg.match(/^(ai[123])\s+error:/);
-      lastFailed.current = match
-        ? { agent: match[1], turn: turnRef.current }
-        : null;
+      setLastFailed(
+        match ? { agent: match[1], turn: turnRef.current } : null,
+      );
     };
 
     const applyStreamStart = ({ agent, turn, created_at }: StreamStart) => {
@@ -308,7 +319,7 @@ export function useStreamBridge({
   }, [onError, onNarrationCleared, turnRef]);
 
   const clearFailed = () => {
-    lastFailed.current = null;
+    setLastFailed(null);
   };
 
   return {

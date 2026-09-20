@@ -118,7 +118,10 @@ export function saveChatSnapshot(
     mode: config.mode === "step" ? "step" : "auto",
     max_turns: config.max_turns,
     delay_ms: config.delay_ms,
-    seed_prompt: config.seed_prompt || "",
+    seed_prompt:
+      cleanMsgs.find((m) => m.agent === "seed")?.content ||
+      config.seed_prompt ||
+      "",
     ai1_config: config.ai1_config,
     ai2_config: config.ai2_config,
     ai3_config: config.ai3_config,

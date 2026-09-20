@@ -62,6 +62,7 @@ export default function ChatRail({
   const [renameText, setRenameText] = useState("");
   const [query, setQuery] = useState("");
   const renameRef = useRef<HTMLInputElement>(null);
+  const ignoreBlurRef = useRef(false);
 
   const handleStartRename = useCallback((id: string, currentTitle: string) => {
     setRenamingId(id);
@@ -71,6 +72,10 @@ export default function ChatRail({
 
   const handleCommitRename = useCallback(
     (id: string) => {
+      if (ignoreBlurRef.current) {
+        ignoreBlurRef.current = false;
+        return;
+      }
       const trimmed = renameText.trim();
       if (trimmed) {
         renameChat(id, trimmed);
@@ -83,6 +88,7 @@ export default function ChatRail({
   );
 
   const handleCancelRename = useCallback(() => {
+    ignoreBlurRef.current = true;
     setRenamingId(null);
     setRenameText("");
   }, []);
@@ -193,8 +199,13 @@ export default function ChatRail({
                     value={renameText}
                     onChange={(e) => setRenameText(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleCommitRename(c.id);
-                      else if (e.key === "Escape") handleCancelRename();
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleCommitRename(c.id);
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        handleCancelRename();
+                      }
                       e.stopPropagation();
                     }}
                     onBlur={() => handleCommitRename(c.id)}

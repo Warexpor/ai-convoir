@@ -185,6 +185,8 @@ pub struct AppState {
     pub step_once: AtomicBool,
     /// Prevents spawning multiple concurrent conversation loops.
     pub loop_active: AtomicBool,
+    /// Bumped on Start/Step so an exiting loop will not Idle-clobber a new run.
+    pub loop_generation: AtomicU64,
     /// Path to the SQLite database file.
     pub db_path: Mutex<String>,
 }
@@ -198,6 +200,7 @@ impl AppState {
             stream_epoch: AtomicU64::new(0),
             step_once: AtomicBool::new(false),
             loop_active: AtomicBool::new(false),
+            loop_generation: AtomicU64::new(0),
             db_path: Mutex::new(String::new()),
         }
     }
@@ -213,6 +216,12 @@ impl AppState {
     pub fn bump_stream_epoch(&self) -> u64 {
         self.stream_epoch
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1
+    }
+
+    pub fn bump_loop_generation(&self) -> u64 {
+        self.loop_generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
             + 1
     }
 }

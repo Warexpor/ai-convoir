@@ -95,7 +95,7 @@ pub fn build_chat_body(
         let t = n.trim();
         if !t.is_empty() {
             api_messages.push(json!({
-                "role": "system",
+                "role": "user",
                 "content": format_narration_note(t),
             }));
         }
@@ -509,7 +509,7 @@ mod tests {
         assert_eq!(msgs[0]["role"], "system");
         assert_eq!(msgs[1]["role"], "assistant"); // ai1's own
         assert_eq!(msgs[2]["role"], "user"); // ai2's
-        assert_eq!(msgs[3]["role"], "system"); // narration
+        assert_eq!(msgs[3]["role"], "user"); // narration (user note, not system)
     }
 
     #[test]

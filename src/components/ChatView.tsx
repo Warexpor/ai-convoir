@@ -321,7 +321,7 @@ function ChatView({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={!firstDraft.trim()}
+                  disabled={!firstDraft.trim() && !config?.seed_prompt?.trim()}
                   onClick={() => onStartFirst?.(firstDraft)}
                 >
                   Begin

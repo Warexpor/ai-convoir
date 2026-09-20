@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isScrollBusy, onScrollBusy } from "../lib/scrollBusy";
 
 const VERT = `
 attribute vec2 a_pos;
@@ -154,12 +155,14 @@ export default function StageField({ paused = false }: Props) {
     let raf = 0;
     let lastDraw = 0;
     const start = performance.now();
+    let scrollBusy = false;
 
     const animating = () =>
       !document.hidden &&
       !motionMq.matches &&
       !transparencyMq.matches &&
-      !pausedRef.current;
+      !pausedRef.current &&
+      !scrollBusy;
 
     const resize = () => {
       const dpr = maxDpr();
@@ -212,12 +215,18 @@ export default function StageField({ paused = false }: Props) {
     document.addEventListener("visibilitychange", sync);
     motionMq.addEventListener("change", sync);
     transparencyMq.addEventListener("change", sync);
+    const unscroll = onScrollBusy((busy) => {
+      scrollBusy = busy;
+      sync();
+    });
+    scrollBusy = isScrollBusy();
     sync();
 
     return () => {
       syncRef.current = null;
       if (raf) cancelAnimationFrame(raf);
       ro.disconnect();
+      unscroll();
       document.removeEventListener("visibilitychange", sync);
       motionMq.removeEventListener("change", sync);
       transparencyMq.removeEventListener("change", sync);

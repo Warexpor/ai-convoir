@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { InnerState, Message } from "../types";
 import { agentAccent, agentInitials, agentLabel } from "../types";
 import MarkdownBody from "./MarkdownBody";
@@ -23,12 +23,21 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
   const label = agentLabel(message.agent, config);
   const accent = agentAccent(message.agent);
   const isSeed = message.agent === "seed";
   const isStream = !!message.streaming;
   const reasoning = (message.reasoning || "").trim();
   const hasThoughts = showThoughtsUi && reasoning.length > 0;
+
+  useEffect(() => {
+    if (isStream && reasoning && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      setThoughtsOpen(true);
+    }
+    if (!isStream) autoOpenedRef.current = false;
+  }, [isStream, reasoning]);
 
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText(message.content).then(() => {
