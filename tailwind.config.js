@@ -4,9 +4,9 @@ export default {
     extend: {
       colors: {
         xai: {
-          canvas: "#141414",
-          "canvas-soft": "#181818",
-          "canvas-card": "#141414",
+          canvas: "#0b0b0c",
+          "canvas-soft": "#101012",
+          "canvas-card": "#0b0b0c",
           ink: "#ececec",
           body: "#c8c8c8",
           mute: "#8f8f8f",
