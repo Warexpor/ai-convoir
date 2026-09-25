@@ -35,7 +35,7 @@ void main() {
   vec2 p = (uv - 0.5) * vec2(aspect, 1.0);
   float t = u_time * u_motion;
 
-  vec3 base = vec3(0.0784);
+  vec3 base = vec3(0.043, 0.043, 0.047);
 
   float sky = smoothstep(1.08, 0.18, uv.y) * 0.03;
 
@@ -51,8 +51,13 @@ void main() {
   float streak = pow(1.0 - smoothstep(0.0, 0.16, band), 5.0) * 0.04;
 
   float grain = (noise(gl_FragCoord.xy * 0.72) - 0.5) * 0.022;
+  // Ember: a low, warm glow that the live spark belongs to.
+  vec2 e = p - vec2(0.38 + sin(t * 0.05) * 0.06, -0.62);
+  e *= vec2(1.1, 2.2);
+  float ember = exp(-dot(e, e) * 2.2) * 0.05;
+
   float lift = sky + spec1 + spec2 + streak;
-  vec3 col = base + vec3(lift) + grain;
+  vec3 col = base + vec3(lift) + vec3(1.0, 0.42, 0.12) * ember + grain;
   gl_FragColor = vec4(col, 1.0);
 }
 `;

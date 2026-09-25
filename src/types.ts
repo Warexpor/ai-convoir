@@ -93,19 +93,24 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
   return agent;
 }
 
+/** Each voice gets a signature hue. Chrome stays monochrome; color is signal. */
 export function agentAccent(agent: string): string {
   switch (agent) {
     case "ai1":
-      return "#ececec";
+      return "#ff7a3d";
     case "ai2":
-      return "#cfcfcf";
+      return "#6cc4ff";
     case "ai3":
-      return "#9a9a9a";
+      return "#c49bff";
     case "seed":
-      return "#8a8a8a";
+      return "#ededed";
     default:
       return "#8a8a8a";
   }
+}
+
+export function activeAgentIds(config: InnerState | null): string[] {
+  return config && config.bot_count >= 3 ? ["ai1", "ai2", "ai3"] : ["ai1", "ai2"];
 }
 
 export function agentInitials(name: string): string {

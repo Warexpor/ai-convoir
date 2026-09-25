@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
-import { agentInitials, type ConversationMode } from "../types";
+import { agentAccent } from "../types";
 import RelativeTime from "./RelativeTime";
-import { SlashMark, IconNew, IconRailHide, IconSearch } from "./Marks";
+import { SlashMark, IconNew, IconRailHide, IconSearch, IconTrash } from "./Marks";
 
 interface Props {
   open?: boolean;
@@ -14,26 +14,18 @@ interface Props {
   onDelete: (id: string) => void;
   onClose: () => void;
   onRename?: () => void;
-  agentNames?: string[];
-  mode?: ConversationMode;
   needsKey?: boolean;
-  onUseStarter?: (text: string) => void;
 }
 
-const STARTERS: { label: string; text: string }[] = [
-  {
-    label: "Diner at 3am",
-    text: "Two friends wake up in a diner at 3am. The jukebox only plays songs that already happened.",
-  },
-  {
-    label: "Lobby critics",
-    text: "Two theater critics argue in the lobby about a play that has not started.",
-  },
-  {
-    label: "Night train",
-    text: "A quiet night train. Two strangers share a window and a secret.",
-  },
-];
+const DAY = 86_400_000;
+
+function bucketOf(ts: number): string {
+  const startToday = new Date().setHours(0, 0, 0, 0);
+  if (ts >= startToday) return "Today";
+  if (ts >= startToday - DAY) return "Yesterday";
+  if (ts >= startToday - 6 * DAY) return "This week";
+  return "Earlier";
+}
 
 function chatVoices(c: SavedChat): string[] {
   const names =
@@ -52,10 +44,7 @@ export default function ChatRail({
   onDelete,
   onClose,
   onRename,
-  agentNames = ["Ava", "Jules"],
-  mode = "step",
   needsKey = false,
-  onUseStarter,
 }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -96,7 +85,6 @@ export default function ChatRail({
     [chats, q],
   );
 
-  const voices = agentNames.filter(Boolean);
   const threadLabel =
     chats.length === 1 ? "1 thread" : `${chats.length} threads`;
 
@@ -109,23 +97,29 @@ export default function ChatRail({
     >
       <div className="rail-inner">
       <div className="rail-head">
-        <span className="rail-title">Chats</span>
-        <button type="button" className="btn btn-primary btn-sm" onClick={onNew}>
-          <IconNew />
-          New
-        </button>
+        <div className="rail-brand">
+          <SlashMark className="rail-logo" size={22} />
+          <span>
+            AI Conversation
+            <em>v2</em>
+          </span>
+        </div>
         <button
           type="button"
-          className="btn btn-chrome btn-icon"
+          className="btn btn-icon"
           onClick={onClose}
-          title="Hide chats panel"
-          aria-label="Hide chats panel"
+          title="Hide sidebar (B)"
+          aria-label="Hide sidebar"
         >
           <IconRailHide />
         </button>
       </div>
 
       <div className="rail-tools">
+        <button type="button" className="rail-new" onClick={onNew}>
+          <IconNew />
+          New thread
+        </button>
         <label className="rail-search">
           <IconSearch />
           <input
@@ -141,52 +135,32 @@ export default function ChatRail({
       <div className="rail-scroll">
         {chats.length === 0 && (
           <div className="rail-empty">
-            <SlashMark className="rail-empty-mark" size={36} />
-            <span className="mono-cap">No threads yet</span>
-            <p>Saved ones land here. Double-click a title to rename.</p>
-            {onUseStarter && (
-              <div className="rail-starters">
-                <span className="mono-cap">Try a first line</span>
-                {STARTERS.map((s) => (
-                  <button
-                    key={s.label}
-                    type="button"
-                    className="rail-starter"
-                    onClick={() => onUseStarter(s.text)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <p>No threads yet.</p>
+            <span>Every conversation saves itself here.</span>
           </div>
         )}
         {chats.length > 0 && shown.length === 0 && (
           <div className="rail-empty">
-            <span className="mono-cap">No matches</span>
-            <p>Nothing titled like that.</p>
+            <p>No matches.</p>
+            <span>Nothing titled like &ldquo;{query}&rdquo;.</span>
           </div>
         )}
-        {shown.length > 0 && <p className="rail-section">Recent</p>}
-        {shown.map((c) => {
+        {shown.map((c, idx) => {
           const isConfirming = confirmingId === c.id;
           const isRenaming = renamingId === c.id;
           const names = chatVoices(c);
+          const bucket = bucketOf(c.updated_at);
+          const showBucket =
+            idx === 0 || bucketOf(shown[idx - 1].updated_at) !== bucket;
 
           return (
+            <div key={c.id} className="chat-group">
+            {showBucket && <p className="rail-section">{bucket}</p>}
             <div
-              key={c.id}
               className={`chat-row ${activeId === c.id ? "active" : ""}`}
             >
               {isRenaming ? (
-                <div
-                  className="chat-item"
-                  style={{
-                    padding: "8px 8px 8px 10px",
-                    display: "flex",
-                    alignItems: "center",
-                  }}
-                >
+                <div className="chat-item is-renaming">
                   <input
                     ref={renameRef}
                     className="chat-rename-input"
@@ -214,15 +188,14 @@ export default function ChatRail({
                   <div className="chat-item-meta">
                     <span className="chat-item-voices" aria-hidden>
                       {names.map((n, i) => (
-                        <span key={`${n}-${i}`} className="chat-voice-dot">
-                          {agentInitials(n)}
-                        </span>
+                        <i
+                          key={`${n}-${i}`}
+                          style={{ background: agentAccent(`ai${i + 1}`) }}
+                        />
                       ))}
                     </span>
-                    <span>
-                      {c.messages.length} · {c.mode === "auto" ? "Auto" : "Step"}
-                    </span>
-                    <RelativeTime at={c.updated_at} className="" />
+                    <span>{names.join(" · ")}</span>
+                    <RelativeTime at={c.updated_at} className="chat-item-time" />
                   </div>
                 </button>
               )}
@@ -254,8 +227,8 @@ export default function ChatRail({
               ) : (
                 <button
                   type="button"
-                  className={`chat-item-del ${isConfirming ? "show" : ""}`}
-                  title="Delete chat"
+                  className="chat-item-del"
+                  title="Delete thread"
                   aria-label={`Delete ${c.title}`}
                   onClick={(e) => {
                     e.preventDefault();
@@ -263,29 +236,21 @@ export default function ChatRail({
                     setConfirmingId(c.id);
                   }}
                 >
-                  Delete
+                  <IconTrash />
                 </button>
               )}
+            </div>
             </div>
           );
         })}
       </div>
 
       <div className="rail-foot">
-        <div className="rail-foot-voices">
-          {voices.map((n) => (
-            <span key={n} className="rail-pill">
-              {n}
-            </span>
-          ))}
-        </div>
-        <p className="rail-foot-line">
-          OpenCode Go · {mode === "auto" ? "Auto" : "Step"}
-        </p>
-        <p className="rail-foot-line rail-foot-mute">
-          {needsKey ? "Key needed" : threadLabel}
-          <span> · B hides this</span>
-        </p>
+        <span className={`key-state ${needsKey ? "is-missing" : "is-ok"}`}>
+          <i />
+          {needsKey ? "API key needed" : "Key connected"}
+        </span>
+        <span className="rail-foot-mute">{threadLabel}</span>
       </div>
       </div>
     </aside>
