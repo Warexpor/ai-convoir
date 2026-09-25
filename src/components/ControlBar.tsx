@@ -1,12 +1,14 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconExport,
+  IconHint,
   IconKey,
   IconMore,
   IconNew,
   IconNextVoice,
   IconPause,
   IconPlay,
+  IconReturn,
   IconRetry,
   IconSave,
   IconStop,
@@ -31,10 +33,15 @@ interface Props {
   onRetry?: () => void;
   hasMessages?: boolean;
   nextName?: string | null;
+  nextAccent?: string;
   needsKey?: boolean;
   onOpenSettings?: () => void;
+  hint: string;
+  onHintChange: (v: string) => void;
+  onHintCommit: (v: string) => void;
 }
 
+/** One dock: whisper to the next voice on top, transport underneath. */
 function ControlBar({
   status,
   turnCount,
@@ -53,30 +60,33 @@ function ControlBar({
   onRetry,
   hasMessages = false,
   nextName = null,
+  nextAccent,
   needsKey = false,
   onOpenSettings,
+  hint,
+  onHintChange,
+  onHintCommit,
 }: Props) {
-  const progress =
-    mode === "step"
-      ? 0
-      : Math.min((turnCount / Math.max(maxTurns, 1)) * 100, 100);
   const running = status === "Running";
   const isStep = mode === "step";
-  const statusLabel = running
-    ? "Writing"
-    : status === "Paused"
-      ? "Paused"
-      : "Ready";
+  const progress = isStep
+    ? 0
+    : Math.min((turnCount / Math.max(maxTurns, 1)) * 100, 100);
+  const statusLabel = running ? "Live" : status === "Paused" ? "Paused" : "Ready";
   const tokenRatio = tokenCapacity > 0 ? tokenUsed / tokenCapacity : 0;
   const tokenPct = Math.round(tokenRatio * 100);
-  const tokenColor =
-    tokenRatio > 0.8
-      ? "var(--danger)"
-      : tokenRatio > 0.6
-        ? "var(--text-2)"
-        : "var(--faint)";
+  const ctxLevel = tokenRatio > 0.8 ? "hot" : tokenRatio > 0.6 ? "warm" : "cool";
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const [queued, setQueued] = useState(false);
+  useEffect(() => {
+    if (!hint.trim()) setQueued(false);
+  }, [hint]);
+  const commitHint = () => {
+    if (!hint.trim()) return;
+    onHintCommit(hint);
+    setQueued(true);
+  };
   const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,175 +105,214 @@ function ControlBar({
     };
   }, [moreOpen]);
 
-  const secondary = (
-    <>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        onClick={() => {
-          setMoreOpen(false);
-          onSaveChat();
-        }}
-        disabled={!hasMessages}
-      >
-        <IconSave />
-        Save
-      </button>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        onClick={() => {
-          setMoreOpen(false);
-          onExport();
-        }}
-        disabled={!hasMessages}
-      >
-        <IconExport />
-        Export
-      </button>
-      <button
-        type="button"
-        className="btn btn-ghost"
-        onClick={() => {
-          setMoreOpen(false);
-          onReset();
-        }}
-      >
-        <IconNew />
-        New
-      </button>
-    </>
+  const menuItem = (
+    label: string,
+    icon: ReactNode,
+    run: () => void,
+    kbd: string,
+    disabled = false,
+  ) => (
+    <button
+      type="button"
+      role="menuitem"
+      className="menu-item"
+      disabled={disabled}
+      onClick={() => {
+        setMoreOpen(false);
+        run();
+      }}
+    >
+      {icon}
+      <span>{label}</span>
+      <kbd>{kbd}</kbd>
+    </button>
   );
 
+  const who = nextName ?? "the next voice";
+
   return (
-    <div className="dock" role="toolbar" aria-label="Conversation controls">
-      <div className="dock-lead">
-        <div className="dock-stat" aria-live="polite">
-          <span
-            className={`dock-status${running ? " run" : status === "Paused" ? " pause" : ""}`}
+    <div
+      className={`dock${running ? " is-running" : ""}`}
+      role="toolbar"
+      aria-label="Conversation controls"
+      style={nextAccent ? { ["--voice" as string]: nextAccent } : undefined}
+    >
+      {!isStep && (
+        <span className="dock-progress" aria-hidden>
+          <i style={{ width: `${progress}%` }} />
+        </span>
+      )}
+
+      <label
+        className={`whisper${running ? " is-disabled" : ""}${queued ? " is-queued" : ""}`}
+      >
+        <IconHint />
+        <input
+          value={hint}
+          disabled={running}
+          placeholder={
+            running ? `${who} is writing…` : `Whisper to ${who} — steer their next line`
+          }
+          aria-label={`Hint for ${who}`}
+          onChange={(e) => {
+            setQueued(false);
+            onHintChange(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && hint.trim()) {
+              e.preventDefault();
+              commitHint();
+            }
+            if (e.key === "Escape") {
+              onHintChange("");
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+        {queued && <span className="whisper-tag">queued</span>}
+        {hint.trim() && !running && !queued && (
+          <button
+            type="button"
+            className="whisper-send"
+            onClick={commitHint}
+            aria-label="Send hint"
+            title="Send hint (Enter)"
           >
+            <IconReturn />
+          </button>
+        )}
+      </label>
+
+      <div className="dock-row">
+        <div className="dock-lead">
+          <div className="seg" role="group" aria-label="Run mode">
+            <button
+              type="button"
+              className={isStep ? "on" : ""}
+              aria-pressed={isStep}
+              title="One reply at a time"
+              onClick={() => onModeChange("step")}
+            >
+              Step
+            </button>
+            <button
+              type="button"
+              className={!isStep ? "on" : ""}
+              aria-pressed={!isStep}
+              title="Keep talking until you pause"
+              onClick={() => onModeChange("auto")}
+            >
+              Auto
+            </button>
+          </div>
+
+          <span
+            className={`status-pill is-${status.toLowerCase()}`}
+            aria-live="polite"
+          >
+            <span className="status-dot" aria-hidden />
             {statusLabel}
+            {!isStep && (
+              <span className="status-turns">
+                {turnCount}
+                <span>/{maxTurns}</span>
+              </span>
+            )}
           </span>
-          {!isStep && (
-            <>
-              <span className="dock-turns">
-                {turnCount}/{maxTurns}
-              </span>
-              <span className="bar" aria-hidden>
-                <i style={{ width: `${progress}%` }} />
-              </span>
-            </>
-          )}
+
           {tokenPct >= 50 && (
-            <span className="ctx-bar" title="How full the conversation is">
-              <span className="ctx-pct" style={{ color: tokenColor }}>
-                {tokenPct}%
+            <span
+              className={`ctx-meter is-${ctxLevel}`}
+              title="How full the conversation context is"
+            >
+              <span className="ctx-track" aria-hidden>
+                <i style={{ width: `${Math.min(tokenPct, 100)}%` }} />
               </span>
-              <span className="bar ctx" aria-hidden>
-                <i
-                  style={{
-                    width: `${Math.min(tokenPct, 100)}%`,
-                    background: tokenColor,
-                  }}
-                />
-              </span>
+              {tokenPct}% ctx
             </span>
           )}
         </div>
 
-        <div className="seg dock-mode" role="group" aria-label="Run mode">
-          <button
-            type="button"
-            className={mode === "step" ? "on" : ""}
-            aria-pressed={mode === "step"}
-            title="One reply at a time"
-            onClick={() => onModeChange("step")}
-          >
-            Step
-          </button>
-          <button
-            type="button"
-            className={mode === "auto" ? "on" : ""}
-            aria-pressed={mode === "auto"}
-            title="Keep talking until you pause"
-            onClick={() => onModeChange("auto")}
-          >
-            Auto
-          </button>
-        </div>
-      </div>
+        <div className="dock-actions">
+          {retryTarget && onRetry && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={onRetry}
+              title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
+            >
+              <IconRetry />
+              Retry
+            </button>
+          )}
 
-      <div className="dock-actions">
-        {needsKey ? (
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={() => onOpenSettings?.()}
+            className="btn btn-icon btn-stop"
+            onClick={onStop}
+            disabled={status === "Idle"}
+            title="Stop generation, keep chat (Esc)"
+            aria-label="Stop"
           >
-            <IconKey />
-            Add key
+            <IconStop />
           </button>
-        ) : isStep ? (
-          <button
-            type="button"
-            className="btn btn-primary btn-next"
-            onClick={onStep}
-            disabled={running || !hasMessages}
-            title={
-              nextName ? `Let ${nextName} speak next` : "Advance one turn"
-            }
-          >
-            <IconNextVoice />
-            Next
-            {nextName ? <span className="btn-next-who">{nextName}</span> : null}
-          </button>
-        ) : (
-          <button type="button" className="btn btn-primary" onClick={onToggle}>
-            {running ? <IconPause /> : <IconPlay />}
-            {running ? "Pause" : status === "Paused" ? "Resume" : "Start"}
-          </button>
-        )}
 
-        <button
-          type="button"
-          className={`btn btn-stop ${status === "Idle" ? "btn-ghost" : "btn-danger"}`}
-          onClick={onStop}
-          disabled={status === "Idle"}
-          title="Stop generation, keep chat"
-        >
-          <IconStop />
-          Stop
-        </button>
+          <div className="dock-more" ref={moreRef}>
+            <button
+              type="button"
+              className="btn btn-icon"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More actions"
+              title="More"
+              onClick={() => setMoreOpen((o) => !o)}
+            >
+              <IconMore />
+            </button>
+            {moreOpen && (
+              <div className="menu" role="menu">
+                {menuItem("Save thread", <IconSave />, onSaveChat, "Ctrl+S", !hasMessages)}
+                {menuItem("Export markdown", <IconExport />, onExport, "Ctrl+E", !hasMessages)}
+                {menuItem("New thread", <IconNew />, onReset, "Ctrl+Shift+R")}
+              </div>
+            )}
+          </div>
 
-        {retryTarget && onRetry && (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onRetry}
-            title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
-          >
-            <IconRetry />
-            Retry
-          </button>
-        )}
-
-        <div className="dock-wide">{secondary}</div>
-
-        <div className="dock-narrow" ref={moreRef}>
-          <button
-            type="button"
-            className="btn btn-chrome"
-            aria-haspopup="menu"
-            aria-expanded={moreOpen}
-            onClick={() => setMoreOpen((o) => !o)}
-          >
-            <IconMore />
-            More
-          </button>
-          {moreOpen && (
-            <div className="dock-menu" role="menu">
-              {secondary}
-            </div>
+          {needsKey ? (
+            <button
+              type="button"
+              className="btn btn-go"
+              onClick={() => onOpenSettings?.()}
+            >
+              <IconKey />
+              Add key
+            </button>
+          ) : isStep ? (
+            <button
+              type="button"
+              className="btn btn-go"
+              onClick={onStep}
+              disabled={running || !hasMessages}
+              title={nextName ? `Let ${nextName} speak (N)` : "Advance one turn (N)"}
+            >
+              <IconNextVoice />
+              <span className="btn-go-label">
+                {running ? "Writing" : "Next"}
+                {nextName && <em>{nextName}</em>}
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-go"
+              onClick={onToggle}
+              title="Start / pause (Space)"
+            >
+              {running ? <IconPause /> : <IconPlay />}
+              <span className="btn-go-label">
+                {running ? "Pause" : status === "Paused" ? "Resume" : "Run"}
+              </span>
+            </button>
           )}
         </div>
       </div>

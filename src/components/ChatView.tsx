@@ -1,13 +1,20 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconChevronDown, IconKey, IconReturn, SlashMark } from "./Marks";
+import { IconChevronDown, IconKey, IconReturn, IconSpark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
 import type { InnerState, Message } from "../types";
+import {
+  activeAgentIds,
+  agentAccent,
+  agentInitials,
+  agentLabel,
+} from "../types";
 
 interface Props {
   messages: Message[];
   isThinking: boolean;
   thinkingAgent?: string | null;
+  thinkingAgentId?: string | null;
   config?: InnerState | null;
   showThoughtsUi?: boolean;
   onStartFirst?: (text: string) => void;
@@ -17,7 +24,35 @@ interface Props {
   hasSavedChats?: boolean;
   needsKey?: boolean;
   onOpenSettings?: () => void;
-  agentNames?: string[];
+}
+
+const STARTERS: { label: string; text: string }[] = [
+  {
+    label: "Diner at 3am",
+    text: "Two friends wake up in a diner at 3am. The jukebox only plays songs that already happened.",
+  },
+  {
+    label: "Lobby critics",
+    text: "Two theater critics argue in the lobby about a play that has not started.",
+  },
+  {
+    label: "Night train",
+    text: "A quiet night train. Two strangers share a window and a secret.",
+  },
+  {
+    label: "Ship's AI",
+    text: "The ship's AI has to explain to the crew why it quietly changed course six days ago.",
+  },
+  {
+    label: "Hard debate",
+    text: "Settle it properly: is a hot dog a sandwich? Open with your strongest argument.",
+  },
+];
+
+function firstSentence(prompt: string) {
+  const clean = prompt.replace(/^You are [^—–-]+[—–-]\s*/i, "").trim();
+  const cut = clean.split(/(?<=[.!?])\s/)[0] ?? clean;
+  return cut.length > 72 ? `${cut.slice(0, 70).trimEnd()}…` : cut;
 }
 
 const EST_MSG = 168;
@@ -38,6 +73,7 @@ function ChatView({
   messages,
   isThinking,
   thinkingAgent,
+  thinkingAgentId,
   config,
   showThoughtsUi = true,
   onStartFirst,
@@ -47,7 +83,6 @@ function ChatView({
   hasSavedChats = false,
   needsKey = false,
   onOpenSettings,
-  agentNames = ["Ava", "Jules"],
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const heightsRef = useRef(new Map<string, number>());
@@ -271,48 +306,77 @@ function ChatView({
   }, [messages, win.start, win.end, autoScroll, virtualize, prefixes]);
 
   if (messages.length === 0) {
-    const names = agentNames.filter(Boolean).slice(0, 3);
-    const roster =
-      names.length === 3
-        ? `${names[0]}, ${names[1]}, and ${names[2]}`
-        : `${names[0] || "Ava"} and ${names[1] || "Jules"}`;
+    const ids = activeAgentIds(config ?? null);
+    const begin = () => {
+      if (needsKey) onOpenSettings?.();
+      else if (firstDraft.trim()) onStartFirst?.(firstDraft);
+    };
     return (
       <div className="empty">
         <div className="empty-hero">
-          <SlashMark className="empty-logo" size={48} />
-          <div className="empty-badge">OpenCode Go</div>
-          <h2>Start a thread</h2>
-          <p>
-            {roster} take turns.{" "}
-            {needsKey
-              ? "Add your key, then write the first line."
-              : "Write the first line and press Begin."}
-            {hasSavedChats ? " Saved threads live in Chats." : ""}
+          <p className="kicker">
+            <span className="kicker-dot" />
+            OpenCode Go · Muse Spark 1.3
           </p>
-          <div className="empty-box">
+          <h1 className="empty-title">
+            Set the scene.
+            <span>They&rsquo;ll take it from there.</span>
+          </h1>
+
+          <ul className="lineup" aria-label="Cast">
+            {ids.map((id, i) => {
+              const name = agentLabel(id, config);
+              const bio = config
+                ? firstSentence(
+                    config[`${id}_config` as "ai1_config"].system_prompt,
+                  )
+                : "";
+              return (
+                <li
+                  key={id}
+                  className="lineup-card"
+                  style={{
+                    ["--voice" as string]: agentAccent(id),
+                    ["--i" as string]: i,
+                  }}
+                >
+                  <span className="lineup-avatar" aria-hidden>
+                    {agentInitials(name)}
+                  </span>
+                  <span className="lineup-text">
+                    <strong>{name}</strong>
+                    {bio && <span>{bio}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="stage-box">
             <textarea
               value={firstDraft}
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
-              placeholder="A question, a scene, or an opening line."
+              placeholder="A question, a scene, an argument, a first line…"
               aria-label="First message"
+              rows={3}
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  if (needsKey) onOpenSettings?.();
-                  else onStartFirst?.(firstDraft);
+                  begin();
                 }
               }}
             />
-            <div className="empty-actions">
-              <span className="empty-kbd" aria-hidden>
+            <div className="stage-box-foot">
+              <span className="hint-kbd" aria-hidden>
                 <kbd>Ctrl</kbd>
                 <kbd>Enter</kbd>
+                <span>to begin</span>
               </span>
               {needsKey ? (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn btn-go"
                   onClick={() => onOpenSettings?.()}
                 >
                   <IconKey />
@@ -321,9 +385,9 @@ function ChatView({
               ) : (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn btn-go"
                   disabled={!firstDraft.trim()}
-                  onClick={() => onStartFirst?.(firstDraft)}
+                  onClick={begin}
                 >
                   Begin
                   <IconReturn />
@@ -331,6 +395,27 @@ function ChatView({
               )}
             </div>
           </div>
+
+          <div className="starters" aria-label="Starter scenes">
+            {STARTERS.map((st) => (
+              <button
+                key={st.label}
+                type="button"
+                className={`starter${firstDraft === st.text ? " on" : ""}`}
+                onClick={() => onFirstDraftChange?.(st.text)}
+                title={st.text}
+              >
+                <IconSpark />
+                {st.label}
+              </button>
+            ))}
+          </div>
+
+          {hasSavedChats && (
+            <p className="empty-foot">
+              Older threads live in the sidebar · <kbd>B</kbd>
+            </p>
+          )}
         </div>
       </div>
     );
@@ -378,11 +463,24 @@ function ChatView({
               );
             })}
             {isThinking && (
-              <div className="thinking" role="status">
-                <span className="d" />
-                <span className="d" style={{ animationDelay: "0.2s" }} />
-                <span className="d" style={{ animationDelay: "0.4s" }} />
-                {thinkingAgent ? `${thinkingAgent}` : "Writing"}
+              <div
+                className="thinking"
+                role="status"
+                style={
+                  thinkingAgentId
+                    ? { ["--voice" as string]: agentAccent(thinkingAgentId) }
+                    : undefined
+                }
+              >
+                <span className="thinking-bars" aria-hidden>
+                  <i />
+                  <i />
+                  <i />
+                </span>
+                <span>
+                  <strong>{thinkingAgent ?? "Someone"}</strong> is finding the
+                  words
+                </span>
               </div>
             )}
           </div>
@@ -401,7 +499,7 @@ function ChatView({
       {!autoScroll && (
         <button type="button" className="jump-latest" onClick={jumpLatest}>
           <IconChevronDown />
-          Latest
+          Jump to latest
         </button>
       )}
     </div>

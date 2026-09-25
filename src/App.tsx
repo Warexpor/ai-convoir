@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatView from "./components/ChatView";
 import ControlBar from "./components/ControlBar";
 import SettingsSidebar from "./components/SettingsSidebar";
-import NarrateBar from "./components/NarrateBar";
 import ChatRail from "./components/ChatRail";
 import ShortcutsModal from "./components/ShortcutsModal";
 import { useAppKeyboard } from "./hooks/useAppKeyboard";
@@ -16,9 +15,10 @@ import {
   writeBoolPref,
   writeZoom,
 } from "./lib/config";
-import { IconThreads, IconVoices, SlashMark } from "./components/Marks";
+import { IconRail, IconVoices, SlashMark } from "./components/Marks";
 import StageField from "./components/StageField";
-import { agentLabel, nextAgentId } from "./types";
+import CastStrip from "./components/CastStrip";
+import { agentAccent, agentLabel, nextAgentId } from "./types";
 
 function App() {
   const app = useConversationApp();
@@ -111,12 +111,13 @@ function App() {
     },
   });
 
+  const upNextId = config ? nextAgentId(config, stream.turnCount) : null;
   const thinkingName = useMemo(
     () =>
-      config && stream.status === "Running"
-        ? agentLabel(nextAgentId(config, stream.turnCount), config)
+      config && stream.status === "Running" && upNextId
+        ? agentLabel(upNextId, config)
         : null,
-    [config, stream.status, stream.turnCount],
+    [config, stream.status, upNextId],
   );
   const { used: tokenUsed, capacity: tokenCapacity } = useTokenUsage(
     stream.messages,
@@ -124,20 +125,11 @@ function App() {
   );
 
   const needsKey = !config || missingApiKeys(config);
-  const agentNames = useMemo(() => {
-    if (!config) return ["Ava", "Jules"];
-    if (config.bot_count >= 3) {
-      return [
-        config.ai1_config.name,
-        config.ai2_config.name,
-        config.ai3_config.name,
-      ];
-    }
-    return [config.ai1_config.name, config.ai2_config.name];
-  }, [config]);
-  const nextName = config
-    ? agentLabel(nextAgentId(config, stream.turnCount), config)
-    : null;
+  const nextName = config && upNextId ? agentLabel(upNextId, config) : null;
+  const hasMessages = stream.messages.length > 0;
+  const activeTitle =
+    (hasMessages && chats.find((c) => c.id === activeChatId)?.title) ||
+    (hasMessages ? "Untitled thread" : "New thread");
 
   return (
     <div
@@ -179,62 +171,63 @@ function App() {
         onDelete={app.handleDeleteChat}
         onClose={() => setRailOpen(false)}
         onRename={refreshChats}
-        agentNames={agentNames}
-        mode={config?.mode ?? "step"}
         needsKey={needsKey}
-        onUseStarter={(text) => {
-          setFirstDraft(text);
-          if (window.matchMedia("(max-width: 900px)").matches) {
-            setRailOpen(false);
-          }
-        }}
       />
 
-      <header className="topbar">
-        <div className="brand">
-          <SlashMark className="brand-logo" size={24} />
-          <div className="brand-text">
-            <p className="brand-mark">AI Conversation</p>
-            <span className="topbar-sub">
-              {config
-                ? agentNames.filter(Boolean).join(" · ")
-                : "loading"}
-            </span>
-          </div>
-        </div>
-        <div className="spacer" />
-        <button
-          type="button"
-          className="btn btn-chrome"
-          onClick={() => setRailOpen((p) => !p)}
-          title="Toggle chats (B)"
-          aria-pressed={railOpen}
-        >
-          <IconThreads />
-          Chats
-        </button>
-        <button
-          type="button"
-          className="btn btn-chrome"
-          onClick={() => setSettingsOpen((p) => !p)}
-          title="Toggle settings (S)"
-          aria-pressed={settingsOpen}
-        >
-          <IconVoices />
-          Settings
-        </button>
-        <button
-          type="button"
-          className="btn btn-chrome btn-kbd"
-          onClick={() => setHelpOpen(true)}
-          title="Shortcuts (?)"
-          aria-label="Keyboard shortcuts"
-        >
-          ?
-        </button>
-      </header>
-
       <div className="main" id="main" tabIndex={-1} role="main">
+        <header className="topbar">
+          <div className="topbar-lead">
+            {!railOpen && (
+              <button
+                type="button"
+                className="btn btn-icon"
+                onClick={() => setRailOpen(true)}
+                title="Show sidebar (B)"
+                aria-label="Show sidebar"
+              >
+                <IconRail />
+              </button>
+            )}
+            {!railOpen && <SlashMark className="topbar-logo" size={20} />}
+            <div className="topbar-title">
+              <span className="topbar-name">{activeTitle}</span>
+              <span className="topbar-sub">
+                {hasMessages
+                  ? `${stream.messages.length} lines · ${config?.mode === "auto" ? "Auto" : "Step"}`
+                  : "Nothing said yet"}
+              </span>
+            </div>
+          </div>
+
+          <CastStrip
+            config={config}
+            status={stream.status}
+            upNext={upNextId}
+            hasMessages={hasMessages}
+          />
+
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="btn btn-icon btn-kbd"
+              onClick={() => setHelpOpen(true)}
+              title="Shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+            >
+              ?
+            </button>
+            <button
+              type="button"
+              className={`btn btn-chrome${needsKey ? " needs-key" : ""}`}
+              onClick={() => setSettingsOpen((p) => !p)}
+              title="Voices & settings (S)"
+              aria-pressed={settingsOpen}
+            >
+              <IconVoices />
+              <span className="btn-label">Voices</span>
+            </button>
+          </div>
+        </header>
 
         {toast.message !== null && (
           <div
@@ -266,6 +259,7 @@ function App() {
             stream.isThinking && !stream.messages.some((m) => m.streaming)
           }
           thinkingAgent={thinkingName}
+          thinkingAgentId={upNextId}
           config={config}
           showThoughtsUi={showThoughtsUi}
           firstDraft={firstDraft}
@@ -275,21 +269,9 @@ function App() {
           hasSavedChats={chats.length > 0}
           needsKey={needsKey}
           onOpenSettings={() => setSettingsOpen(true)}
-          agentNames={agentNames}
         />
 
-        {stream.messages.length > 0 && (
-          <NarrateBar
-            config={config}
-            turnCount={stream.turnCount}
-            value={narration}
-            onChange={setNarration}
-            onCommit={app.handleNarrationCommit}
-            disabled={stream.status === "Running"}
-          />
-        )}
-
-        {stream.messages.length > 0 && (
+        {hasMessages && (
           <ControlBar
             status={stream.status}
             turnCount={stream.turnCount}
@@ -308,8 +290,12 @@ function App() {
             onRetry={app.handleRetry}
             hasMessages
             nextName={nextName}
+            nextAccent={upNextId ? agentAccent(upNextId) : undefined}
             needsKey={needsKey}
             onOpenSettings={() => setSettingsOpen(true)}
+            hint={narration}
+            onHintChange={setNarration}
+            onHintCommit={app.handleNarrationCommit}
           />
         )}
       </div>
