@@ -189,9 +189,10 @@ pub struct AppState {
     pub reset_flag: AtomicBool,
     /// Bumped on stop/reset/load so in-flight SSE + commits are discarded.
     pub stream_epoch: AtomicU64,
-    /// Bumped on each load_transcript DB persist schedule; detached save_messages
-    /// only writes when its captured epoch is still current (stale last-writer seal).
-    pub transcript_save_epoch: AtomicU64,
+    /// Per-chat bump on each load_transcript DB persist schedule; detached
+    /// save_messages only writes when its captured epoch is still current for
+    /// that chat_id (stale last-writer seal without cross-chat interference).
+    pub transcript_save_epochs: Mutex<std::collections::HashMap<String, u64>>,
     /// When true, auto-loop should only do one step then pause (used by step command).
     pub step_once: AtomicBool,
     /// Prevents spawning multiple concurrent conversation loops.
@@ -207,7 +208,7 @@ impl AppState {
             pause_flag: AtomicBool::new(false),
             reset_flag: AtomicBool::new(false),
             stream_epoch: AtomicU64::new(0),
-            transcript_save_epoch: AtomicU64::new(0),
+            transcript_save_epochs: Mutex::new(std::collections::HashMap::new()),
             step_once: AtomicBool::new(false),
             loop_active: AtomicBool::new(false),
             db_path: Mutex::new(String::new()),
@@ -229,10 +230,22 @@ impl AppState {
             + 1
     }
 
-    pub fn bump_transcript_save_epoch(&self) -> u64 {
-        self.transcript_save_epoch
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
-            + 1
+    pub fn bump_transcript_save_epoch(&self, chat_id: &str) -> u64 {
+        let mut map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let slot = map.entry(chat_id.to_string()).or_insert(0);
+        *slot = slot.saturating_add(1);
+        *slot
+    }
+
+    pub fn current_transcript_save_epoch(&self, chat_id: &str) -> u64 {
+        let map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.get(chat_id).copied().unwrap_or(0)
     }
 }
 
@@ -258,15 +271,15 @@ mod tests {
     }
 
     #[test]
-    fn bump_transcript_save_epoch_monotonic() {
+    fn bump_transcript_save_epoch_monotonic_per_chat() {
         let s = AppState::new();
-        assert_eq!(s.transcript_save_epoch.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(s.bump_transcript_save_epoch(), 1);
-        assert_eq!(s.bump_transcript_save_epoch(), 2);
-        assert_eq!(
-            s.transcript_save_epoch
-                .load(std::sync::atomic::Ordering::Relaxed),
-            2
-        );
+        assert_eq!(s.current_transcript_save_epoch("a"), 0);
+        assert_eq!(s.bump_transcript_save_epoch("a"), 1);
+        assert_eq!(s.bump_transcript_save_epoch("a"), 2);
+        // Independent counter for another chat — no cross-chat skip.
+        assert_eq!(s.current_transcript_save_epoch("b"), 0);
+        assert_eq!(s.bump_transcript_save_epoch("b"), 1);
+        assert_eq!(s.current_transcript_save_epoch("a"), 2);
+        assert_eq!(s.current_transcript_save_epoch("b"), 1);
     }
 }

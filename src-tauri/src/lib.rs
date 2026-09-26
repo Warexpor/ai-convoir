@@ -70,6 +70,7 @@ pub fn run() {
             commands::set_active_chat,
             commands::delete_messages,
             commands::upsert_saved_chat,
+            commands::upsert_saved_chat_meta,
             commands::list_saved_chats,
             commands::get_saved_chat,
             commands::delete_saved_chat,

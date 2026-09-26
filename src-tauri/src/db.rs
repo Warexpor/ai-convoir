@@ -189,10 +189,10 @@ pub fn load_messages(conn: &Connection, chat_id: &str) -> Result<Vec<Message>, S
 }
 
 /// Overwrite `snapshot.messages` from the messages table (source of truth).
-/// Also bump `turn_count` when the table implies a higher next-turn index:
-/// `save_message` appends rows without rewriting config_json, so the snapshot
-/// counter can lag. Never lower an existing snapshot counter (delete_message
-/// likewise leaves in-memory turn_count alone).
+/// Derive `turn_count` as max(turn)+1 from those rows so:
+/// - `save_message` (no config_json rewrite) cannot leave the counter lagging
+/// - tip deletes that rewind in-memory turn_count also rehydrate correctly
+///   instead of keeping a stale high snapshot counter.
 pub fn hydrate_snapshot_messages(
     snapshot: &mut serde_json::Value,
     messages: &[Message],
@@ -204,11 +204,7 @@ pub fn hydrate_snapshot_messages(
         .map(|m| m.turn.saturating_add(1))
         .max()
         .unwrap_or(0);
-    let prev = snapshot
-        .get("turn_count")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u32;
-    snapshot["turn_count"] = serde_json::json!(derived.max(prev));
+    snapshot["turn_count"] = serde_json::json!(derived);
     Ok(())
 }
 
@@ -229,14 +225,30 @@ pub fn hydrate_chat_from_meta(
     Ok(Some(value))
 }
 
-/// Persist chat metadata (keeps the chat alive in the sidebar even after restart).
-#[allow(dead_code)] // available for meta-only updates; full snapshots use upsert_saved_chat
+/// Persist chat metadata only (sidebar title / config). Does **not** touch the
+/// messages table — rename and similar edits must use this so a lagging FE
+/// snapshot cannot DELETE+INSERT over turns already written by `save_message`.
+/// Monotonic on `updated_at` (same rule as `upsert_saved_chat`).
 pub fn upsert_chat_meta(
     conn: &Connection,
     chat_id: &str,
     updated_at: u64,
     config_json: &str,
 ) -> Result<(), String> {
+    let existing: Option<u64> = match conn.query_row(
+        "SELECT updated_at FROM chat_meta WHERE chat_id = ?1",
+        params![chat_id],
+        |row| row.get(0),
+    ) {
+        Ok(v) => Some(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(format!("DB upsert_chat_meta read: {}", e)),
+    };
+    if let Some(prev) = existing {
+        if updated_at < prev {
+            return Ok(());
+        }
+    }
     conn.execute(
         "INSERT OR REPLACE INTO chat_meta (chat_id, updated_at, config_json)
          VALUES (?1, ?2, ?3)",
@@ -763,10 +775,14 @@ mod tests {
         ];
         hydrate_snapshot_messages(&mut value, &msgs).unwrap();
         assert_eq!(value["turn_count"], 2);
-        // Never lower when snapshot is ahead of max(turn)+1 (e.g. after delete).
+        // After tip delete, snapshot counter may still be high — messages table wins.
         value["turn_count"] = serde_json::json!(9);
         hydrate_snapshot_messages(&mut value, &msgs).unwrap();
-        assert_eq!(value["turn_count"], 9);
+        assert_eq!(value["turn_count"], 2);
+        // Empty transcript → turn_count 0.
+        hydrate_snapshot_messages(&mut value, &[]).unwrap();
+        assert_eq!(value["turn_count"], 0);
+        assert_eq!(value["messages"].as_array().unwrap().len(), 0);
     }
 
     #[test]
@@ -820,6 +836,70 @@ mod tests {
         // get path shares the same helper.
         let one = hydrate_chat_from_meta(&conn, "c1", &raw).unwrap().unwrap();
         assert_eq!(one["messages"][0]["content"], "fresh-turn");
+
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn upsert_chat_meta_preserves_messages_table() {
+        let path = tmp_db_path("meta-only");
+        let conn = open(&path).unwrap();
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "keep-me".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "also-keep".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        upsert_saved_chat(
+            &conn,
+            "c1",
+            100,
+            r#"{"id":"c1","title":"Old","messages":[]}"#,
+            &msgs,
+        )
+        .unwrap();
+
+        // Rename-style meta write with empty/stale messages in JSON must not wipe SoT.
+        upsert_chat_meta(
+            &conn,
+            "c1",
+            200,
+            r#"{"id":"c1","title":"Renamed","updated_at":200,"messages":[]}"#,
+        )
+        .unwrap();
+
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].content, "keep-me");
+        assert_eq!(loaded[1].content, "also-keep");
+        let (u, json) = get_chat_meta(&conn, "c1").unwrap().unwrap();
+        assert_eq!(u, 200);
+        assert!(json.contains("Renamed"), "json={json}");
+
+        // Stale meta timestamp is a no-op.
+        upsert_chat_meta(
+            &conn,
+            "c1",
+            150,
+            r#"{"id":"c1","title":"Stale","updated_at":150}"#,
+        )
+        .unwrap();
+        let (u, json) = get_chat_meta(&conn, "c1").unwrap().unwrap();
+        assert_eq!(u, 200);
+        assert!(json.contains("Renamed"), "json={json}");
 
         drop(conn);
         let _ = std::fs::remove_file(&path);
