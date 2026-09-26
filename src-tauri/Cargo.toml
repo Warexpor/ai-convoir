@@ -22,6 +22,11 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# OS keychain for provider API keys (Keychain / Credential Manager / Secret Service).
+# Mobile falls back to app-local storage on the frontend.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring = { version = "3", features = ["apple-native", "windows-native", "async-secret-service", "tokio", "crypto-rust"] }
+
 [profile.release]
 strip = true
 lto = true

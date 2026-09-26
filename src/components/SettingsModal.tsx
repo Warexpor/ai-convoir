@@ -2,14 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { usePresence } from "../hooks/usePresence";
 import type { InnerState } from "../types";
-import { OPENCODE_GO_BASE } from "../types";
-import {
-  sharedKeyOf,
-  withSharedKey,
-  type FxLevel,
-  type StreamMode,
-} from "../lib/config";
-import { fetchModels } from "../lib/api";
+import { type FxLevel, type StreamMode } from "../lib/config";
+import ProviderKeys from "./ProviderKeys";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
 import { SHADER_PRESETS, type BackgroundPrefs, type ShaderPreset } from "../lib/background";
 import { presetThumb } from "./StageField";
@@ -28,7 +22,7 @@ export type SettingsTab = "conversation" | "appearance" | "access" | "shortcuts"
 const TABS: { id: SettingsTab; label: string; icon: ReactNode }[] = [
   { id: "conversation", label: "Conversation", icon: <IconThreads /> },
   { id: "appearance", label: "Appearance", icon: <IconSpark /> },
-  { id: "access", label: "Access", icon: <IconKey /> },
+  { id: "access", label: "Providers", icon: <IconKey /> },
   { id: "shortcuts", label: "Shortcuts", icon: <IconSliders /> },
 ];
 
@@ -304,10 +298,6 @@ export default function SettingsModal({
   const [delay, setDelay] = useState(config?.delay_ms ?? 800);
   const [turns, setTurns] = useState(String(config?.max_turns ?? 40));
   const [seed, setSeed] = useState(config?.seed_prompt ?? "");
-  const [key, setKey] = useState(config ? sharedKeyOf(config) : "");
-  const [keyState, setKeyState] = useState<
-    { kind: "idle" } | { kind: "checking" } | { kind: "ok" } | { kind: "err"; msg: string }
-  >({ kind: "idle" });
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
 
   useEffect(() => {
@@ -315,8 +305,6 @@ export default function SettingsModal({
     setDelay(config.delay_ms);
     setTurns(String(config.max_turns));
     setSeed(config.seed_prompt || "");
-    setKey(sharedKeyOf(config));
-    setKeyState({ kind: "idle" });
     setApis(listApis());
     // Re-seed drafts only when the modal opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -332,24 +320,6 @@ export default function SettingsModal({
   if (!shown) return null;
 
   const patch = (p: Partial<InnerState>) => config && onSaveConfig({ ...config, ...p });
-  const savedKey = config ? sharedKeyOf(config) : "";
-  const keyDirty = key.trim() !== savedKey;
-
-  const saveKey = () => {
-    if (!config) return;
-    onSaveConfig(withSharedKey(config, key.trim()));
-  };
-
-  const checkKey = async () => {
-    setKeyState({ kind: "checking" });
-    try {
-      await fetchModels({ baseUrl: OPENCODE_GO_BASE, apiKey: key.trim() });
-      setKeyState({ kind: "ok" });
-    } catch (e) {
-      setKeyState({ kind: "err", msg: String(e) });
-    }
-  };
-
   return (
     <div
       className={`modal-backdrop settings-backdrop ${open ? "" : "is-leaving"}`}
@@ -523,57 +493,9 @@ export default function SettingsModal({
 
             {tab === "access" && (
               <>
-                <Row
-                  title="OpenCode Go key"
-                  hint={
-                    <>
-                      One key powers every voice. Model is locked to{" "}
-                      <code>muse-spark-1.3-contributor</code>.
-                    </>
-                  }
-                  stack
-                >
-                  <div className="key-line">
-                    <input
-                      className="text-input"
-                      type="password"
-                      autoComplete="new-password"
-                      data-1p-ignore="true"
-                      data-lpignore="true"
-                      spellCheck={false}
-                      placeholder="sk-…"
-                      value={key}
-                      disabled={!config}
-                      onChange={(e) => {
-                        setKey(e.target.value);
-                        setKeyState({ kind: "idle" });
-                      }}
-                      onKeyDown={(e) => e.key === "Enter" && keyDirty && saveKey()}
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-go btn-sm"
-                      disabled={!keyDirty}
-                      onClick={saveKey}
-                    >
-                      {keyDirty ? "Save" : "Saved"}
-                    </button>
-                  </div>
-                  <div className="key-status">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      disabled={!key.trim() || keyState.kind === "checking"}
-                      onClick={checkKey}
-                    >
-                      {keyState.kind === "checking" ? "Checking…" : "Check key"}
-                    </button>
-                    {keyState.kind === "ok" && <span className="key-ok">Key works</span>}
-                    {keyState.kind === "err" && <span className="field-error">{keyState.msg}</span>}
-                  </div>
-                </Row>
+                <ProviderKeys config={config} />
                 {apis.length > 0 && (
-                  <Row title="Saved keys" stack>
+                  <Row title="Old saved keys" hint="From an earlier version. Delete them; they aren’t used." stack>
                     <div className="api-list">
                       {apis.map((a) => (
                         <div key={a.id} className="api-row">

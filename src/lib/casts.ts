@@ -131,23 +131,26 @@ export function deleteCast(id: string) {
   if (getActiveCastId() === id) setActiveCastId(null);
 }
 
-/** Apply a cast's voices onto the live config, keeping key + pacing. */
+/** Apply a cast's voices onto the live config, keeping pacing. */
 export function applyCast(cfg: InnerState, cast: Cast): InnerState {
-  const key =
-    cfg.ai1_config.api_key || cfg.ai2_config.api_key || cfg.ai3_config.api_key;
-  const withKey = (c: AiConfig, fallback: AiConfig): AiConfig => ({
-    ...fallback,
-    ...c,
-    api_key: key,
-    model: fallback.model,
-    api_base_url: fallback.api_base_url,
-  });
+  // Casts saved before multi-provider carry no provider; keep the live model then.
+  const voice = (c: AiConfig, live: AiConfig): AiConfig =>
+    c.provider
+      ? { ...live, ...c, api_key: "" }
+      : {
+          ...live,
+          ...c,
+          api_key: "",
+          provider: live.provider,
+          model: live.model,
+          api_base_url: live.api_base_url,
+        };
   return {
     ...cfg,
     bot_count: cast.bot_count >= 3 ? 3 : 2,
-    ai1_config: withKey(cast.ai1_config, cfg.ai1_config),
-    ai2_config: withKey(cast.ai2_config, cfg.ai2_config),
-    ai3_config: withKey(cast.ai3_config, cfg.ai3_config),
+    ai1_config: voice(cast.ai1_config, cfg.ai1_config),
+    ai2_config: voice(cast.ai2_config, cfg.ai2_config),
+    ai3_config: voice(cast.ai3_config, cfg.ai3_config),
   };
 }
 
