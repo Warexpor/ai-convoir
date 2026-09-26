@@ -251,6 +251,11 @@ export async function listSavedChats(): Promise<unknown[] | null> {
   return tryInvoke<unknown[]>("list_saved_chats");
 }
 
+/** One chat hydrated from the messages table (SoT). Null outside Tauri / on miss. */
+export async function getSavedChat(chatId: string): Promise<unknown | null> {
+  return tryInvoke<unknown | null>("get_saved_chat", { chatId });
+}
+
 export async function deleteSavedChat(chatId: string): Promise<void> {
   if (!isTauri()) return;
   await invokeCmd("delete_saved_chat", { chatId });

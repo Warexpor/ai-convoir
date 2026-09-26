@@ -181,6 +181,23 @@ pub fn hydrate_snapshot_messages(
     Ok(())
 }
 
+/// Parse a chat_meta `config_json` blob and overwrite `.messages` from the table.
+/// Returns `None` for empty / whitespace-only JSON (same skip rule as list/get commands).
+pub fn hydrate_chat_from_meta(
+    conn: &Connection,
+    chat_id: &str,
+    config_json: &str,
+) -> Result<Option<serde_json::Value>, String> {
+    if config_json.trim().is_empty() {
+        return Ok(None);
+    }
+    let mut value: serde_json::Value =
+        serde_json::from_str(config_json).map_err(|e| e.to_string())?;
+    let msgs = load_messages(conn, chat_id)?;
+    hydrate_snapshot_messages(&mut value, &msgs)?;
+    Ok(Some(value))
+}
+
 /// Persist chat metadata (keeps the chat alive in the sidebar even after restart).
 #[allow(dead_code)] // available for meta-only updates; full snapshots use upsert_saved_chat
 pub fn upsert_chat_meta(
@@ -221,6 +238,24 @@ pub fn list_chat_metas(conn: &Connection) -> Result<Vec<(String, u64, String)>, 
         .map_err(|e| format!("DB list_chat_metas collect: {}", e))?;
 
     Ok(rows)
+}
+
+/// List saved-chat snapshots newest-first, each hydrated from the messages table.
+/// Messages table is the transcript source of truth (`save_message` / `delete_message`
+/// update rows without rewriting config_json).
+pub fn list_hydrated_chats(conn: &Connection) -> Result<Vec<serde_json::Value>, String> {
+    let metas = list_chat_metas(conn)?;
+    let mut out = Vec::with_capacity(metas.len());
+    for (id, _updated, json) in metas {
+        match hydrate_chat_from_meta(conn, &id, &json) {
+            Ok(Some(v)) => out.push(v),
+            Ok(None) => continue,
+            // Corrupt JSON rows are skipped (historical list_saved_chats behavior).
+            Err(e) if !e.starts_with("DB ") && !e.starts_with("hydrate messages:") => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(out)
 }
 
 /// Load one chat metadata JSON blob.
@@ -619,6 +654,62 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["content"], "fresh-turn");
         assert_eq!(arr[0]["agent"], "ai2");
+
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn list_hydrated_chats_prefers_messages_table() {
+        let path = tmp_db_path("list-hydrate");
+        let conn = open(&path).unwrap();
+        // Snapshot JSON is stale (claims only turn-1 "stale").
+        upsert_saved_chat(
+            &conn,
+            "c1",
+            100,
+            r#"{"id":"c1","updated_at":100,"messages":[{"agent":"ai1","role":"assistant","content":"stale","turn":1,"created_at":1}]}"#,
+            &[Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "stale".into(),
+                turn: 1,
+                created_at: 1,
+                reasoning: None,
+            }],
+        )
+        .unwrap();
+        save_message(
+            &conn,
+            "c1",
+            &Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "fresh-turn".into(),
+                turn: 2,
+                created_at: 2,
+                reasoning: None,
+            },
+        )
+        .unwrap();
+        delete_message(&conn, "c1", "ai1", 1, 1).unwrap();
+
+        // Raw meta still has stale messages.
+        let (_u, raw) = get_chat_meta(&conn, "c1").unwrap().unwrap();
+        let raw_v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(raw_v["messages"][0]["content"], "stale");
+
+        // List path (what FE boot/select uses) must hydrate.
+        let listed = list_hydrated_chats(&conn).unwrap();
+        assert_eq!(listed.len(), 1);
+        let arr = listed[0]["messages"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["content"], "fresh-turn");
+        assert_eq!(arr[0]["agent"], "ai2");
+
+        // get path shares the same helper.
+        let one = hydrate_chat_from_meta(&conn, "c1", &raw).unwrap().unwrap();
+        assert_eq!(one["messages"][0]["content"], "fresh-turn");
 
         drop(conn);
         let _ = std::fs::remove_file(&path);
