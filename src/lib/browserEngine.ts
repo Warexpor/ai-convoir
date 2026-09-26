@@ -116,7 +116,11 @@ function friendlyApiError(status: number, detail: string): string {
   return `Couldn’t reach the provider (${status}): ${detail}`;
 }
 
-/** Match Rust `max_tokens_for_response_length` + `effective_max_tokens`. */
+/**
+ * Soft length → hard output-token ceilings (+ reasoning pad below).
+ * Twin of Rust `max_tokens_for_response_length` / `reasoning_token_pad` /
+ * `effective_max_tokens` in `src-tauri/src/engine.rs` — keep in sync.
+ */
 const LENGTH_MAX_TOKENS: Record<string, number> = {
   brief: 128,
   small: 384,
@@ -149,6 +153,8 @@ function goHeaders(apiKey: string): HeadersInit {
 }
 
 function transcriptForApi(speaking: string, cfg: AiConfig) {
+  // Soft length intent always stays on the system/instructions path —
+  // even when thinking pads max_output_tokens for CoT (Brief+High ≈ 2176).
   const lengthNote =
     LENGTH_INSTRUCTIONS[cfg.response_length || "normal"] || "";
   const instructions = lengthNote
@@ -211,8 +217,6 @@ async function streamResponses(
   const ac = new AbortController();
   state.abort = ac;
 
-  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
-
   const body: Record<string, unknown> = {
     model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
     instructions,
@@ -247,6 +251,10 @@ async function streamResponses(
     }
     throw new Error(friendlyApiError(res.status, detail));
   }
+
+  // Match BE: open answering bubble only after HTTP 2xx accept — failed
+  // requests must not flash an empty bubble (stream-abort alone is fine).
+  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
 
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");

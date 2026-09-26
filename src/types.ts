@@ -253,7 +253,10 @@ export function contextWindow(model: string): number {
   return 128000;
 }
 
-/** Response-length instructions appended to system prompt. */
+/**
+ * Soft response-length instructions appended to system / Responses `instructions`.
+ * Twin of Rust `system_prompt_with_length` in `src-tauri/src/engine.rs` — keep in sync.
+ */
 export const LENGTH_INSTRUCTIONS: Record<ResponseLength, string> = {
   brief: "Keep your response extremely brief — at most one sentence.",
   small: "Keep your response short — at most 2–3 sentences.",
