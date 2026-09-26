@@ -289,6 +289,7 @@ function App() {
         .filter(Boolean)
         .join(" ")}
       data-fx={fx}
+      data-bg={bg.kind === "image" && bgUrl ? "image" : undefined}
       data-running={stream.status === "Running" ? "" : undefined}
       style={{ zoom }}
     >

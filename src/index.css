@@ -234,6 +234,17 @@ body,
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
 }
+/* Docked, the rail and Voices panel sit in their own grid columns over
+   nothing but the greyscale stage, where a 28px blur changes pixels by
+   <1/255 on average. It still cost a full re-blur on every frame of a panel
+   slide (and every frame of the Full stage). Keep it for a picture
+   background and for the overlay drawers on narrow screens. */
+@media (min-width: 901px) {
+  .app:not([data-bg="image"]) > :is(.rail, .settings) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 [data-fx="lite"] :is(.glass, .cast, .stage-box, .rail) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
