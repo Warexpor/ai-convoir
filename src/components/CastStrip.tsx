@@ -89,6 +89,15 @@ function CastStrip({ config, status, upNext, hasMessages, onEditVoice }: Props) 
                   : `Edit ${name}`
             }
             onClick={() => onEditVoice?.(id)}
+            // Keyboard users can reach the voice editor from here too.
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEditVoice?.(id);
+              }
+            }}
           >
             <VoiceAvatar
               className="cast-avatar"
