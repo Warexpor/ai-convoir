@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconChevronDown, IconKey, IconReturn, IconSpark } from "./Marks";
+import { IconChevronDown, IconKey, IconReturn } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
 import type { InnerState, Message } from "../types";
@@ -29,29 +29,6 @@ interface Props {
   onOpenSettings?: () => void;
   streamMode?: StreamMode;
 }
-
-const STARTERS: { label: string; text: string }[] = [
-  {
-    label: "Diner at 3am",
-    text: "Two friends wake up in a diner at 3am. The jukebox only plays songs that already happened.",
-  },
-  {
-    label: "Lobby critics",
-    text: "Two theater critics argue in the lobby about a play that has not started.",
-  },
-  {
-    label: "Night train",
-    text: "A quiet night train. Two strangers share a window and a secret.",
-  },
-  {
-    label: "Ship's AI",
-    text: "The ship's AI has to explain to the crew why it quietly changed course six days ago.",
-  },
-  {
-    label: "Hard debate",
-    text: "Settle it properly: is a hot dog a sandwich? Open with your strongest argument.",
-  },
-];
 
 function firstSentence(prompt: string) {
   const clean = prompt.replace(/^You are [^—–-]+[—–-]\s*/i, "").trim();
@@ -474,21 +451,6 @@ function ChatView({
             </div>
           </div>
 
-          <div className="starters" aria-label="Starter scenes">
-            {STARTERS.map((st, i) => (
-              <button
-                key={st.label}
-                type="button"
-                style={{ ["--i" as string]: i }}
-                className={`starter${firstDraft === st.text ? " on" : ""}`}
-                onClick={() => onFirstDraftChange?.(st.text)}
-                title={st.text}
-              >
-                <IconSpark />
-                {st.label}
-              </button>
-            ))}
-          </div>
 
           {hasSavedChats && (
             <p className="empty-foot">

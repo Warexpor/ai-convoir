@@ -166,8 +166,10 @@ void main() {
 }`,
 };
 
-/** Render at a fraction of CSS pixels — the field is soft anyway. */
-const SCALE = 0.5;
+/** Render at a fraction of device pixels — the field is soft, but hairlines
+ *  and grain turn to mush below ~0.75. */
+const SCALE = 0.75;
+const MAX_DPR = 2;
 /** Frame budget for the "full" living loop (~30fps). */
 const FRAME_MS = 33;
 /** Crossfade between lighting states in "balanced". */
@@ -348,8 +350,9 @@ function StageField({ colors, focus, fx, preset }: Props) {
     const still = () => motionMq.matches || level === "lite";
 
     const size = () => {
-      const w = Math.max(1, Math.floor(wrap.clientWidth * SCALE));
-      const h = Math.max(1, Math.floor(wrap.clientHeight * SCALE));
+      const k = SCALE * Math.min(window.devicePixelRatio || 1, MAX_DPR);
+      const w = Math.max(1, Math.floor(wrap.clientWidth * k));
+      const h = Math.max(1, Math.floor(wrap.clientHeight * k));
       ra.resize(w, h);
       rb.resize(w, h);
     };
