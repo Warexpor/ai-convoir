@@ -98,12 +98,64 @@ export function useConversationApp() {
 
   useEffect(() => {
     let cancelled = false;
-    void hydrateChats().then((list) => {
-      if (!cancelled) setChats(list);
-    });
+    void (async () => {
+      const list = await hydrateChats();
+      if (cancelled) return;
+      setChats(list);
+
+      // pickResumeChat() read localStorage before this hydrate; re-seed the
+      // open / resume transcript from SoT (get_saved_chat) so table wins.
+      const skip =
+        typeof localStorage !== "undefined" &&
+        !!(
+          localStorage.getItem(SKIP_RESUME_KEY) ||
+          localStorage.getItem(LEGACY_SKIP_RESUME_KEY)
+        );
+      if (skip) return;
+
+      const targetId =
+        chatIdRef.current ??
+        bootResume.current?.id ??
+        getActiveChatId();
+      if (!targetId) return;
+      if (messagesRef.current.some((m) => m.streaming)) return;
+
+      const chat = await loadChat(targetId);
+      if (cancelled || !chat) return;
+      // Help in-flight boot() pick SoT if it still reads bootResume.current.
+      bootResume.current = chat;
+      if (chatIdRef.current && chatIdRef.current !== targetId) return;
+      if (messagesRef.current.some((m) => m.streaming)) return;
+
+      // Don't clobber a live engine transcript that already grew past snapshot.
+      // Empty SoT still wins (clears stale LS); only skip when SoT is non-empty
+      // and live is strictly longer (in-session engine ahead).
+      const live = messagesRef.current.filter((m) => !m.streaming);
+      if (chat.messages.length > 0 && live.length > chat.messages.length) return;
+
+      skipAutosaveUntil.current = Date.now() + 2500;
+      setActiveChatId(chat.id);
+      setActiveChatIdState(chat.id);
+      chatIdRef.current = chat.id;
+      stream.setMessages(chat.messages);
+      stream.setTurnCount(chat.turn_count);
+      setFirstDraft(chat.seed_prompt || "");
+      setChats(listChats());
+      try {
+        await api.loadTranscript({
+          messages: chat.messages,
+          turnCount: chat.turn_count,
+          chatId: chat.id,
+        });
+      } catch {
+        /* web / no tauri */
+      }
+    })();
     return () => {
       cancelled = true;
     };
+    // Boot-time hydrate once; stream setters are stable for this remaster pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pushConfig = useCallback(async (cfg: InnerState) => {

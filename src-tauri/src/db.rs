@@ -172,12 +172,26 @@ pub fn load_messages(conn: &Connection, chat_id: &str) -> Result<Vec<Message>, S
 }
 
 /// Overwrite `snapshot.messages` from the messages table (source of truth).
+/// Also bump `turn_count` when the table implies a higher next-turn index:
+/// `save_message` appends rows without rewriting config_json, so the snapshot
+/// counter can lag. Never lower an existing snapshot counter (delete_message
+/// likewise leaves in-memory turn_count alone).
 pub fn hydrate_snapshot_messages(
     snapshot: &mut serde_json::Value,
     messages: &[Message],
 ) -> Result<(), String> {
     snapshot["messages"] =
         serde_json::to_value(messages).map_err(|e| format!("hydrate messages: {e}"))?;
+    let derived = messages
+        .iter()
+        .map(|m| m.turn.saturating_add(1))
+        .max()
+        .unwrap_or(0);
+    let prev = snapshot
+        .get("turn_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
+    snapshot["turn_count"] = serde_json::json!(derived.max(prev));
     Ok(())
 }
 
@@ -654,9 +668,44 @@ mod tests {
         assert_eq!(arr.len(), 1);
         assert_eq!(arr[0]["content"], "fresh-turn");
         assert_eq!(arr[0]["agent"], "ai2");
+        // config_json had no turn_count; bump from max(turn)+1 on table rows.
+        assert_eq!(value["turn_count"], 3);
 
         drop(conn);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn hydrate_snapshot_bumps_stale_turn_count() {
+        let mut value = serde_json::json!({
+            "id": "c1",
+            "turn_count": 1,
+            "messages": []
+        });
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "a".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "b".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        hydrate_snapshot_messages(&mut value, &msgs).unwrap();
+        assert_eq!(value["turn_count"], 2);
+        // Never lower when snapshot is ahead of max(turn)+1 (e.g. after delete).
+        value["turn_count"] = serde_json::json!(9);
+        hydrate_snapshot_messages(&mut value, &msgs).unwrap();
+        assert_eq!(value["turn_count"], 9);
     }
 
     #[test]
