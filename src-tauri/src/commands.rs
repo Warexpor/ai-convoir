@@ -289,7 +289,9 @@ pub async fn load_transcript(
     arc.pause_flag.store(true, Ordering::Release);
     arc.step_once.store(false, Ordering::Release);
 
-    // Persist loaded messages to DB (async, best-effort; serialized writes)
+    // Persist loaded messages to DB (async, best-effort; serialized writes).
+    // Capture a save epoch so a stale boot load_transcript cannot DELETE+INSERT
+    // after a newer SoT hydrate write (last-writer seal).
     if !chat_id.is_empty() {
         let db_path = state_arc
             .db_path
@@ -300,8 +302,16 @@ pub async fn load_transcript(
         if !db_path.is_empty() {
             let msgs = messages.clone();
             let cid = chat_id.clone();
+            let save_epoch = state_arc.bump_transcript_save_epoch();
+            let save_state = Arc::clone(&state_arc);
             std::thread::spawn(move || {
-                let _ = db::with_locked(&db_path, |conn| db::save_messages(conn, &cid, &msgs));
+                let _ = db::with_locked(&db_path, |conn| {
+                    let current = save_state
+                        .transcript_save_epoch
+                        .load(Ordering::Acquire);
+                    db::save_messages_if_epoch(conn, &cid, &msgs, save_epoch, current)
+                        .map(|_| ())
+                });
             });
         }
     }

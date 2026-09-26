@@ -142,6 +142,23 @@ pub fn save_messages(
     Ok(())
 }
 
+/// Replace messages only when `scheduled_epoch` is still the current transcript-save
+/// generation. Used by load_transcript's detached writer so a stale boot save cannot
+/// DELETE+INSERT over a newer SoT hydrate write.
+pub fn save_messages_if_epoch(
+    conn: &Connection,
+    chat_id: &str,
+    msgs: &[Message],
+    scheduled_epoch: u64,
+    current_epoch: u64,
+) -> Result<bool, String> {
+    if scheduled_epoch != current_epoch {
+        return Ok(false);
+    }
+    save_messages(conn, chat_id, msgs)?;
+    Ok(true)
+}
+
 /// Load ALL messages for a chat, ordered by insertion.
 pub fn load_messages(conn: &Connection, chat_id: &str) -> Result<Vec<Message>, String> {
     let mut stmt = conn
@@ -514,6 +531,50 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].content, "second");
         assert_eq!(loaded[0].reasoning.as_deref(), Some("r"));
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_messages_if_epoch_skips_stale_then_applies_current() {
+        let path = tmp_db_path("save-epoch");
+        let conn = open(&path).unwrap();
+        let stale = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "stale-ls".into(),
+            turn: 0,
+            created_at: 1,
+            reasoning: None,
+        }];
+        let sot = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "sot".into(),
+            turn: 1,
+            created_at: 2,
+            reasoning: None,
+        }];
+        // Stale boot schedule (epoch 1) after hydrate bumped to 2 → skip.
+        assert_eq!(
+            save_messages_if_epoch(&conn, "c1", &stale, 1, 2).unwrap(),
+            false
+        );
+        assert!(load_messages(&conn, "c1").unwrap().is_empty());
+        // Current SoT schedule writes.
+        assert_eq!(
+            save_messages_if_epoch(&conn, "c1", &sot, 2, 2).unwrap(),
+            true
+        );
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].content, "sot");
+        // Later stale attempt still skipped; SoT remains.
+        assert_eq!(
+            save_messages_if_epoch(&conn, "c1", &stale, 1, 2).unwrap(),
+            false
+        );
+        assert_eq!(load_messages(&conn, "c1").unwrap()[0].content, "sot");
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }

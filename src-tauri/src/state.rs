@@ -189,6 +189,9 @@ pub struct AppState {
     pub reset_flag: AtomicBool,
     /// Bumped on stop/reset/load so in-flight SSE + commits are discarded.
     pub stream_epoch: AtomicU64,
+    /// Bumped on each load_transcript DB persist schedule; detached save_messages
+    /// only writes when its captured epoch is still current (stale last-writer seal).
+    pub transcript_save_epoch: AtomicU64,
     /// When true, auto-loop should only do one step then pause (used by step command).
     pub step_once: AtomicBool,
     /// Prevents spawning multiple concurrent conversation loops.
@@ -204,6 +207,7 @@ impl AppState {
             pause_flag: AtomicBool::new(false),
             reset_flag: AtomicBool::new(false),
             stream_epoch: AtomicU64::new(0),
+            transcript_save_epoch: AtomicU64::new(0),
             step_once: AtomicBool::new(false),
             loop_active: AtomicBool::new(false),
             db_path: Mutex::new(String::new()),
@@ -221,6 +225,12 @@ impl AppState {
     pub fn bump_stream_epoch(&self) -> u64 {
         // AcqRel: streaming tasks must observe the bump before commit races.
         self.stream_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+            + 1
+    }
+
+    pub fn bump_transcript_save_epoch(&self) -> u64 {
+        self.transcript_save_epoch
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     }
@@ -245,5 +255,18 @@ mod tests {
         assert!(s.ai1_config.system_prompt.contains("Ava"));
         assert!(s.ai2_config.system_prompt.contains("Jules"));
         assert!(s.ai3_config.system_prompt.contains("Rin"));
+    }
+
+    #[test]
+    fn bump_transcript_save_epoch_monotonic() {
+        let s = AppState::new();
+        assert_eq!(s.transcript_save_epoch.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(s.bump_transcript_save_epoch(), 1);
+        assert_eq!(s.bump_transcript_save_epoch(), 2);
+        assert_eq!(
+            s.transcript_save_epoch
+                .load(std::sync::atomic::Ordering::Relaxed),
+            2
+        );
     }
 }

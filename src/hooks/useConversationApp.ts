@@ -83,7 +83,7 @@ function freshestResume(
 
 export function useConversationApp() {
   const bootResume = useRef(pickResumeChat());
-  /** Chat id whose SoT re-seed already ran; boot must not loadTranscript over it. */
+  /** Chat id hydrate intends to / has SoT re-seeded; boot must not loadTranscript over it. */
   const hydrateSeededChatId = useRef<string | null>(null);
   const toast = useToast();
   const turnRef = useRef(0);
@@ -159,21 +159,37 @@ export function useConversationApp() {
       if (!targetId) return;
       if (messagesRef.current.some((m) => m.streaming)) return;
 
+      // Mark BEFORE loadChat await: boot must not pass hydrateSeededChatId and
+      // start stale loadTranscript while we are still fetching SoT. Clear if we
+      // abandon so boot can still resume from LS.
+      const clearPendingSeed = (id: string) => {
+        if (hydrateSeededChatId.current === id) hydrateSeededChatId.current = null;
+      };
+      hydrateSeededChatId.current = targetId;
+
       const chat = await loadChat(targetId);
-      if (cancelled || !chat) return;
+      if (cancelled || !chat) {
+        clearPendingSeed(targetId);
+        return;
+      }
       // Help in-flight boot() pick SoT if it still reads bootResume.current.
       bootResume.current = chat;
-      if (chatIdRef.current && chatIdRef.current !== targetId) return;
+      if (chatIdRef.current && chatIdRef.current !== targetId) {
+        clearPendingSeed(targetId);
+        return;
+      }
+      // Streaming: keep mark so boot also skips stale LS over a live stream.
       if (messagesRef.current.some((m) => m.streaming)) return;
 
       // Don't clobber a live engine transcript that already grew past snapshot.
       // Empty SoT still wins (clears stale LS); only skip when SoT is non-empty
-      // and live is strictly longer (in-session engine ahead).
+      // and live is strictly longer (in-session engine ahead). Keep the early
+      // mark so boot also skips loading a shorter LS over longer live.
       const live = messagesRef.current.filter((m) => !m.streaming);
       if (chat.messages.length > 0 && live.length > chat.messages.length) return;
 
       skipAutosaveUntil.current = Date.now() + 2500;
-      // Mark before awaits so boot's post-pushConfig check sees SoT applied.
+      // Keep / refresh mark (already set early) for boot's skip + post-await recheck.
       hydrateSeededChatId.current = chat.id;
       setActiveChatId(chat.id);
       setActiveChatIdState(chat.id);
@@ -328,14 +344,47 @@ export function useConversationApp() {
           if (resume.messages.length > 0 && live.length > resume.messages.length) {
             return;
           }
+          // Final gate before firing: hydrate may have marked during pushConfig.
+          if (hydrateSeededChatId.current === resume.id) {
+            const seeded = bootResume.current;
+            if (seeded && seeded.id === resume.id) {
+              try {
+                await pushConfig(
+                  configFromSavedChat({ ...merged, status: "Idle" }, seeded),
+                );
+              } catch {
+                /* web / no tauri */
+              }
+            }
+            return;
+          }
+          const bootLoadId = resume.id;
           try {
             await api.loadTranscript({
               messages: resume.messages,
               turnCount: resume.turn_count,
-              chatId: resume.id,
+              chatId: bootLoadId,
             });
           } catch {
             /* web / no tauri */
+          }
+          // After await: hydrate may have SoT-loaded meanwhile. Ignore stale
+          // engine write by re-applying freshest SoT (also bumps BE save epoch).
+          if (hydrateSeededChatId.current === bootLoadId) {
+            const sot = bootResume.current;
+            if (sot && sot.id === bootLoadId) {
+              try {
+                await api.loadTranscript({
+                  messages: sot.messages,
+                  turnCount: sot.turn_count,
+                  chatId: sot.id,
+                });
+              } catch {
+                /* web / no tauri */
+              }
+              stream.setMessages(sot.messages);
+              stream.setTurnCount(sot.turn_count);
+            }
           }
         }
       } catch {
