@@ -474,3 +474,8 @@
 .is-phone .bg-presets {
   grid-template-columns: repeat(2, 1fr);
 }
+
+/* No keyboard on a phone: drop shortcut hints. */
+.is-phone .empty-foot-kbd {
+  display: none;
+}

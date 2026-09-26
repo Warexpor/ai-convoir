@@ -456,7 +456,8 @@ function ChatView({
 
           {hasSavedChats && (
             <p className="empty-foot">
-              Older threads live in the sidebar · <kbd>B</kbd>
+              Older threads live in the sidebar
+              <span className="empty-foot-kbd"> · <kbd>B</kbd></span>
             </p>
           )}
         </div>
