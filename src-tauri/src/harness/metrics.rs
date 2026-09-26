@@ -80,4 +80,18 @@ mod tests {
         assert_eq!(m.cached_tokens, Some(80));
         assert_eq!(m.completion_tokens, Some(20));
     }
+
+    #[test]
+    fn apply_usage_none_does_not_wipe() {
+        let mut m = TurnMetrics::default();
+        m.apply_usage(&TokenUsage {
+            prompt_tokens: Some(10),
+            cached_tokens: Some(8),
+            completion_tokens: Some(2),
+        });
+        m.apply_usage(&TokenUsage::default());
+        assert_eq!(m.prompt_tokens, Some(10));
+        assert_eq!(m.cached_tokens, Some(8));
+        assert_eq!(m.completion_tokens, Some(2));
+    }
 }
