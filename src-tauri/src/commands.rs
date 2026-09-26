@@ -1048,15 +1048,16 @@ mod export_tests {
     fn export_dir_follows_home_or_userprofile() {
         let dir = export_dir();
         assert!(!dir.as_os_str().is_empty());
-        // On desktop: Desktop or home. On mobile builds this test binary is still
-        // compiled with not(mobile), so the same assertion holds in CI/lib tests.
+        // Desktop path under test: `cargo test --lib` never sets cfg(mobile), so
+        // the mobile `temp_dir()` arm is not compiled here — do not fake-assert it.
+        // (See export_dir docs: mobile uses temp because there is no Desktop.)
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from);
         if let Some(home) = home {
             assert!(
-                dir == home.join("Desktop") || dir == home || dir == std::env::temp_dir(),
-                "export_dir {dir:?} should be Desktop, home, or temp"
+                dir == home.join("Desktop") || dir == home,
+                "export_dir {dir:?} should be Desktop or home on desktop cfg"
             );
         }
     }

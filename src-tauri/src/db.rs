@@ -440,4 +440,44 @@ mod tests {
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }
+
+    #[test]
+    fn upsert_saved_chat_dedupes_identity_keeping_last() {
+        let path = tmp_db_path("upsert-dedupe");
+        let conn = open(&path).unwrap();
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "old".into(),
+                turn: 2,
+                created_at: 11,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "new".into(),
+                turn: 2,
+                created_at: 11,
+                reasoning: Some("r2".into()),
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "other".into(),
+                turn: 2,
+                created_at: 12,
+                reasoning: None,
+            },
+        ];
+        upsert_saved_chat(&conn, "c1", 99, r#"{"id":"c1"}"#, &msgs).unwrap();
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 2);
+        let ai1 = loaded.iter().find(|m| m.agent == "ai1").unwrap();
+        assert_eq!(ai1.content, "new");
+        assert_eq!(ai1.reasoning.as_deref(), Some("r2"));
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
 }
