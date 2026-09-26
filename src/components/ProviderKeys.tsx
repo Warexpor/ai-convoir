@@ -3,10 +3,15 @@ import type { InnerState } from "../types";
 import { fetchModels, isTauri } from "../lib/api";
 import { PROVIDERS, type ProviderDef } from "../lib/providers";
 import {
+  cancelSignIn,
   getProviderKey,
   keyStorageLabel,
   onProviderKeysChanged,
   setProviderKey,
+  signIn,
+  signInAvailable,
+  signOut,
+  signedInAs,
 } from "../lib/secrets";
 
 type CheckState =
@@ -28,6 +33,60 @@ export async function openExternal(url: string) {
   window.open(url, "_blank", "noopener");
 }
 
+/** Browser sign-in controls. Shared by token providers and OpenRouter. */
+function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
+  const [state, setState] = useState<"idle" | "waiting" | { err: string }>("idle");
+  useEffect(() => () => void cancelSignIn(p.id), [p.id]);
+  if (!signInAvailable()) {
+    return <p className="field-hint">Sign-in works in the desktop app.</p>;
+  }
+  const who = p.signIn === "tokens" ? signedInAs(p.id) : null;
+  if (who !== null) {
+    return (
+      <div className="key-status">
+        <span className="key-ok">Signed in{who ? ` as ${who}` : ""}</span>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void signOut(p.id)}>
+          Sign out
+        </button>
+      </div>
+    );
+  }
+  const start = async () => {
+    setState("waiting");
+    try {
+      await signIn(p.id, openExternal);
+      setState("idle");
+      onDone?.();
+    } catch (e) {
+      setState({ err: String(e) });
+    }
+  };
+  return (
+    <div className="key-status">
+      {state === "waiting" ? (
+        <>
+          <span className="key-ok">Finish in your browser…</span>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              void cancelSignIn(p.id);
+              setState("idle");
+            }}
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn btn-go btn-sm" onClick={() => void start()}>
+          {p.signInLabel || "Sign in"}
+        </button>
+      )}
+      {typeof state === "object" && <span className="field-error">{state.err}</span>}
+    </div>
+  );
+}
+
 function ProviderRow({
   p,
   inUse,
@@ -41,7 +100,9 @@ function ProviderRow({
   onToggle: () => void;
   customBase: string;
 }) {
+  const tokens = p.signIn === "tokens";
   const saved = getProviderKey(p.id);
+  const who = tokens ? signedInAs(p.id) : null;
   const [draft, setDraft] = useState(saved);
   const [check, setCheck] = useState<CheckState>({ kind: "idle" });
   const [busy, setBusy] = useState(false);
@@ -54,11 +115,15 @@ function ProviderRow({
 
   const dirty = draft.trim() !== saved;
   const base = p.id === "custom" ? customBase : p.baseUrl;
-  const status = saved
-    ? "Key saved"
-    : p.keyOptional
-      ? "No key needed"
-      : "No key";
+  const status = tokens
+    ? who !== null
+      ? "Signed in"
+      : "Not signed in"
+    : saved
+      ? "Key saved"
+      : p.keyOptional
+        ? "No key needed"
+        : "No key";
 
   const save = async () => {
     setBusy(true);
@@ -93,10 +158,19 @@ function ProviderRow({
       >
         <span className="prov-name">{p.name}</span>
         {inUse && <span className="prov-tag">in use</span>}
-        <span className={`prov-state${saved ? " is-set" : ""}`}>{status}</span>
+        <span className={`prov-state${saved || who !== null ? " is-set" : ""}`}>{status}</span>
       </button>
-      {open && (
+      {open && tokens && (
         <div className="prov-body">
+          {p.note && <p className="field-hint">{p.note}</p>}
+          <SignIn p={p} />
+        </div>
+      )}
+      {open && !tokens && (
+        <div className="prov-body">
+          {p.signIn === "key" && (
+            <SignIn p={p} onDone={() => setDraft(getProviderKey(p.id))} />
+          )}
           <div className="key-line">
             <input
               className="text-input"

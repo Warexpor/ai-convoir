@@ -755,7 +755,7 @@ export function useConversationApp() {
       if (missingApiKeys(config)) {
         const names = missingProviderNames(config);
         toast.show(
-          `Add your ${names.join(" and ") || "provider"} key in Settings, then press Begin.`,
+          `Connect ${names.join(" and ") || "a provider"} in Settings → Providers, then press Begin.`,
           6000,
         );
         return { needSettings: true as const };

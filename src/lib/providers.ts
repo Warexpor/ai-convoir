@@ -17,6 +17,8 @@ export type ProviderId =
   | "groq"
   | "mistral"
   | "ollama"
+  | "codex"
+  | "xai_grok"
   | "custom";
 
 export interface ProviderDef {
@@ -32,6 +34,15 @@ export interface ProviderDef {
   keyOptional?: boolean;
   /** Offered when the live model list can't be fetched. Any id can be typed. */
   models: string[];
+  /**
+   * Browser sign-in (desktop only). "tokens": the app keeps OAuth tokens and
+   * refreshes them; no key field. "key": sign-in mints a normal API key.
+   */
+  signIn?: "tokens" | "key";
+  /** Button label for sign-in, e.g. "Sign in with ChatGPT". */
+  signInLabel?: string;
+  /** Shown under the provider in settings. */
+  note?: string;
 }
 
 export const PROVIDERS: ProviderDef[] = [
@@ -74,6 +85,8 @@ export const PROVIDERS: ProviderDef[] = [
     keyUrl: "https://openrouter.ai/keys",
     keyHint: "sk-or-…",
     models: ["openrouter/auto"],
+    signIn: "key",
+    signInLabel: "Sign in with OpenRouter",
   },
   {
     id: "xai",
@@ -82,6 +95,24 @@ export const PROVIDERS: ProviderDef[] = [
     keyUrl: "https://console.x.ai",
     keyHint: "xai-…",
     models: ["grok-4"],
+  },
+  {
+    id: "xai_grok",
+    name: "xAI (Grok subscription)",
+    baseUrl: "https://api.x.ai/v1",
+    models: ["grok-4"],
+    signIn: "tokens",
+    signInLabel: "Sign in with xAI",
+    note: "Uses your SuperGrok or X Premium+ plan instead of API credit.",
+  },
+  {
+    id: "codex",
+    name: "ChatGPT (Codex sign-in)",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    models: ["gpt-5.5", "gpt-5.4-mini", "gpt-5"],
+    signIn: "tokens",
+    signInLabel: "Sign in with ChatGPT",
+    note: "Uses your ChatGPT Plus/Pro plan. Unofficial for third-party apps and may break.",
   },
   {
     id: "gemini",
