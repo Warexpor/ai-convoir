@@ -83,7 +83,8 @@ pub async fn start_conversation(
         }
     }
 
-    // Fresh start — bump epoch so any lingering in-flight stream cannot commit.
+    // Fresh start — bump epoch so any lingering in-flight stream cannot commit
+    // and cannot restore prepared.narration into this new run (epoch barrier).
     state_arc.bump_stream_epoch();
     state_arc.pause_flag.store(false, Ordering::Release);
     state_arc.clear_reset_if_idle();
@@ -619,12 +620,21 @@ fn now_ms() -> u64 {
 
 
 /// Put a consumed one-shot narration back only when the turn is still live.
-/// Skips after Reset/Load/Stop (reset_flag and/or Idle) so stale notes do not revive.
-fn restore_narration_unless_reset_or_idle(state: &Arc<AppState>, narration: &Option<String>) {
+/// Epoch barrier: FreshStart/Stop/Reset/Load bump `stream_epoch`, so an in-flight
+/// abort must not restore into a newer run (status may already be Running/Paused
+/// with `reset_flag` clear). Also skips on reset_flag and Idle as defense-in-depth.
+fn restore_narration_unless_reset_or_idle(
+    state: &Arc<AppState>,
+    narration: &Option<String>,
+    epoch_at_start: u64,
+) {
     let Some(n) = narration.as_ref() else {
         return;
     };
     if n.is_empty() {
+        return;
+    }
+    if state.stream_epoch.load(Ordering::Acquire) != epoch_at_start {
         return;
     }
     if state.reset_flag.load(Ordering::Acquire) {
@@ -710,7 +720,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     // Epoch may have bumped while we held the prepare lock (stop/reset/load).
     if cancel.is_cancelled() {
         machine.stop();
-        restore_narration_unless_reset_or_idle(state, &prepared.narration);
+        restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
         metrics.phase_end = TurnPhase::Stopped.to_string();
         log_turn_metrics(&metrics);
         emit_harness_metrics(app_handle, &metrics);
@@ -719,7 +729,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
     if let Err(e) = machine.begin_stream() {
         tracing::warn!(target: "harness", error = %e, "begin_stream");
-        restore_narration_unless_reset_or_idle(state, &prepared.narration);
+        restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
         return false;
     }
 
@@ -729,7 +739,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         Ok(outcome) => {
             if cancel.is_cancelled() {
                 machine.abort_stream();
-                restore_narration_unless_reset_or_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
                 metrics.phase_end = TurnPhase::Stopped.to_string();
                 metrics.ttft_ms = outcome.ttft_ms;
                 metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
@@ -746,7 +756,12 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
             if let Err(e) = machine.begin_commit() {
                 tracing::warn!(target: "harness", error = %e, "begin_commit");
-                restore_narration_unless_reset_or_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
+                // Stream may have emitted start/chunks — FE needs applyAbort.
+                let _ = app_handle.emit(
+                    "stream-abort",
+                    serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
+                );
                 return false;
             }
 
@@ -824,7 +839,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             };
 
             if !committed {
-                restore_narration_unless_reset_or_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
                 let _ = app_handle.emit(
                     "stream-abort",
                     serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
@@ -840,7 +855,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         }
         Err(e) if e == llm::STREAM_ABORTED => {
             machine.abort_stream();
-            restore_narration_unless_reset_or_idle(state, &prepared.narration);
+            restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
             metrics.phase_end = TurnPhase::Stopped.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -859,7 +874,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         Err(e) => {
             machine.fail();
             // Keep narration on API failure so the user can retry the same note.
-            restore_narration_unless_reset_or_idle(state, &prepared.narration);
+            restore_narration_unless_reset_or_idle(state, &prepared.narration, epoch_at_start);
             metrics.phase_end = TurnPhase::Error.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -1132,14 +1147,15 @@ mod narration_restore_tests {
     use std::sync::Arc;
 
     #[test]
-    fn restores_when_running_and_not_reset() {
+    fn restores_when_running_same_epoch_and_not_reset() {
         let state = Arc::new(AppState::new());
+        let epoch = state.stream_epoch.load(Ordering::Acquire);
         {
             let mut inner = state.inner.lock().unwrap();
             inner.status = AppStatus::Running;
             inner.pending_narration.clear();
         }
-        restore_narration_unless_reset_or_idle(&state, &Some("director note".into()));
+        restore_narration_unless_reset_or_idle(&state, &Some("director note".into()), epoch);
         let inner = state.inner.lock().unwrap();
         assert_eq!(inner.pending_narration, "director note");
     }
@@ -1147,13 +1163,14 @@ mod narration_restore_tests {
     #[test]
     fn skips_restore_when_reset_flag_set() {
         let state = Arc::new(AppState::new());
+        let epoch = state.stream_epoch.load(Ordering::Acquire);
         {
             let mut inner = state.inner.lock().unwrap();
             inner.status = AppStatus::Running;
             inner.pending_narration.clear();
         }
         state.reset_flag.store(true, Ordering::Release);
-        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()));
+        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()), epoch);
         let inner = state.inner.lock().unwrap();
         assert!(inner.pending_narration.is_empty());
     }
@@ -1161,12 +1178,13 @@ mod narration_restore_tests {
     #[test]
     fn skips_restore_when_status_idle_after_reset_or_load() {
         let state = Arc::new(AppState::new());
+        let epoch = state.stream_epoch.load(Ordering::Acquire);
         {
             let mut inner = state.inner.lock().unwrap();
             inner.status = AppStatus::Idle;
             inner.pending_narration.clear();
         }
-        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()));
+        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()), epoch);
         let inner = state.inner.lock().unwrap();
         assert!(inner.pending_narration.is_empty());
     }
@@ -1185,6 +1203,86 @@ mod narration_restore_tests {
             inner.pending_narration.clear();
         }
         state.bump_stream_epoch();
+        let inner = state.inner.lock().unwrap();
+        assert!(inner.pending_narration.is_empty());
+    }
+
+    /// H1 residual: FreshStart bumps epoch then sets Running/Paused with reset clear.
+    /// In-flight abort from the old turn must not restore prepared.narration into the new run.
+    #[test]
+    fn fresh_start_epoch_bump_blocks_inflight_narration_restore() {
+        let state = Arc::new(AppState::new());
+        let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
+        {
+            let mut inner = state.inner.lock().unwrap();
+            // Old turn had consumed this note into prepared.narration.
+            inner.pending_narration.clear();
+            inner.status = AppStatus::Running;
+        }
+
+        // Mirror FreshStart: bump epoch, clear pending, set Running (reset_flag stays false).
+        state.bump_stream_epoch();
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.messages.clear();
+            inner.turn_count = 0;
+            inner.pending_narration.clear();
+            inner.status = AppStatus::Running;
+        }
+        state.reset_flag.store(false, Ordering::Release);
+
+        // Old turn abort path restores with its epoch_at_start — must no-op.
+        restore_narration_unless_reset_or_idle(
+            &state,
+            &Some("stale from previous run".into()),
+            epoch_at_start,
+        );
+        {
+            let inner = state.inner.lock().unwrap();
+            assert!(
+                inner.pending_narration.is_empty(),
+                "old prepared.narration must not leak into FreshStart run"
+            );
+            assert_eq!(inner.status, AppStatus::Running);
+        }
+        assert!(!state.reset_flag.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn same_epoch_abort_still_restores_for_retry() {
+        let state = Arc::new(AppState::new());
+        let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.status = AppStatus::Running;
+            inner.pending_narration.clear();
+        }
+        // API failure / abort within the same generation should restore.
+        restore_narration_unless_reset_or_idle(
+            &state,
+            &Some("retry me".into()),
+            epoch_at_start,
+        );
+        let inner = state.inner.lock().unwrap();
+        assert_eq!(inner.pending_narration, "retry me");
+    }
+
+    #[test]
+    fn fresh_start_paused_step_mode_also_blocks_restore() {
+        let state = Arc::new(AppState::new());
+        let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
+        state.bump_stream_epoch();
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.pending_narration.clear();
+            // FreshStart in Step mode leaves Paused, not Idle.
+            inner.status = AppStatus::Paused;
+        }
+        restore_narration_unless_reset_or_idle(
+            &state,
+            &Some("stale step".into()),
+            epoch_at_start,
+        );
         let inner = state.inner.lock().unwrap();
         assert!(inner.pending_narration.is_empty());
     }

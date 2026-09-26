@@ -803,12 +803,23 @@ async fn stream_chat_sse(
     }
 
     // Empty SSE: fall back to non-stream; emit chunks so FE is not left with a blank bubble.
+    // Race cancel against the fallback HTTP call so stop/FreshStart does not hang on it.
     if full.is_empty() {
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
-        let (content, reasoning, fb_usage) =
-            call_llm_with_usage(config, speaking_agent, messages_context, narration).await?;
+        let (content, reasoning, fb_usage) = tokio::select! {
+            biased;
+            _ = until_cancelled(cancel) => {
+                return Err(STREAM_ABORTED.into());
+            }
+            result = call_llm_with_usage(config, speaking_agent, messages_context, narration) => {
+                result?
+            }
+        };
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
         usage.merge(&fb_usage);
         note_ttft(started, &mut ttft_ms);
         ensure_stream_start(
