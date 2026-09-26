@@ -2653,8 +2653,13 @@ body,
 .char-body .field {
   margin-bottom: 12px;
 }
+/* Six thinking levels (OpenAI) must stay on one row, not wrap a lone pill. */
 .char-body .seg {
-  flex-wrap: wrap;
+  max-width: 100%;
+}
+.char-body .seg button {
+  padding: 0 10px;
+  min-width: 0;
 }
 .session-more {
   display: flex;
