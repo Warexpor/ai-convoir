@@ -50,7 +50,12 @@ export function useStreamBridge({
       setIsThinking(false);
       return;
     }
+    // Next/Start must light the thinking visual immediately — waiting 1.2s
+    // meant fast TTFT (or early stream-start) skipped the whole pipeline.
+    lastMsgTime.current = Date.now();
+    setIsThinking(true);
     const id = setInterval(() => {
+      // Re-arm during long quiet gaps mid-turn (e.g. between reasoning and content).
       if (Date.now() - lastMsgTime.current > 1200) setIsThinking(true);
     }, 400);
     return () => clearInterval(id);

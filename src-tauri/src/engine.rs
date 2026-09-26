@@ -57,36 +57,17 @@ pub fn format_narration_note(narration: &str) -> String {
     )
 }
 
-/// Compose system prompt with response-length instruction (byte-stable for a given config).
+/// System prompt for API body / prompt-cache (byte-stable for a given config).
+///
+/// No longer appends response_length soft notes — length/effort staking is owned
+/// by a separate agent. Kept as a named helper so cache + callers stay stable.
 pub fn system_prompt_with_length(config: &AiConfig) -> String {
-    match config.response_length {
-        ResponseLength::Brief => format!(
-            "{}\n\nKeep your response extremely brief — at most one sentence.",
-            config.system_prompt
-        ),
-        ResponseLength::Small => format!(
-            "{}\n\nKeep your response short — at most 2–3 sentences.",
-            config.system_prompt
-        ),
-        ResponseLength::Normal => format!(
-            "{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.",
-            config.system_prompt
-        ),
-        ResponseLength::Long => format!(
-            "{}\n\nYou may respond at length — provide thorough detail.",
-            config.system_prompt
-        ),
-        ResponseLength::VeryLong => format!(
-            "{}\n\nRespond as extensively as you like — cover all angles and go deep.",
-            config.system_prompt
-        ),
-    }
+    config.system_prompt.clone()
 }
 
 /// Build OpenAI-compatible chat completions JSON body.
 /// Includes `reasoning_effort` only when not `None`.
 /// `stream` enables SSE streaming. Optional `narration` is injected as a final system note.
-/// Appends response-length instruction to the system prompt.
 /// Message list is append-ordered (no reshuffle of older messages).
 pub fn build_chat_body(
     config: &AiConfig,
@@ -132,6 +113,7 @@ pub fn build_chat_body(
         body["temperature"] = json!(config.temperature);
     }
     // Some providers reject max_tokens: 0; omit so the server default applies.
+    // Do not dock response_length into hard ceilings — another agent owns that.
     if config.max_tokens > 0 {
         let field = if host_of(&config.api_base_url) == "api.openai.com" {
             // api.openai.com deprecated max_tokens; reasoning models reject it outright.
@@ -1036,9 +1018,18 @@ mod tests {
             "max_tokens==0 must be omitted, got {:?}",
             body.get("max_tokens")
         );
+        assert!(body.get("max_completion_tokens").is_none());
         cfg.max_tokens = 128;
         let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
         assert_eq!(body2["max_tokens"], 128);
+        // response_length must not dock into hard ceilings or soft system notes.
+        cfg.response_length = ResponseLength::Brief;
+        cfg.max_tokens = 0;
+        let brief = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(brief.get("max_tokens").is_none());
+        let sys = brief["messages"][0]["content"].as_str().unwrap_or("");
+        assert_eq!(sys, "sys");
+        assert!(!sys.contains("extremely brief"));
     }
 
     #[test]

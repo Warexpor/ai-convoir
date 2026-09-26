@@ -210,4 +210,21 @@ mod tests {
         let prep = prepare_turn(&inner, None, 1, true).unwrap();
         assert!(prep.uses_responses);
     }
+
+    #[test]
+    fn prepare_omits_max_tokens_when_zero_regardless_of_length() {
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "gpt-4o-mini".into();
+        inner.ai1_config.api_base_url = "https://example.com/v1".into();
+        inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.response_length = crate::state::ResponseLength::Brief;
+        inner.ai1_config.reasoning_effort = crate::state::ReasoningEffort::None;
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert!(
+            prep.chat_body.get("max_tokens").is_none(),
+            "response_length must not dock max_tokens when max_tokens==0"
+        );
+        let sys = prep.chat_body["messages"][0]["content"].as_str().unwrap_or("");
+        assert!(!sys.contains("extremely brief"));
+    }
 }

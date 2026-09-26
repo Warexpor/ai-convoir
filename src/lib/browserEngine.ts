@@ -1,5 +1,4 @@
 import type { AiConfig, InnerState, Message, StreamKind } from "../types";
-import { LENGTH_INSTRUCTIONS } from "../types";
 import { emit } from "./bus";
 import {
   MUSE_SPARK_13_CONTRIBUTOR,
@@ -126,11 +125,8 @@ function goHeaders(apiKey: string): HeadersInit {
 }
 
 function transcriptForApi(speaking: string, cfg: AiConfig) {
-  const lengthNote =
-    LENGTH_INSTRUCTIONS[cfg.response_length || "normal"] || "";
-  const instructions = lengthNote
-    ? `${cfg.system_prompt}\n\n${lengthNote}`
-    : cfg.system_prompt;
+  // No soft length notes — length/effort staking owned elsewhere.
+  const instructions = cfg.system_prompt;
   const input = state.messages.map((m) => ({
     role: m.agent === speaking ? "assistant" : "user",
     content: m.content,
@@ -188,17 +184,23 @@ async function streamResponses(
   const ac = new AbortController();
   state.abort = ac;
 
-  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
+  const body: Record<string, unknown> = {
+    model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
+    instructions,
+    input,
+    stream: true,
+  };
+  if (cfg.reasoning_effort && cfg.reasoning_effort !== "none") {
+    body.reasoning = {
+      effort: cfg.reasoning_effort,
+      summary: "auto",
+    };
+  }
 
   const res = await fetch(url, {
     method: "POST",
     headers: goHeaders(cfg.api_key),
-    body: JSON.stringify({
-      model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
-      instructions,
-      input,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal: ac.signal,
   });
 
@@ -216,8 +218,12 @@ async function streamResponses(
     throw new Error(friendlyApiError(res.status, detail));
   }
 
+  // Open answering bubble only once body/reader is available (after 2xx).
+  // A null body must not flash an empty bubble then abort.
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");
+
+  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
