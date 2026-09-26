@@ -231,6 +231,52 @@ function App() {
       titleFromMessages(stream.messages, "")
     : "New thread";
 
+  // Stable props for the memoized panels, so a streamed token re-renders
+  // the transcript and not the closed sidebar, rail and modals behind it.
+  const { handleReset, handleCreateCast, handleSelectChat, handleRenameCast } = app;
+  const closeRail = useCallback(() => setRailOpen(false), []);
+  const closePrefs = useCallback(() => setPrefsOpen(false), []);
+  const closeHelp = useCallback(() => setHelpOpen(false), []);
+  const closeVoices = useCallback(() => {
+    setSettingsOpen(false);
+    setVoiceFocus(null);
+  }, []);
+  const openAccess = useCallback(() => openPrefs("access"), [openPrefs]);
+  const newThread = useCallback(
+    (castId?: string) =>
+      void handleReset(typeof castId === "string" ? castId : undefined),
+    [handleReset],
+  );
+  const createCast = useCallback(
+    (name: string) => {
+      void handleCreateCast(name).then(() => setSettingsOpen(true));
+    },
+    [handleCreateCast],
+  );
+  const selectChat = useCallback(
+    (id: string) => {
+      handleSelectChat(id);
+      if (isNarrow) setRailOpen(false);
+    },
+    [handleSelectChat, isNarrow],
+  );
+  const activeCastRef = useRef(activeCast);
+  activeCastRef.current = activeCast;
+  const renameActiveCast = useCallback(
+    (name: string) => {
+      const cast = activeCastRef.current;
+      if (cast) handleRenameCast(cast.id, name);
+    },
+    [handleRenameCast],
+  );
+  const zoomTo = useCallback(
+    (z: number) => {
+      setZoom(z);
+      showZoomMsg(z);
+    },
+    [showZoomMsg],
+  );
+
   return (
     <div
       className={[
@@ -276,18 +322,13 @@ function App() {
         activeId={activeChatId}
         casts={casts}
         activeCastId={activeCastId}
-        onNew={(castId) => void app.handleReset(castId)}
-        onCreateCast={(name) => {
-          void app.handleCreateCast(name).then(() => setSettingsOpen(true));
-        }}
+        onNew={newThread}
+        onCreateCast={createCast}
         onRenameCast={app.handleRenameCast}
         onDeleteCast={app.handleDeleteCast}
-        onSelect={(id) => {
-          app.handleSelectChat(id);
-          if (isNarrow) setRailOpen(false);
-        }}
+        onSelect={selectChat}
         onDelete={app.handleDeleteChat}
-        onClose={() => setRailOpen(false)}
+        onClose={closeRail}
         onRename={refreshChats}
         needsKey={needsKey}
       />
@@ -432,7 +473,7 @@ function App() {
           onDeleteMessage={app.handleDeleteMessage}
           hasSavedChats={chats.length > 0}
           needsKey={needsKey}
-          onOpenSettings={() => openPrefs("access")}
+          onOpenSettings={openAccess}
           onEditVoice={editVoice}
         />
 
@@ -445,7 +486,7 @@ function App() {
             onToggle={app.handleToggle}
             onStep={app.handleStep}
             onStop={app.handleStop}
-            onReset={() => void app.handleReset()}
+            onReset={newThread}
             onExport={app.handleExport}
             onModeChange={app.handleModeChange}
             onSaveChat={app.handleSaveChat}
@@ -457,7 +498,7 @@ function App() {
             nextName={nextName}
             nextAccent={upNextId ? agentAccent(upNextId, config) : undefined}
             needsKey={needsKey}
-            onOpenSettings={() => openPrefs("access")}
+            onOpenSettings={openAccess}
             compact={isPhone}
             hint={narration}
             onHintChange={setNarration}
@@ -471,13 +512,8 @@ function App() {
         config={config}
         onSave={app.handleSaveSettings}
         castName={activeCast?.name ?? null}
-        onRenameCast={(name) =>
-          activeCast && app.handleRenameCast(activeCast.id, name)
-        }
-        onClose={() => {
-          setSettingsOpen(false);
-          setVoiceFocus(null);
-        }}
+        onRenameCast={renameActiveCast}
+        onClose={closeVoices}
         focusSlot={voiceFocus}
       />
 
@@ -485,7 +521,7 @@ function App() {
         open={prefsOpen}
         tab={prefsTab}
         onTab={setPrefsTab}
-        onClose={() => setPrefsOpen(false)}
+        onClose={closePrefs}
         config={config}
         onSaveConfig={app.handleSaveSettings}
         streamMode={streamMode}
@@ -500,13 +536,10 @@ function App() {
         onPickBgImage={pickBgImage}
         onRemoveBgImage={removeBgImage}
         zoom={zoom}
-        onZoom={(z) => {
-          setZoom(z);
-          showZoomMsg(z);
-        }}
+        onZoom={zoomTo}
       />
 
-      <ShortcutsModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <ShortcutsModal open={helpOpen} onClose={closeHelp} />
     </div>
   );
 }

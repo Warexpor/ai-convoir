@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 export function useToast() {
   const [message, setMessage] = useState<string | null>(null);
@@ -26,5 +26,10 @@ export function useToast() {
     [clear],
   );
 
-  return { message, leaving, show, clear };
+  // Stable while the toast itself is unchanged: handlers that depend on
+  // `toast` would otherwise change on every render, defeating memo below.
+  return useMemo(
+    () => ({ message, leaving, show, clear }),
+    [message, leaving, show, clear],
+  );
 }

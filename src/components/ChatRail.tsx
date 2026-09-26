@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import type { Cast } from "../lib/casts";
@@ -219,7 +219,7 @@ function ChatRow({
   );
 }
 
-export default function ChatRail({
+function ChatRail({
   open = true,
   chats,
   casts,
@@ -571,3 +571,5 @@ export default function ChatRail({
     </aside>
   );
 }
+
+export default memo(ChatRail);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import type { AiConfig, InnerState, ResponseLength } from "../types";
 import { SLOT_COLORS, VOICE_PALETTE, agentAccent } from "../types";
@@ -396,7 +396,7 @@ function CharCard({
   );
 }
 
-export default function SettingsSidebar({
+function SettingsSidebar({
   open,
   config,
   onSave,
@@ -601,3 +601,5 @@ export default function SettingsSidebar({
     </aside>
   );
 }
+
+export default memo(SettingsSidebar);

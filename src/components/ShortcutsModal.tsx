@@ -1,6 +1,6 @@
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { usePresence } from "../hooks/usePresence";
-import { useRef } from "react";
+import { memo, useRef } from "react";
 
 export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "Space", action: "Start / pause, or next turn in Step" },
@@ -18,7 +18,7 @@ export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "⌘/Ctrl+Enter", action: "Begin from first-message box" },
 ];
 
-export default function ShortcutsModal({
+function ShortcutsModal({
   open,
   onClose,
 }: {
@@ -66,3 +66,5 @@ export default function ShortcutsModal({
     </div>
   );
 }
+
+export default memo(ShortcutsModal);

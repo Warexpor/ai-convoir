@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
@@ -272,7 +272,7 @@ const FX_HINT: Record<FxLevel, string> = {
   lite: "Still stage, no blur. Pick this if anything stutters.",
 };
 
-export default function SettingsModal({
+function SettingsModal({
   open,
   tab,
   onTab,
@@ -553,3 +553,5 @@ export default function SettingsModal({
     </div>
   );
 }
+
+export default memo(SettingsModal);

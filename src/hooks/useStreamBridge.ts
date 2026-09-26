@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppStatus,
@@ -312,9 +312,9 @@ export function useStreamBridge({
     };
   }, [onError, onNarrationCleared, turnRef]);
 
-  const clearFailed = () => {
+  const clearFailed = useCallback(() => {
     lastFailed.current = null;
-  };
+  }, []);
 
   return {
     messages,

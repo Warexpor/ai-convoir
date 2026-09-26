@@ -192,10 +192,13 @@ function ChatView({
     else el.scrollTop = el.scrollHeight;
   }, []);
 
+  // Tokens landing in the streaming bubble are followed by the
+  // ResizeObserver below, after layout. Pinning here on every flush forced
+  // a synchronous layout right after each commit.
   useEffect(() => {
     if (!autoScroll) return;
     stickToBottom(false);
-  }, [messages.length, streamSig, isThinking, autoScroll, stickToBottom]);
+  }, [messages.length, isThinking, autoScroll, stickToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;

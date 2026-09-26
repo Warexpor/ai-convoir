@@ -604,11 +604,12 @@ export function useConversationApp() {
   }, []);
 
   const handleExport = useCallback(async () => {
-    if (!stream.messages.length) {
+    const messages = messagesRef.current;
+    if (!messages.length) {
       toast.show("Nothing to export.", 2000);
       return;
     }
-    const lines = stream.messages
+    const lines = messages
       .filter((m) => !m.streaming)
       .map((m) => `### ${agentLabel(m.agent, config)}\n\n${m.content}\n`);
     const md = `# Chat\n\n${new Date().toISOString()}\n\n${lines.join("\n")}`;
@@ -631,7 +632,7 @@ export function useConversationApp() {
     } catch (e) {
       toast.show(`Export failed: ${e}`);
     }
-  }, [stream.messages, config, toast]);
+  }, [config, toast]);
 
   const handleDeleteMessage = useCallback(
     async (agent: string, turn: number, created_at: number) => {
