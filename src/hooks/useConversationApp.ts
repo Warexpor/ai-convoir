@@ -560,11 +560,25 @@ export function useConversationApp() {
     (id: string) => {
       deleteCast(id);
       clearCastIdFromChats(id);
-      if (castIdRef.current === id) selectCast(listCasts()[0]?.id ?? null);
+      if (castIdRef.current === id) {
+        const live = messagesRef.current.some((m) => !m.streaming);
+        const next = listCasts()[0];
+        if (live || !next) {
+          // The open thread moved to Unsorted with its cast; don't let later
+          // voice edits sync into some other cast.
+          selectCast(null);
+        } else {
+          // Nothing said yet: become a fresh thread of the fallback cast,
+          // voices included, so the stage matches the cast it names.
+          selectCast(next.id);
+          const cfg = configRef.current;
+          if (cfg) void pushConfig(applyCast(cfg, next)).catch(() => {});
+        }
+      }
       refreshChats();
       toast.show("Cast deleted. Its threads moved to Unsorted.", 2600);
     },
-    [refreshChats, selectCast, toast],
+    [pushConfig, refreshChats, selectCast, toast],
   );
 
   const handleModeChange = useCallback(
