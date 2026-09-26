@@ -482,7 +482,12 @@ export default function ChatRail({
                   placeholder="Name the cast…"
                   onChange={(e) => setNewName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") commitNewCast();
+                    if (e.key === "Enter") {
+                      // Swallow the key: Voices opens and focuses its Close
+                      // button before Enter's keypress would click it.
+                      e.preventDefault();
+                      commitNewCast();
+                    }
                     else if (e.key === "Escape") {
                       setCreating(false);
                       setNewName("");
