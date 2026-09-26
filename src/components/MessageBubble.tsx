@@ -6,6 +6,7 @@ import VoiceAvatar from "./VoiceAvatar";
 import MarkdownBody from "./MarkdownBody";
 import RelativeTime from "./RelativeTime";
 import { IconCheck, IconChevron, IconCopy, IconTrash } from "./Marks";
+import Collapse from "./Collapse";
 import ActionSheet, { type SheetAction } from "./ActionSheet";
 import { useLongPress } from "../hooks/useLongPress";
 
@@ -39,11 +40,19 @@ function MessageBubble({
   const hasThoughts = showThoughtsUi && reasoning.length > 0;
   // While thoughts stream in (before the reply body), keep them expanded so
   // "Show thinking" is visibly working — not a collapsed peek the user misses.
+  // Once the reply itself starts, fold them back unless the reader chose to
+  // open them (the desktop engine keeps this bubble mounted after the stream).
+  const autoOpened = useRef(false);
+  const replyStarted = !!(message.content || "").trim();
   useEffect(() => {
-    if (isStream && hasThoughts && !(message.content || "").trim()) {
+    if (isStream && hasThoughts && !replyStarted) {
+      autoOpened.current = true;
       setThoughtsOpen(true);
+    } else if (replyStarted && autoOpened.current) {
+      autoOpened.current = false;
+      setThoughtsOpen(false);
     }
-  }, [isStream, hasThoughts, message.content]);
+  }, [isStream, hasThoughts, replyStarted]);
   const kind = isSeed ? "seed" : isNote ? "note" : "voice";
   const accent = agentAccent(message.agent, config);
   // In paragraph/whole mode the finished reply lands in one go; give that
@@ -189,7 +198,10 @@ function MessageBubble({
             <button
               type="button"
               className="thoughts-toggle"
-              onClick={() => setThoughtsOpen((o) => !o)}
+              onClick={() => {
+                autoOpened.current = false;
+                setThoughtsOpen((o) => !o);
+              }}
               aria-expanded={thoughtsOpen}
             >
               <IconChevron />
@@ -198,14 +210,14 @@ function MessageBubble({
                 <span className="thoughts-peek">{reasoning.slice(0, 90)}</span>
               )}
             </button>
-            {thoughtsOpen && (
+            <Collapse open={thoughtsOpen}>
               <div className="thoughts-body">
                 <MarkdownBody
                   content={reasoning}
                   streaming={isStream && !message.content}
                 />
               </div>
-            )}
+            </Collapse>
           </div>
         )}
 
