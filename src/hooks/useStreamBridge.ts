@@ -183,6 +183,8 @@ export function useStreamBridge({
     };
 
     const applyStreamStart = ({ agent, turn, created_at }: StreamStart) => {
+      // A turn is under way again (Next, Retry or Auto); the old failure is moot.
+      lastFailed.current = null;
       setIsThinking(false);
       lastMsgTime.current = Date.now();
       streamBuf.current.set(`${agent}:${turn}`, "");
