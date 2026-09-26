@@ -14,6 +14,10 @@ export interface AiConfig {
   max_tokens: number;
   reasoning_effort: ReasoningEffort;
   response_length: ResponseLength;
+  /** Signature color (hex). Empty → the slot's default hue. */
+  color?: string;
+  /** Avatar: "" → initials, "g:<glyph>" → built-in glyph, else 1–2 literal chars. */
+  icon?: string;
 }
 
 export interface Message {
@@ -93,19 +97,67 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
   return agent;
 }
 
-export function agentAccent(agent: string): string {
-  switch (agent) {
-    case "ai1":
-      return "#ececec";
-    case "ai2":
-      return "#cfcfcf";
-    case "ai3":
-      return "#9a9a9a";
-    case "seed":
-      return "#8a8a8a";
-    default:
-      return "#8a8a8a";
-  }
+/** Default signature hues per slot. Chrome stays monochrome; color is signal. */
+export const SLOT_COLORS: Record<string, string> = {
+  ai1: "#ff7a3d",
+  ai2: "#6cc4ff",
+  ai3: "#c49bff",
+};
+
+/** Presets tuned to read on the black stage. */
+export const VOICE_PALETTE = [
+  "#ff7a3d",
+  "#6cc4ff",
+  "#c49bff",
+  "#4fe3a5",
+  "#ff6b9a",
+  "#ffc84a",
+  "#2fd4d4",
+  "#b6f05a",
+  "#ff8f6b",
+  "#d4d4d8",
+];
+
+/** Anything carrying voice configs: live state, a saved chat, a cast. */
+export type VoiceSource = Pick<InnerState, "ai1_config" | "ai2_config" | "ai3_config">;
+
+export function agentConfig(
+  agent: string,
+  config?: VoiceSource | null,
+): AiConfig | undefined {
+  if (!config) return undefined;
+  if (agent === "ai1") return config.ai1_config;
+  if (agent === "ai2") return config.ai2_config;
+  if (agent === "ai3") return config.ai3_config;
+  return undefined;
+}
+
+/** Hex color for a voice: the user's pick, else the slot default. */
+export function agentAccent(agent: string, config?: VoiceSource | null): string {
+  const custom = agentConfig(agent, config)?.color;
+  if (custom && /^#[0-9a-f]{6}$/i.test(custom)) return custom;
+  if (agent === "seed") return "#ededed";
+  return SLOT_COLORS[agent] ?? "#8a8a8a";
+}
+
+/** Dark or light ink for text sitting on a solid voice color. */
+export function inkOn(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return "#0b0b0c";
+  const n = parseInt(m[1], 16);
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const L =
+    0.2126 * lin((n >> 16) & 255) +
+    0.7152 * lin((n >> 8) & 255) +
+    0.0722 * lin(n & 255);
+  return L > 0.22 ? "#0b0b0c" : "#f5f5f5";
+}
+
+export function activeAgentIds(config: InnerState | null): string[] {
+  return config && config.bot_count >= 3 ? ["ai1", "ai2", "ai3"] : ["ai1", "ai2"];
 }
 
 export function agentInitials(name: string): string {

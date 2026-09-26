@@ -56,6 +56,12 @@ pub struct AiConfig {
     pub reasoning_effort: ReasoningEffort,
     #[serde(default)]
     pub response_length: ResponseLength,
+    /// UI-only: signature color (hex). Empty = slot default.
+    #[serde(default)]
+    pub color: String,
+    /// UI-only: avatar icon ("" = initials, "g:<glyph>", or literal chars).
+    #[serde(default)]
+    pub icon: String,
 }
 
 fn default_agent_name() -> String {
@@ -73,6 +79,8 @@ fn default_agent(name: &str, system_prompt: &str) -> AiConfig {
         max_tokens: 2048,
         reasoning_effort: ReasoningEffort::None,
         response_length: ResponseLength::Normal,
+        color: String::new(),
+        icon: String::new(),
     }
 }
 
@@ -181,6 +189,10 @@ pub struct AppState {
     pub reset_flag: AtomicBool,
     /// Bumped on stop/reset/load so in-flight SSE + commits are discarded.
     pub stream_epoch: AtomicU64,
+    /// Per-chat bump on each load_transcript DB persist schedule; detached
+    /// save_messages only writes when its captured epoch is still current for
+    /// that chat_id (stale last-writer seal without cross-chat interference).
+    pub transcript_save_epochs: Mutex<std::collections::HashMap<String, u64>>,
     /// When true, auto-loop should only do one step then pause (used by step command).
     pub step_once: AtomicBool,
     /// Prevents spawning multiple concurrent conversation loops.
@@ -196,6 +208,7 @@ impl AppState {
             pause_flag: AtomicBool::new(false),
             reset_flag: AtomicBool::new(false),
             stream_epoch: AtomicU64::new(0),
+            transcript_save_epochs: Mutex::new(std::collections::HashMap::new()),
             step_once: AtomicBool::new(false),
             loop_active: AtomicBool::new(false),
             db_path: Mutex::new(String::new()),
@@ -206,14 +219,43 @@ impl AppState {
     pub fn clear_reset_if_idle(&self) {
         if !self.loop_active.load(std::sync::atomic::Ordering::SeqCst) {
             self.reset_flag
-                .store(false, std::sync::atomic::Ordering::Relaxed);
+                .store(false, std::sync::atomic::Ordering::Release);
         }
     }
 
     pub fn bump_stream_epoch(&self) -> u64 {
+        // AcqRel: streaming tasks must observe the bump before commit races.
         self.stream_epoch
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
+    }
+
+    pub fn bump_transcript_save_epoch(&self, chat_id: &str) -> u64 {
+        let mut map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let slot = map.entry(chat_id.to_string()).or_insert(0);
+        *slot = slot.saturating_add(1);
+        *slot
+    }
+
+    pub fn current_transcript_save_epoch(&self, chat_id: &str) -> u64 {
+        let map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.get(chat_id).copied().unwrap_or(0)
+    }
+
+    /// Drop the per-chat counter (e.g. on delete_saved_chat) so the map does not
+    /// grow without bound and a stale detached save sees current=0 and skips.
+    pub fn clear_transcript_save_epoch(&self, chat_id: &str) {
+        let mut map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.remove(chat_id);
     }
 }
 
@@ -236,5 +278,21 @@ mod tests {
         assert!(s.ai1_config.system_prompt.contains("Ava"));
         assert!(s.ai2_config.system_prompt.contains("Jules"));
         assert!(s.ai3_config.system_prompt.contains("Rin"));
+    }
+
+    #[test]
+    fn bump_transcript_save_epoch_monotonic_per_chat() {
+        let s = AppState::new();
+        assert_eq!(s.current_transcript_save_epoch("a"), 0);
+        assert_eq!(s.bump_transcript_save_epoch("a"), 1);
+        assert_eq!(s.bump_transcript_save_epoch("a"), 2);
+        // Independent counter for another chat — no cross-chat skip.
+        assert_eq!(s.current_transcript_save_epoch("b"), 0);
+        assert_eq!(s.bump_transcript_save_epoch("b"), 1);
+        assert_eq!(s.current_transcript_save_epoch("a"), 2);
+        assert_eq!(s.current_transcript_save_epoch("b"), 1);
+        s.clear_transcript_save_epoch("a");
+        assert_eq!(s.current_transcript_save_epoch("a"), 0);
+        assert_eq!(s.current_transcript_save_epoch("b"), 1);
     }
 }

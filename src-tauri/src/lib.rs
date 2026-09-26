@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod engine;
+mod harness;
 mod llm;
 mod logging;
 mod state;
@@ -19,6 +20,8 @@ pub fn run() {
         .setup(|app| {
             // Set window icon explicitly so dev mode also gets our icon.
             // include_bytes! embeds at compile time, works in dev and prod.
+            // set_icon is desktop-only; Android uses mipmap launcher icons.
+            #[cfg(desktop)]
             if let Some(window) = app.get_webview_window("main") {
                 if let Ok(img) =
                     tauri::image::Image::from_bytes(include_bytes!("../icons/icon.png"))
@@ -67,6 +70,7 @@ pub fn run() {
             commands::set_active_chat,
             commands::delete_messages,
             commands::upsert_saved_chat,
+            commands::upsert_saved_chat_meta,
             commands::list_saved_chats,
             commands::get_saved_chat,
             commands::delete_saved_chat,

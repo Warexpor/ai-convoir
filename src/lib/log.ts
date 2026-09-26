@@ -37,7 +37,7 @@ export const log = {
   error: (message: string, source = "ui") => forward("error", message, source),
 };
 
-/** Path to ~/.local/share/.../ai-conversation.log (platform app data). */
+/** Path to ~/.local/share/.../ai-convoir.log (platform app data). */
 export async function getLogPath(): Promise<string | null> {
   if (!isTauriRuntime()) return null;
   try {
