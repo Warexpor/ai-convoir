@@ -252,12 +252,12 @@ async function streamResponses(
     throw new Error(friendlyApiError(res.status, detail));
   }
 
-  // Match BE: open answering bubble only after HTTP 2xx accept — failed
-  // requests must not flash an empty bubble (stream-abort alone is fine).
-  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
-
+  // Open answering bubble only once body/reader is available (after 2xx).
+  // A null body must not flash an empty bubble then abort.
   const reader = res.body?.getReader();
   if (!reader) throw new Error("No response body");
+
+  emit("stream-start", { agent: speaking, turn, created_at: createdAt });
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
