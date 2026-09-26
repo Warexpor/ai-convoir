@@ -258,6 +258,16 @@ export function IconTrash() {
   );
 }
 
+/** Rename: a pencil. */
+export function IconEdit() {
+  return (
+    <Icon size={14}>
+      <path d="M10.6 2.9l2.5 2.5-7.4 7.4-3.1.6.6-3.1 7.4-7.4Z" {...T} />
+      <path d="M10.6 2.9l2.5 2.5-7.4 7.4-3.1.6.6-3.1 7.4-7.4ZM9.2 4.3l2.5 2.5" {...stroke} />
+    </Icon>
+  );
+}
+
 /** Rail toggle: panel with a lit sidebar. */
 export function IconRail() {
   return (

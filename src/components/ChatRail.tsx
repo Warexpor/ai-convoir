@@ -6,10 +6,13 @@ import { agentAccent, agentConfig, type VoiceSource } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
 import RelativeTime from "./RelativeTime";
 import Collapse from "./Collapse";
+import ActionSheet from "./ActionSheet";
+import { useLongPress } from "../hooks/useLongPress";
 import {
   SlashMark,
   IconChevron,
   IconKey,
+  IconEdit,
   IconNew,
   IconRailHide,
   IconSearch,
@@ -108,6 +111,14 @@ function ChatRow({
     }
     setRenaming(false);
   };
+  const startRename = () => {
+    setText(chat.title);
+    setRenaming(true);
+    requestAnimationFrame(() => inputRef.current?.select());
+  };
+  // Touch has no hover or double-click: long-press offers rename / delete.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const press = useLongPress(() => setSheetOpen(true));
 
   return (
     <div
@@ -136,11 +147,8 @@ function ChatRow({
           type="button"
           className="chat-item"
           onClick={() => onSelect(chat.id)}
-          onDoubleClick={() => {
-            setText(chat.title);
-            setRenaming(true);
-            requestAnimationFrame(() => inputRef.current?.select());
-          }}
+          onDoubleClick={startRename}
+          {...press}
           aria-current={active ? "page" : undefined}
           title="Double-click to rename"
         >
@@ -193,6 +201,20 @@ function ChatRow({
           </button>
         )
       )}
+      <ActionSheet
+        open={sheetOpen}
+        title={chat.title}
+        onClose={() => setSheetOpen(false)}
+        actions={[
+          { label: "Rename", icon: <IconEdit />, run: startRename },
+          {
+            label: "Delete thread",
+            icon: <IconTrash />,
+            danger: true,
+            run: () => setConfirming(true),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -221,6 +243,15 @@ export default function ChatRail({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const castInputRef = useRef<HTMLInputElement>(null);
+  const startCastRename = (cast: Cast) => {
+    setCastText(cast.name);
+    setRenamingCast(cast.id);
+    requestAnimationFrame(() => castInputRef.current?.select());
+  };
+  // Touch: long-press a cast for rename / new thread / delete.
+  const [castSheet, setCastSheet] = useState<Cast | null>(null);
+  const pressedCast = useRef<Cast | null>(null);
+  const castPress = useLongPress(() => setCastSheet(pressedCast.current));
 
   const q = query.trim().toLowerCase();
 
@@ -350,12 +381,11 @@ export default function ChatRail({
                       type="button"
                       className="cast-group-toggle"
                       onClick={() => toggle(cast.id)}
-                      onDoubleClick={() => {
-                        setCastText(cast.name);
-                        setRenamingCast(cast.id);
-                        requestAnimationFrame(() =>
-                          castInputRef.current?.select(),
-                        );
+                      onDoubleClick={() => startCastRename(cast)}
+                      {...castPress}
+                      onPointerDown={(e) => {
+                        pressedCast.current = cast;
+                        castPress.onPointerDown(e);
                       }}
                       aria-expanded={isOpen}
                       title="Double-click to rename"
@@ -519,6 +549,25 @@ export default function ChatRail({
           <span className="rail-foot-mute">{threadLabel}</span>
         </div>
       </div>
+      <ActionSheet
+        open={castSheet !== null}
+        title={castSheet?.name}
+        onClose={() => setCastSheet(null)}
+        actions={
+          castSheet
+            ? [
+                { label: "New thread", icon: <IconNew />, run: () => onNew(castSheet.id) },
+                { label: "Rename cast", icon: <IconEdit />, run: () => startCastRename(castSheet) },
+                {
+                  label: "Delete cast",
+                  icon: <IconTrash />,
+                  danger: true,
+                  run: () => setConfirmCast(castSheet.id),
+                },
+              ]
+            : []
+        }
+      />
     </aside>
   );
 }

@@ -25,8 +25,10 @@ export function useLongPress(onLongPress: () => void) {
   return {
     onPointerDown: (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
-      // Links and buttons inside the message keep their own tap.
-      if ((e.target as HTMLElement).closest("a, button")) return;
+      // Links and buttons inside the target keep their own tap (the target
+      // itself may be a button, e.g. a thread row).
+      const hit = (e.target as HTMLElement).closest("a, button");
+      if (hit && hit !== e.currentTarget) return;
       origin.current = { x: e.clientX, y: e.clientY };
       timer.current = window.setTimeout(() => {
         origin.current = null;
