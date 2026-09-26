@@ -41,6 +41,8 @@ interface Props {
   hint: string;
   onHintChange: (v: string) => void;
   onHintCommit: (v: string) => void;
+  /** Phone layout: status row on top, whisper + go button as the bottom bar. */
+  compact?: boolean;
 }
 
 /** One dock: whisper to the next voice on top, transport underneath. */
@@ -68,6 +70,7 @@ function ControlBar({
   hint,
   onHintChange,
   onHintCommit,
+  compact = false,
 }: Props) {
   const running = status === "Running";
   const isStep = mode === "step";
@@ -153,10 +156,104 @@ function ControlBar({
   const who = nextName ?? "the next voice";
   const goLabel = running ? "Pause" : status === "Paused" ? "Resume" : "Run";
 
+  const whisper = (
+    <label
+      className={`whisper${running ? " is-disabled" : ""}${queued ? " is-queued" : ""}`}
+    >
+      <IconHint />
+      <input
+        value={hint}
+        disabled={running}
+        placeholder={
+          running
+            ? `${who} is writing…`
+            : compact
+              ? `Whisper to ${who}…`
+              : `Whisper to ${who} — steer their next line`
+        }
+        aria-label={`Hint for ${who}`}
+        onChange={(e) => {
+          setQueued(false);
+          onHintChange(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && hint.trim()) {
+            e.preventDefault();
+            commitHint();
+          }
+          if (e.key === "Escape") {
+            onHintChange("");
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+      {queued && <span className="whisper-tag">queued</span>}
+      {hint.trim() && !running && !queued && (
+        <button
+          type="button"
+          className="whisper-send"
+          onClick={commitHint}
+          aria-label="Send hint"
+          title="Send hint (Enter)"
+        >
+          <IconReturn />
+        </button>
+      )}
+    </label>
+  );
+
+  const goButton = needsKey ? (
+    <button
+      type="button"
+      className="btn btn-go"
+      onClick={() => onOpenSettings?.()}
+    >
+      <IconKey />
+      Add key
+    </button>
+  ) : isStep ? (
+    <button
+      type="button"
+      className="btn btn-go"
+      onClick={onStep}
+      disabled={running || !hasMessages}
+      title={nextName ? `Let ${nextName} speak (N)` : "Advance one turn (N)"}
+    >
+      <IconNextVoice />
+      <span className="btn-go-label">
+        <span key={running ? "w" : "n"} className="swap">
+          {running ? "Writing" : "Next"}
+        </span>
+        {nextName && (
+          <em key={nextName} className="swap">
+            {nextName}
+          </em>
+        )}
+      </span>
+    </button>
+  ) : (
+    <button
+      type="button"
+      className="btn btn-go"
+      onClick={onToggle}
+      title="Start / pause (Space)"
+    >
+      <span className={`go-icon${running ? " is-alt" : ""}`} aria-hidden>
+        <IconPlay />
+        <IconPause />
+      </span>
+      <span className="btn-go-label">
+        <span key={goLabel} className="swap">
+          {goLabel}
+        </span>
+      </span>
+    </button>
+  );
+
   return (
     <div
       ref={dockRef}
-      className={`dock glass${running ? " is-running" : ""}`}
+      className={`dock glass${running ? " is-running" : ""}${compact ? " is-compact" : ""}`}
       role="toolbar"
       aria-label="Conversation controls"
       style={nextAccent ? { ["--voice" as string]: nextAccent } : undefined}
@@ -167,45 +264,7 @@ function ControlBar({
         </span>
       )}
 
-      <label
-        className={`whisper${running ? " is-disabled" : ""}${queued ? " is-queued" : ""}`}
-      >
-        <IconHint />
-        <input
-          value={hint}
-          disabled={running}
-          placeholder={
-            running ? `${who} is writing…` : `Whisper to ${who} — steer their next line`
-          }
-          aria-label={`Hint for ${who}`}
-          onChange={(e) => {
-            setQueued(false);
-            onHintChange(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && hint.trim()) {
-              e.preventDefault();
-              commitHint();
-            }
-            if (e.key === "Escape") {
-              onHintChange("");
-              (e.target as HTMLInputElement).blur();
-            }
-          }}
-        />
-        {queued && <span className="whisper-tag">queued</span>}
-        {hint.trim() && !running && !queued && (
-          <button
-            type="button"
-            className="whisper-send"
-            onClick={commitHint}
-            aria-label="Send hint"
-            title="Send hint (Enter)"
-          >
-            <IconReturn />
-          </button>
-        )}
-      </label>
+      {!compact && whisper}
 
       <div className="dock-row">
         <div className="dock-lead">
@@ -265,6 +324,7 @@ function ControlBar({
             </button>
           )}
 
+          {!(compact && status === "Idle") && (
           <button
             type="button"
             className="btn btn-icon btn-stop"
@@ -275,7 +335,9 @@ function ControlBar({
           >
             <IconStop />
           </button>
+          )}
 
+          {!compact && (
           <div className="dock-more" ref={moreRef}>
             <button
               type="button"
@@ -296,56 +358,18 @@ function ControlBar({
               </div>
             )}
           </div>
-
-          {needsKey ? (
-            <button
-              type="button"
-              className="btn btn-go"
-              onClick={() => onOpenSettings?.()}
-            >
-              <IconKey />
-              Add key
-            </button>
-          ) : isStep ? (
-            <button
-              type="button"
-              className="btn btn-go"
-              onClick={onStep}
-              disabled={running || !hasMessages}
-              title={nextName ? `Let ${nextName} speak (N)` : "Advance one turn (N)"}
-            >
-              <IconNextVoice />
-              <span className="btn-go-label">
-                <span key={running ? "w" : "n"} className="swap">
-                  {running ? "Writing" : "Next"}
-                </span>
-                {nextName && (
-                  <em key={nextName} className="swap">
-                    {nextName}
-                  </em>
-                )}
-              </span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn btn-go"
-              onClick={onToggle}
-              title="Start / pause (Space)"
-            >
-              <span className={`go-icon${running ? " is-alt" : ""}`} aria-hidden>
-                <IconPlay />
-                <IconPause />
-              </span>
-              <span className="btn-go-label">
-                <span key={goLabel} className="swap">
-                  {goLabel}
-                </span>
-              </span>
-            </button>
           )}
+
+          {!compact && goButton}
         </div>
       </div>
+
+      {compact && (
+        <div className="dock-compose">
+          {whisper}
+          {goButton}
+        </div>
+      )}
     </div>
   );
 }

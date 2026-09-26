@@ -14,7 +14,8 @@ import {
   agentAccent,
 } from "../types";
 import { defaultConfig } from "../lib/config";
-import { IconChevron } from "./Marks";
+import { IconBack, IconChevron } from "./Marks";
+import { useBackClose } from "../hooks/useBackClose";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
 
@@ -331,6 +332,23 @@ export default function SettingsSidebar({
 
 
 
+  function closeAndSave() {
+    if (ready) {
+      onSave(
+        withSharedKey(
+          {
+            ...local,
+            bot_count: botCount,
+            max_turns: Math.max(1, local.max_turns),
+          },
+          sharedKey,
+        ),
+      );
+    }
+    onClose();
+  }
+  useBackClose(open, closeAndSave);
+
   return (
     <aside
       className={`settings ${open ? "is-open" : ""}`}
@@ -344,6 +362,14 @@ export default function SettingsSidebar({
     >
       <div className="settings-inner">
       <div className="settings-head">
+        <button
+          type="button"
+          className="btn btn-icon btn-bare sheet-back"
+          onClick={closeAndSave}
+          aria-label="Back"
+        >
+          <IconBack />
+        </button>
         <div className="settings-brand">
           <span className="settings-title" id="settings-title">
             Voices
@@ -352,25 +378,8 @@ export default function SettingsSidebar({
         </div>
         <button
           type="button"
-          className="btn btn-chrome btn-sm"
-          onClick={() => {
-            if (!ready) {
-              onClose();
-              return;
-            }
-            const n = botCount;
-            onSave(
-              withSharedKey(
-                {
-                  ...local,
-                  bot_count: n,
-                  max_turns: Math.max(1, local.max_turns),
-                },
-                sharedKey,
-              ),
-            );
-            onClose();
-          }}
+          className="btn btn-chrome btn-sm sheet-close"
+          onClick={closeAndSave}
         >
           Close
         </button>

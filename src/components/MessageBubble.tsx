@@ -6,6 +6,8 @@ import VoiceAvatar from "./VoiceAvatar";
 import MarkdownBody from "./MarkdownBody";
 import RelativeTime from "./RelativeTime";
 import { IconCheck, IconChevron, IconCopy, IconTrash } from "./Marks";
+import ActionSheet, { type SheetAction } from "./ActionSheet";
+import { useLongPress } from "../hooks/useLongPress";
 
 interface Props {
   message: Message;
@@ -27,6 +29,8 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const press = useLongPress(() => setSheetOpen(true));
   const label = agentLabel(message.agent, config);
   const isSeed = message.agent === "seed";
   const isNote = message.agent === "narrator";
@@ -95,6 +99,26 @@ function MessageBubble({
     </div>
   );
 
+  const sheetActions: SheetAction[] = [
+    { label: "Copy text", icon: <IconCopy />, run: handleCopy },
+  ];
+  if (!isStream && onDelete) {
+    sheetActions.push({
+      label: "Delete line",
+      icon: <IconTrash />,
+      danger: true,
+      run: () => onDelete(message.agent, message.turn, message.created_at),
+    });
+  }
+  const sheet = (
+    <ActionSheet
+      open={sheetOpen}
+      title={isNote ? "Direction" : isSeed ? "Opening line" : label}
+      actions={sheetActions}
+      onClose={() => setSheetOpen(false)}
+    />
+  );
+
   const cls = [
     "msg",
     `msg-${kind}`,
@@ -107,11 +131,12 @@ function MessageBubble({
 
   if (isNote) {
     return (
-      <article className={cls}>
+      <article className={cls} {...press}>
         <div className="note-line">
           <p>{message.content}</p>
           {actions}
         </div>
+        {sheet}
       </article>
     );
   }
@@ -120,6 +145,7 @@ function MessageBubble({
     <article
       className={cls}
       style={{ ["--voice" as string]: accent }}
+      {...press}
     >
       <div className="msg-body">
         <header className="msg-meta">
@@ -189,6 +215,7 @@ function MessageBubble({
           </div>
         )}
       </div>
+      {sheet}
     </article>
   );
 }
