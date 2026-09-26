@@ -69,6 +69,32 @@ async fn until_cancelled(cancel: &StreamCancel<'_>) {
     }
 }
 
+/// Race `res.json()` against cancel so stop/FreshStart does not hang on error bodies.
+async fn json_with_cancel(
+    res: reqwest::Response,
+    cancel: &StreamCancel<'_>,
+) -> Result<Value, String> {
+    tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
+        data = res.json::<Value>() => {
+            data.map_err(|e| format!("Parse failed: {}", e))
+        }
+    }
+}
+
+/// Like `json_with_cancel`, but empty object on parse failure (API error bodies).
+async fn error_json_with_cancel(
+    res: reqwest::Response,
+    cancel: &StreamCancel<'_>,
+) -> Result<Value, String> {
+    tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
+        data = res.json::<Value>() => Ok(data.unwrap_or_else(|_| serde_json::json!({}))),
+    }
+}
+
 /// Non-streaming call. Returns (content, optional reasoning).
 #[allow(dead_code)]
 pub async fn call_llm(
@@ -221,19 +247,32 @@ fn parse_responses_event(event: &str, data: &str) -> (Vec<StreamPiece>, TokenUsa
         return (vec![], TokenUsage::default());
     };
     let usage = extract_usage(&v);
+    // Live OpenAI / proxies often put the type only in JSON (no SSE `event:` line).
+    let event_ty = if event.is_empty() {
+        v.get("type").and_then(|t| t.as_str()).unwrap_or("")
+    } else {
+        event
+    };
+    // Note: `response.completed` is intentionally ignored here — harvesting its
+    // full text during a live delta stream would duplicate tokens. Empty-SSE
+    // recovery uses `harvest_responses_completed` instead.
+
     let text = v
         .get("delta")
         .and_then(|x| x.as_str())
         .or_else(|| v.get("text").and_then(|x| x.as_str()))
+        .or_else(|| v.get("refusal").and_then(|x| x.as_str()))
         .unwrap_or("");
     if text.is_empty() {
         return (vec![], usage);
     }
-    let pieces = match event {
+    let pieces = match event_ty {
         "response.output_text.delta" => vec![StreamPiece::Content(text.to_string())],
         "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
             vec![StreamPiece::Reasoning(text.to_string())]
         }
+        // Surface refusals as visible content so the FE is not left blank.
+        "response.refusal.delta" => vec![StreamPiece::Content(text.to_string())],
         _ => vec![],
     };
     (pieces, usage)
@@ -265,6 +304,51 @@ pub(crate) fn flush_responses_trailing(text_buf: &str) -> (Vec<StreamPiece>, Tok
     parse_responses_sse_block(&trailing)
 }
 
+/// Scan an SSE buffer for a `response.completed` payload and extract final text.
+/// Used only when the live stream produced no content deltas (empty-SSE recovery).
+pub(crate) fn harvest_responses_completed(
+    buffer: &str,
+) -> Option<(String, Option<String>, TokenUsage)> {
+    let normalized = buffer.replace("\r\n", "\n").replace('\r', "\n");
+    for block in normalized.split("\n\n") {
+        let mut event = "";
+        let mut data = String::new();
+        for line in block.lines() {
+            if let Some(v) = line.strip_prefix("event:") {
+                event = v.trim();
+            } else if let Some(v) = line.strip_prefix("data:") {
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str(v.trim());
+            }
+        }
+        let data = data.trim();
+        if data.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(data) else {
+            continue;
+        };
+        let event_ty = if event.is_empty() {
+            v.get("type").and_then(|t| t.as_str()).unwrap_or("")
+        } else {
+            event
+        };
+        if event_ty != "response.completed" {
+            continue;
+        }
+        let resp = v.get("response").unwrap_or(&v);
+        let usage = extract_usage(resp);
+        if let Ok((content, reasoning)) = extract_responses_output(resp) {
+            if !content.is_empty() {
+                return Some((content, reasoning, usage));
+            }
+        }
+    }
+    None
+}
+
 /// Pull visible text (+ optional reasoning) from a non-stream Responses JSON body.
 /// Handles `output_text`, `output[]` message/reasoning items, and a chat-shaped fallback.
 pub(crate) fn extract_responses_output(data: &Value) -> Result<(String, Option<String>), String> {
@@ -286,6 +370,14 @@ pub(crate) fn extract_responses_output(data: &Value) -> Result<(String, Option<S
                             let pty = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
                             if pty == "output_text" || pty == "text" {
                                 if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                                    content.push_str(t);
+                                }
+                            } else if pty == "refusal" {
+                                if let Some(t) = part
+                                    .get("refusal")
+                                    .and_then(|x| x.as_str())
+                                    .or_else(|| part.get("text").and_then(|x| x.as_str()))
+                                {
                                     content.push_str(t);
                                 }
                             }
@@ -311,7 +403,34 @@ pub(crate) fn extract_responses_output(data: &Value) -> Result<(String, Option<S
                         }
                     }
                 }
-                _ => {}
+                _ => {
+                    // Some proxies omit `type` and only set role=assistant.
+                    if ty.is_empty()
+                        && item.get("role").and_then(|r| r.as_str()) == Some("assistant")
+                    {
+                        if let Some(parts) = item.get("content").and_then(|c| c.as_array()) {
+                            for part in parts {
+                                let pty =
+                                    part.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                if pty == "output_text" || pty == "text" || pty.is_empty() {
+                                    if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                                        content.push_str(t);
+                                    }
+                                } else if pty == "refusal" {
+                                    if let Some(t) = part
+                                        .get("refusal")
+                                        .and_then(|x| x.as_str())
+                                        .or_else(|| part.get("text").and_then(|x| x.as_str()))
+                                    {
+                                        content.push_str(t);
+                                    }
+                                }
+                            }
+                        } else if let Some(t) = extract_text_content(&item["content"]) {
+                            content.push_str(&t);
+                        }
+                    }
+                }
             }
         }
     }
@@ -500,7 +619,7 @@ async fn stream_responses(
 
     let status = res.status();
     if !status.is_success() {
-        let data: Value = res.json().await.unwrap_or(serde_json::json!({}));
+        let data = error_json_with_cancel(res, cancel).await?;
         let err_msg = data["error"]["message"]
             .as_str()
             .or_else(|| data["error"].as_str())
@@ -517,10 +636,7 @@ async fn stream_responses(
 
     // Non-SSE JSON body (stream ignored / proxy collapsed) — same as chat path.
     if content_type.contains("application/json") && !content_type.contains("event-stream") {
-        let data: Value = res
-            .json()
-            .await
-            .map_err(|e| format!("Parse failed: {}", e))?;
+        let data = json_with_cancel(res, cancel).await?;
         usage.merge(&extract_usage(&data));
         let (text, reasoning) = extract_responses_output(&data)?;
         if cancel.is_cancelled() {
@@ -646,7 +762,8 @@ async fn stream_responses(
         emit_chunk(app_handle, speaking_agent, turn, "content", &full);
     }
 
-    // Empty SSE: try parsing a collapsed JSON body, then non-stream Responses fallback.
+    // Empty SSE: try parsing a collapsed JSON body, then completed-event harvest,
+    // then non-stream Responses fallback.
     // Race cancel so stop/FreshStart does not hang on the fallback HTTP call.
     if full.is_empty() {
         if let Ok(data) = serde_json::from_str::<Value>(text_buf.trim()) {
@@ -671,6 +788,28 @@ async fn stream_responses(
                     text, reasoning, usage, started, ttft_ms,
                 ));
             }
+        }
+
+        if let Some((text, reasoning, done_usage)) = harvest_responses_completed(&text_buf) {
+            usage.merge(&done_usage);
+            if cancel.is_cancelled() {
+                return Err(STREAM_ABORTED.into());
+            }
+            note_ttft(started, &mut ttft_ms);
+            ensure_stream_start(
+                &mut stream_started,
+                app_handle,
+                speaking_agent,
+                turn,
+                created_at,
+            );
+            if let Some(ref r) = reasoning {
+                emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+            }
+            emit_chunk(app_handle, speaking_agent, turn, "content", &text);
+            return Ok(StreamOutcome::from_text(
+                text, reasoning, usage, started, ttft_ms,
+            ));
         }
 
         if cancel.is_cancelled() {
@@ -880,7 +1019,7 @@ async fn stream_chat_sse(
 
     let status = res.status();
     if !status.is_success() {
-        let data: Value = res.json().await.unwrap_or(serde_json::json!({}));
+        let data = error_json_with_cancel(res, cancel).await?;
         let err_msg = data["error"]["message"]
             .as_str()
             .or_else(|| data["error"].as_str())
@@ -896,10 +1035,7 @@ async fn stream_chat_sse(
         .to_lowercase();
 
     if content_type.contains("application/json") && !content_type.contains("event-stream") {
-        let data: Value = res
-            .json()
-            .await
-            .map_err(|e| format!("Parse failed: {}", e))?;
+        let data = json_with_cancel(res, cancel).await?;
         usage.merge(&extract_usage(&data));
         let msg = &data["choices"][0]["message"];
         let finish_reason = data["choices"][0]["finish_reason"]
@@ -1454,5 +1590,74 @@ mod cancel_tests {
         let mut full2 = String::from("already");
         assert!(!promote_reasoning_only(&mut full2, "reason"));
         assert_eq!(full2, "already");
+    }
+
+    #[test]
+    fn parse_responses_uses_json_type_when_event_missing() {
+        // Proxies often omit the SSE `event:` line and only set JSON `type`.
+        let block = r#"data: {"type":"response.output_text.delta","delta":"via-type"}"#;
+        let (pieces, _) = parse_responses_sse_block(block);
+        assert_eq!(pieces, vec![StreamPiece::Content("via-type".into())]);
+    }
+
+    #[test]
+    fn parse_responses_refusal_delta_as_content() {
+        let block = concat!(
+            "event: response.refusal.delta\n",
+            r#"data: {"delta":"I cannot help with that."}"#,
+        );
+        let (pieces, _) = parse_responses_sse_block(block);
+        assert_eq!(
+            pieces,
+            vec![StreamPiece::Content("I cannot help with that.".into())]
+        );
+    }
+
+    #[test]
+    fn harvest_responses_completed_from_sse() {
+        let buf = concat!(
+            "event: response.created\n",
+            r#"data: {"type":"response.created"}"#,
+            "\n\n",
+            "event: response.completed\n",
+            r#"data: {"type":"response.completed","response":{"output_text":"final answer","output":[{"type":"reasoning","summary":[{"text":"why"}]}],"usage":{"input_tokens":3,"output_tokens":2}}}"#,
+        );
+        let (content, reasoning, usage) = harvest_responses_completed(buf).unwrap();
+        assert_eq!(content, "final answer");
+        assert_eq!(reasoning.as_deref(), Some("why"));
+        assert_eq!(usage.prompt_tokens, Some(3));
+    }
+
+    #[test]
+    fn harvest_responses_completed_from_json_type_only() {
+        let buf = r#"data: {"type":"response.completed","response":{"output_text":"done"}}"#;
+        let (content, reasoning, _) = harvest_responses_completed(buf).unwrap();
+        assert_eq!(content, "done");
+        assert!(reasoning.is_none());
+    }
+
+    #[test]
+    fn extract_responses_refusal_content_part() {
+        let data = serde_json::json!({
+            "output": [{
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "refusal", "refusal": "No."}]
+            }]
+        });
+        let (content, _) = extract_responses_output(&data).unwrap();
+        assert_eq!(content, "No.");
+    }
+
+    #[test]
+    fn extract_responses_assistant_role_without_type() {
+        let data = serde_json::json!({
+            "output": [{
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "proxy-ok"}]
+            }]
+        });
+        let (content, _) = extract_responses_output(&data).unwrap();
+        assert_eq!(content, "proxy-ok");
     }
 }

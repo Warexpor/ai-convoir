@@ -152,8 +152,27 @@ export async function setNarration(text: string): Promise<void> {
 }
 
 export async function exportChat(content: string): Promise<string> {
+  const name = `AI-ConvoIR-${new Date().toISOString().slice(0, 10)}.md`;
+
+  // Mobile / share-capable hosts: Web Share beats writing to an opaque temp path.
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    try {
+      const file = new File([content], name, { type: "text/markdown" });
+      const canFiles =
+        typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] });
+      if (canFiles) {
+        await navigator.share({ files: [file], title: "AI ConvoIR chat" });
+        return name;
+      }
+      await navigator.share({ text: content, title: "AI ConvoIR chat" });
+      return name;
+    } catch (e) {
+      // User dismissed the sheet — treat as success; otherwise fall through.
+      if (e instanceof Error && e.name === "AbortError") return name;
+    }
+  }
+
   if (!isTauri()) {
-    const name = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
