@@ -448,14 +448,23 @@ export function useConversationApp() {
     try {
       toast.clear();
       if (stream.status === "Running") await api.pauseConversation();
-      else {
+      else if (
+        config?.mode === "auto" &&
+        stream.turnCount >= config.max_turns
+      ) {
+        // The engine would start and stop in the same breath; say why.
+        toast.show(
+          `Reached the ${config.max_turns}-turn limit. Raise it in Settings to keep going.`,
+          5000,
+        );
+      } else {
         if (narration.trim()) await api.setNarration(narration.trim());
         await api.startConversation();
       }
     } catch (e) {
       toast.show(String(e));
     }
-  }, [stream.status, narration, toast]);
+  }, [stream.status, stream.turnCount, config, narration, toast]);
 
   const handleStep = useCallback(async () => {
     try {
