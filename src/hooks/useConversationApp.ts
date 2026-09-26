@@ -37,10 +37,11 @@ import { agentLabel } from "../types";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
 
-const SKIP_RESUME_KEY = "ai-conversation-skip-resume";
+const SKIP_RESUME_KEY = "ai-convoir-skip-resume";
+const LEGACY_SKIP_RESUME_KEY = "ai-conversation-skip-resume";
 
 function pickResumeChat(): SavedChat | undefined {
-  if (typeof localStorage !== "undefined" && localStorage.getItem(SKIP_RESUME_KEY)) {
+  if (typeof localStorage !== "undefined" && (localStorage.getItem(SKIP_RESUME_KEY) || localStorage.getItem(LEGACY_SKIP_RESUME_KEY))) {
     return undefined;
   }
   const aid = getActiveChatId();
@@ -211,7 +212,7 @@ export function useConversationApp() {
         if (!resume) {
           const skipped =
             typeof localStorage !== "undefined" &&
-            !!localStorage.getItem(SKIP_RESUME_KEY);
+            !!(localStorage.getItem(SKIP_RESUME_KEY) || localStorage.getItem(LEGACY_SKIP_RESUME_KEY));
           setFirstDraft(skipped ? "" : merged.seed_prompt || "");
         }
 
@@ -440,6 +441,7 @@ export function useConversationApp() {
       if (current.length > 0 && chatIdRef.current !== id) autoSave();
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
+        localStorage.removeItem(LEGACY_SKIP_RESUME_KEY);
       } catch {
         /* quota */
       }
@@ -534,6 +536,7 @@ export function useConversationApp() {
       setFirstDraft(trimmed);
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
+        localStorage.removeItem(LEGACY_SKIP_RESUME_KEY);
       } catch {
         /* quota */
       }

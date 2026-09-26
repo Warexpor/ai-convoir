@@ -391,7 +391,7 @@ pub fn export_chat(content: String) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let filename = format!("AI-Conversation-{}.md", timestamp);
+    let filename = format!("AI-ConvoIR-{}.md", timestamp);
     let path = dir.join(filename);
     std::fs::write(&path, &content).map_err(|e| format!("Failed to save file: {}", e))?;
     Ok(path.to_string_lossy().into_owned())
@@ -676,7 +676,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         created_at,
         app_handle,
         if chat_id.is_empty() {
-            "ai-conversation"
+            "ai-convoir"
         } else {
             chat_id.as_str()
         },

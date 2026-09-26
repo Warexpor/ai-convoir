@@ -1,4 +1,4 @@
-# AI Conversation
+# AI ConvoIR
 
 **v2.0** — Desktop multi-agent chat. Two or three voices take turns on one thread (OpenCode Go · Muse Spark 1.3 contributor).
 

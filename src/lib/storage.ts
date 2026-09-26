@@ -1,9 +1,12 @@
 import type { AiConfig, ConversationMode, InnerState, Message } from "../types";
 import * as api from "./api";
 
-const CHATS_KEY = "ai-conversation-chats-v1";
-const APIS_KEY = "ai-conversation-apis-v1";
-const ACTIVE_CHAT_KEY = "ai-conversation-active-chat";
+const CHATS_KEY = "ai-convoir-chats-v1";
+const APIS_KEY = "ai-convoir-apis-v1";
+const ACTIVE_CHAT_KEY = "ai-convoir-active-chat";
+const LEGACY_CHATS_KEY = "ai-conversation-chats-v1";
+const LEGACY_APIS_KEY = "ai-conversation-apis-v1";
+const LEGACY_ACTIVE_CHAT_KEY = "ai-conversation-active-chat";
 
 export interface SavedApi {
   id: string;
@@ -37,9 +40,9 @@ function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function readJson<T>(key: string, fallback: T): T {
+function readJson<T>(key: string, fallback: T, legacyKey?: string): T {
   try {
-    const s = localStorage.getItem(key);
+    const s = localStorage.getItem(key) || (legacyKey ? localStorage.getItem(legacyKey) : null);
     if (!s) return fallback;
     return JSON.parse(s) as T;
   } catch {
@@ -62,7 +65,7 @@ function isSavedChat(v: unknown): v is SavedChat {
 }
 
 export function listChats(): SavedChat[] {
-  return readJson<SavedChat[]>(CHATS_KEY, []).sort(
+  return readJson<SavedChat[]>(CHATS_KEY, [], LEGACY_CHATS_KEY).sort(
     (a, b) => b.updated_at - a.updated_at,
   );
 }
@@ -78,12 +81,18 @@ export async function hydrateChats(): Promise<SavedChat[]> {
 }
 
 export function getActiveChatId(): string | null {
-  return localStorage.getItem(ACTIVE_CHAT_KEY);
+  return (
+    localStorage.getItem(ACTIVE_CHAT_KEY) ||
+    localStorage.getItem(LEGACY_ACTIVE_CHAT_KEY)
+  );
 }
 
 export function setActiveChatId(id: string | null) {
   if (id) localStorage.setItem(ACTIVE_CHAT_KEY, id);
-  else localStorage.removeItem(ACTIVE_CHAT_KEY);
+  else {
+    localStorage.removeItem(ACTIVE_CHAT_KEY);
+    localStorage.removeItem(LEGACY_ACTIVE_CHAT_KEY);
+  }
 }
 
 export function getChat(id: string): SavedChat | undefined {
@@ -157,7 +166,7 @@ export function renameChat(id: string, title: string) {
 }
 
 export function listApis(): SavedApi[] {
-  return readJson<SavedApi[]>(APIS_KEY, []).sort(
+  return readJson<SavedApi[]>(APIS_KEY, [], LEGACY_APIS_KEY).sort(
     (a, b) => b.updated_at - a.updated_at,
   );
 }
