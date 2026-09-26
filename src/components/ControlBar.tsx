@@ -331,7 +331,7 @@ function ControlBar({
             type="button"
             className="btn btn-icon btn-stop is-popping"
             onClick={onStop}
-            disabled={status === "Idle"}
+
             title="Stop generation, keep chat (Esc)"
             aria-label="Stop"
           >
