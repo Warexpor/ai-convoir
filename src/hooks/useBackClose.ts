@@ -44,6 +44,11 @@ function listen() {
   });
 }
 
+/** How many Back-closable layers (sheets, menus, drawers) are open now. */
+export function openLayerCount(): number {
+  return stack.length;
+}
+
 export function useBackClose(open: boolean, close: () => void) {
   const closeRef = useRef(close);
   closeRef.current = close;

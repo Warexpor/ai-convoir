@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { openLayerCount } from "./useBackClose";
 
 const EDGE = 24; // px from the left edge where a drag may start
 const TRIGGER = 56; // px of horizontal travel that commits
@@ -22,6 +23,9 @@ export function useEdgeSwipe(
     const onStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
+      // Only when the drawer is the top layer (or nothing is open): under
+      // Voices or a sheet it would open unseen and eat the next Back.
+      if (openLayerCount() !== (state.current.open ? 1 : 0)) return;
       if (state.current.open || t.clientX <= EDGE) {
         start = { x: t.clientX, y: t.clientY };
       }
