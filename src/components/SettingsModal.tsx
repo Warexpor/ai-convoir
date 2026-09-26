@@ -489,7 +489,15 @@ export default function SettingsModal({
                   onPick={onPickBgImage}
                   onRemove={onRemoveBgImage}
                 />
-                <Row title="Effects" hint={FX_HINT[fx]} stack>
+                <Row
+                  title="Effects"
+                  hint={
+                    bg.kind === "image" && bgUrl
+                      ? `${fx === "lite" ? "No blur anywhere." : "Glass blur on menus and sheets."} Your picture is static either way.`
+                      : FX_HINT[fx]
+                  }
+                  stack
+                >
                   <Seg
                     label="Effects"
                     value={fx}
