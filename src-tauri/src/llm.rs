@@ -200,7 +200,12 @@ fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Va
         "instructions": instructions,
         "input": input,
         "stream": stream,
+        "temperature": config.temperature,
     });
+    // Responses API uses max_output_tokens (chat/completions used max_tokens).
+    if config.max_tokens > 0 {
+        body["max_output_tokens"] = serde_json::json!(config.max_tokens);
+    }
     if let Some(key) = chat.get("prompt_cache_key").and_then(|v| v.as_str()) {
         apply_prompt_cache_key(&mut body, key);
     }
@@ -258,6 +263,114 @@ pub(crate) fn flush_responses_trailing(text_buf: &str) -> (Vec<StreamPiece>, Tok
     }
     let trailing = text_buf.replace("\r\n", "\n").replace('\r', "\n");
     parse_responses_sse_block(&trailing)
+}
+
+/// Pull visible text (+ optional reasoning) from a non-stream Responses JSON body.
+/// Handles `output_text`, `output[]` message/reasoning items, and a chat-shaped fallback.
+pub(crate) fn extract_responses_output(data: &Value) -> Result<(String, Option<String>), String> {
+    // Convenience field some servers expose on completed responses.
+    if let Some(t) = data.get("output_text").and_then(|v| extract_text_content(v)) {
+        let reasoning = extract_responses_reasoning(data);
+        return Ok((t, reasoning));
+    }
+
+    let mut content = String::new();
+    let mut reasoning = String::new();
+    if let Some(items) = data.get("output").and_then(|v| v.as_array()) {
+        for item in items {
+            let ty = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            match ty {
+                "message" => {
+                    if let Some(parts) = item.get("content").and_then(|c| c.as_array()) {
+                        for part in parts {
+                            let pty = part.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                            if pty == "output_text" || pty == "text" {
+                                if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                                    content.push_str(t);
+                                }
+                            }
+                        }
+                    } else if let Some(t) = extract_text_content(&item["content"]) {
+                        content.push_str(&t);
+                    }
+                }
+                "reasoning" => {
+                    // summary: [{type: summary_text, text}] or content parts
+                    if let Some(parts) = item.get("summary").and_then(|c| c.as_array()) {
+                        for part in parts {
+                            if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                                reasoning.push_str(t);
+                            }
+                        }
+                    }
+                    if let Some(parts) = item.get("content").and_then(|c| c.as_array()) {
+                        for part in parts {
+                            if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                                reasoning.push_str(t);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if content.is_empty() {
+        // Chat-completions shaped proxy response
+        if let Some(msg) = data
+            .get("choices")
+            .and_then(|c| c.as_array())
+            .and_then(|a| a.first())
+            .and_then(|ch| ch.get("message"))
+        {
+            if let Some(t) = extract_text_content(&msg["content"]) {
+                content = t;
+            }
+            for key in ["reasoning_content", "reasoning", "thinking", "reasoning_text"] {
+                if let Some(t) = extract_text_content(&msg[key]) {
+                    reasoning = t;
+                    break;
+                }
+            }
+        }
+    }
+
+    if content.is_empty() && !reasoning.is_empty() {
+        content = reasoning.clone();
+    }
+    if content.is_empty() {
+        return Err("No content in Responses API output".into());
+    }
+    let reasoning_opt = if reasoning.is_empty() {
+        None
+    } else {
+        Some(reasoning)
+    };
+    Ok((content, reasoning_opt))
+}
+
+fn extract_responses_reasoning(data: &Value) -> Option<String> {
+    let mut reasoning = String::new();
+    if let Some(items) = data.get("output").and_then(|v| v.as_array()) {
+        for item in items {
+            if item.get("type").and_then(|t| t.as_str()) != Some("reasoning") {
+                continue;
+            }
+            if let Some(parts) = item.get("summary").and_then(|c| c.as_array()) {
+                for part in parts {
+                    if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                        reasoning.push_str(t);
+                    }
+                }
+            }
+        }
+    }
+    if reasoning.is_empty() {
+        None
+    } else {
+        Some(reasoning)
+    }
 }
 
 /// Consume complete `\n\n`-delimited Responses SSE blocks; return leftover + pieces.
@@ -375,6 +488,35 @@ async fn stream_responses(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
+    let content_type = res
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Non-SSE JSON body (stream ignored / proxy collapsed) — same as chat path.
+    if content_type.contains("application/json") && !content_type.contains("event-stream") {
+        let data: Value = res
+            .json()
+            .await
+            .map_err(|e| format!("Parse failed: {}", e))?;
+        usage.merge(&extract_usage(&data));
+        let (text, reasoning) = extract_responses_output(&data)?;
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
+        emit_stream_start(app_handle, speaking_agent, turn, created_at);
+        note_ttft(started, &mut ttft_ms);
+        if let Some(ref r) = reasoning {
+            emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+        }
+        emit_chunk(app_handle, speaking_agent, turn, "content", &text);
+        return Ok(StreamOutcome::from_text(
+            text, reasoning, usage, started, ttft_ms,
+        ));
+    }
+
     // Holding `res` in this scope: dropping it on cancel aborts the HTTP body.
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
@@ -482,15 +624,111 @@ async fn stream_responses(
     if full.is_empty() && !full_reasoning.is_empty() {
         full = full_reasoning.clone();
     }
+
+    // Empty SSE: try parsing a collapsed JSON body, then non-stream Responses fallback.
+    // Race cancel so stop/FreshStart does not hang on the fallback HTTP call.
     if full.is_empty() {
-        return Err("Empty model reply".into());
+        if let Ok(data) = serde_json::from_str::<Value>(text_buf.trim()) {
+            if let Ok((text, reasoning)) = extract_responses_output(&data) {
+                usage.merge(&extract_usage(&data));
+                if cancel.is_cancelled() {
+                    return Err(STREAM_ABORTED.into());
+                }
+                note_ttft(started, &mut ttft_ms);
+                ensure_stream_start(
+                    &mut stream_started,
+                    app_handle,
+                    speaking_agent,
+                    turn,
+                    created_at,
+                );
+                if let Some(ref r) = reasoning {
+                    emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+                }
+                emit_chunk(app_handle, speaking_agent, turn, "content", &text);
+                return Ok(StreamOutcome::from_text(
+                    text, reasoning, usage, started, ttft_ms,
+                ));
+            }
+        }
+
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
+        let (content, reasoning, fb_usage) = tokio::select! {
+            biased;
+            _ = until_cancelled(cancel) => {
+                return Err(STREAM_ABORTED.into());
+            }
+            result = call_responses_with_usage(config, chat_body, session_id) => {
+                result?
+            }
+        };
+        if cancel.is_cancelled() {
+            return Err(STREAM_ABORTED.into());
+        }
+        usage.merge(&fb_usage);
+        note_ttft(started, &mut ttft_ms);
+        ensure_stream_start(
+            &mut stream_started,
+            app_handle,
+            speaking_agent,
+            turn,
+            created_at,
+        );
+        if let Some(ref r) = reasoning {
+            emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+        }
+        emit_chunk(app_handle, speaking_agent, turn, "content", &content);
+        return Ok(StreamOutcome::from_text(
+            content, reasoning, usage, started, ttft_ms,
+        ));
     }
+
     let reasoning = if full_reasoning.is_empty() {
         None
     } else {
         Some(full_reasoning)
     };
     Ok(StreamOutcome::from_text(full, reasoning, usage, started, ttft_ms))
+}
+
+/// Non-stream Responses API call (empty-SSE / JSON fallback for muse-spark).
+async fn call_responses_with_usage(
+    config: &AiConfig,
+    chat_body: &Value,
+    session_id: &str,
+) -> Result<(String, Option<String>, TokenUsage), String> {
+    let client = short_http_client();
+    let body = responses_body_from_chat(chat_body, config, false);
+    let url = responses_url(&config.api_base_url);
+    let res = apply_go_headers(
+        client.post(&url).header("Content-Type", "application/json"),
+        &config.api_key,
+        session_id,
+    )
+    .json(&body)
+    .send()
+    .await
+    .map_err(|e| format!("Request failed: {}", e))?;
+
+    let status = res.status();
+    let data: Value = res
+        .json()
+        .await
+        .map_err(|e| format!("Parse failed: {}", e))?;
+
+    if !status.is_success() {
+        let err_msg = data["error"]["message"]
+            .as_str()
+            .or_else(|| data["error"].as_str())
+            .unwrap_or("unknown API error");
+        return Err(format!("API {}: {}", status, err_msg));
+    }
+
+    let usage = extract_usage(&data);
+    let (content, reasoning) = extract_responses_output(&data)?;
+    Ok((content, reasoning, usage))
 }
 
 /// Stream using a harness-prepared turn (preferred path).
@@ -802,6 +1040,11 @@ async fn stream_chat_sse(
         return Err(STREAM_ABORTED.into());
     }
 
+    // Reasoning-only stream (no content deltas) — treat reasoning as the reply.
+    if full.is_empty() && !full_reasoning.is_empty() {
+        full = full_reasoning.clone();
+    }
+
     // Empty SSE: fall back to non-stream; emit chunks so FE is not left with a blank bubble.
     // Race cancel against the fallback HTTP call so stop/FreshStart does not hang on it.
     if full.is_empty() {
@@ -1039,5 +1282,77 @@ mod cancel_tests {
         assert!(rest.contains("delta\":\"B\""));
         let (flushed, _) = flush_responses_trailing(&rest);
         assert_eq!(flushed, vec![StreamPiece::Content("B".into())]);
+    }
+
+    #[test]
+    fn extract_responses_output_from_output_array() {
+        let data = serde_json::json!({
+            "output": [
+                {
+                    "type": "reasoning",
+                    "summary": [{"type": "summary_text", "text": "think"}]
+                },
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": "hello"}]
+                }
+            ],
+            "usage": {"input_tokens": 5, "output_tokens": 1}
+        });
+        let (content, reasoning) = extract_responses_output(&data).unwrap();
+        assert_eq!(content, "hello");
+        assert_eq!(reasoning.as_deref(), Some("think"));
+        assert_eq!(extract_usage(&data).prompt_tokens, Some(5));
+    }
+
+    #[test]
+    fn extract_responses_output_text_field() {
+        let data = serde_json::json!({ "output_text": "hi there" });
+        let (content, reasoning) = extract_responses_output(&data).unwrap();
+        assert_eq!(content, "hi there");
+        assert!(reasoning.is_none());
+    }
+
+    #[test]
+    fn extract_responses_output_empty_errors() {
+        let data = serde_json::json!({ "output": [] });
+        assert!(extract_responses_output(&data).is_err());
+    }
+
+    #[test]
+    fn responses_body_forwards_temperature_and_max_output_tokens() {
+        let config = crate::state::AiConfig {
+            name: "A".into(),
+            system_prompt: "sys".into(),
+            model: "muse-spark-1.3-contributor".into(),
+            api_base_url: "https://opencode.ai/zen/go/v1".into(),
+            api_key: "k".into(),
+            temperature: 0.42,
+            max_tokens: 512,
+            reasoning_effort: Default::default(),
+            response_length: Default::default(),
+            color: String::new(),
+            icon: String::new(),
+        };
+        let chat = serde_json::json!({
+            "messages": [
+                {"role": "system", "content": "be nice"},
+                {"role": "user", "content": "hi"}
+            ],
+            "prompt_cache_key": "acv-test"
+        });
+        let body = responses_body_from_chat(&chat, &config, false);
+        assert_eq!(body["stream"], false);
+        let temp = body["temperature"].as_f64().unwrap();
+        assert!((temp - 0.42).abs() < 1e-5, "temperature={temp}");
+        assert_eq!(body["max_output_tokens"], 512);
+        assert_eq!(body["instructions"], "be nice");
+        assert_eq!(body["prompt_cache_key"], "acv-test");
+        assert_eq!(body["input"][0]["role"], "user");
+        // Streaming body flips stream flag only.
+        let streamed = responses_body_from_chat(&chat, &config, true);
+        assert_eq!(streamed["stream"], true);
+        assert_eq!(streamed["max_output_tokens"], 512);
     }
 }

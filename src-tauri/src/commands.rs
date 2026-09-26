@@ -383,18 +383,27 @@ pub async fn update_config(
     Ok(())
 }
 
-/// Home-relative Desktop if it exists, otherwise the home directory (or cwd).
+/// Writable export directory.
+/// Desktop builds prefer `~/Desktop` (else home/cwd). Mobile has no Desktop —
+/// use the process temp dir so export_chat does not depend on HOME layout.
 pub(crate) fn export_dir() -> PathBuf {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."));
-    let desktop = home.join("Desktop");
-    if desktop.is_dir() {
-        desktop
-    } else {
-        home
+    #[cfg(mobile)]
+    {
+        return std::env::temp_dir();
+    }
+    #[cfg(not(mobile))]
+    {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let desktop = home.join("Desktop");
+        if desktop.is_dir() {
+            desktop
+        } else {
+            home
+        }
     }
 }
 
@@ -743,6 +752,12 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                 metrics.phase_end = TurnPhase::Stopped.to_string();
                 metrics.ttft_ms = outcome.ttft_ms;
                 metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
+                metrics.content_chars = outcome.content.chars().count();
+                metrics.reasoning_chars = outcome
+                    .reasoning
+                    .as_ref()
+                    .map(|r| r.chars().count())
+                    .unwrap_or(0);
                 metrics.apply_usage(&outcome.usage);
                 log_turn_metrics(&metrics);
                 emit_harness_metrics(app_handle, &metrics);
@@ -1033,13 +1048,15 @@ mod export_tests {
     fn export_dir_follows_home_or_userprofile() {
         let dir = export_dir();
         assert!(!dir.as_os_str().is_empty());
+        // On desktop: Desktop or home. On mobile builds this test binary is still
+        // compiled with not(mobile), so the same assertion holds in CI/lib tests.
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .map(PathBuf::from);
         if let Some(home) = home {
             assert!(
-                dir == home.join("Desktop") || dir == home,
-                "export_dir {dir:?} should be Desktop or home {home:?}"
+                dir == home.join("Desktop") || dir == home || dir == std::env::temp_dir(),
+                "export_dir {dir:?} should be Desktop, home, or temp"
             );
         }
     }

@@ -103,15 +103,34 @@ pub fn save_message(conn: &Connection, chat_id: &str, msg: &Message) -> Result<(
 
 /// Replace all messages for a chat in one transaction (used when switching chats).
 /// Clears existing rows first so reloads do not duplicate the transcript.
+/// Keep last message per (agent, turn, created_at) so UNIQUE idx_msgs_identity cannot fail
+/// on accidental FE duplicate rows in one snapshot.
+fn dedupe_messages_by_identity(msgs: &[Message]) -> Vec<Message> {
+    let mut out: Vec<Message> = Vec::with_capacity(msgs.len());
+    let mut index: std::collections::HashMap<(String, u32, u64), usize> =
+        std::collections::HashMap::new();
+    for m in msgs {
+        let key = (m.agent.clone(), m.turn, m.created_at);
+        if let Some(&i) = index.get(&key) {
+            out[i] = m.clone();
+        } else {
+            index.insert(key, out.len());
+            out.push(m.clone());
+        }
+    }
+    out
+}
+
 pub fn save_messages(
     conn: &Connection,
     chat_id: &str,
     msgs: &[Message],
 ) -> Result<(), String> {
+    let msgs = dedupe_messages_by_identity(msgs);
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])
         .map_err(|e| format!("DB save_messages clear: {}", e))?;
-    for m in msgs {
+    for m in &msgs {
         tx.execute(
             "INSERT INTO messages (chat_id, agent, role, content, turn, created_at, reasoning)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -251,6 +270,7 @@ pub fn upsert_saved_chat(
     snapshot_json: &str,
     messages: &[Message],
 ) -> Result<(), String> {
+    let messages = dedupe_messages_by_identity(messages);
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute(
         "INSERT OR REPLACE INTO chat_meta (chat_id, updated_at, config_json)
@@ -260,7 +280,7 @@ pub fn upsert_saved_chat(
     .map_err(|e| format!("DB upsert_saved_chat meta: {}", e))?;
     tx.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])
         .map_err(|e| format!("DB upsert_saved_chat clear: {}", e))?;
-    for m in messages {
+    for m in &messages {
         tx.execute(
             "INSERT INTO messages (chat_id, agent, role, content, turn, created_at, reasoning)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -386,6 +406,37 @@ mod tests {
         delete_chat(&conn, "c1").unwrap();
         assert!(load_messages(&conn, "c1").unwrap().is_empty());
         assert!(get_chat_meta(&conn, "c1").unwrap().is_none());
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_messages_dedupes_identity_keeping_last() {
+        let path = tmp_db_path("dedupe");
+        let conn = open(&path).unwrap();
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "first".into(),
+                turn: 1,
+                created_at: 9,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "second".into(),
+                turn: 1,
+                created_at: 9,
+                reasoning: Some("r".into()),
+            },
+        ];
+        save_messages(&conn, "c1", &msgs).unwrap();
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].content, "second");
+        assert_eq!(loaded[0].reasoning.as_deref(), Some("r"));
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }
