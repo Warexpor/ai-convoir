@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
+import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
 import type { InnerState } from "../types";
 import { OPENCODE_GO_BASE } from "../types";
@@ -21,6 +22,7 @@ import {
   IconSliders,
   IconSpark,
   IconThreads,
+  IconBack,
 } from "./Marks";
 
 export type SettingsTab = "conversation" | "appearance" | "access" | "shortcuts";
@@ -299,6 +301,7 @@ export default function SettingsModal({
   const cardRef = useRef<HTMLDivElement>(null);
   const shown = usePresence(open, 220);
   useFocusTrap(open, cardRef);
+  useBackClose(open, onClose);
 
   // Draft fields that would be noisy to commit per keystroke.
   const [delay, setDelay] = useState(config?.delay_ms ?? 800);
@@ -372,7 +375,7 @@ export default function SettingsModal({
             <button
               key={t.id}
               type="button"
-              className={`prefs-tab${tab === t.id ? " on" : ""}`}
+              className={`prefs-tab prefs-tab-${t.id}${tab === t.id ? " on" : ""}`}
               aria-current={tab === t.id ? "page" : undefined}
               onClick={() => onTab(t.id)}
             >
@@ -385,8 +388,19 @@ export default function SettingsModal({
 
         <div className="prefs-main">
           <div className="prefs-head">
-            <h2>{TABS.find((t) => t.id === tab)?.label}</h2>
-            <button type="button" className="btn btn-chrome btn-sm" onClick={onClose}>
+            <button
+              type="button"
+              className="btn btn-icon btn-bare sheet-back"
+              onClick={onClose}
+              aria-label="Back"
+            >
+              <IconBack />
+            </button>
+            <h2>
+              <span className="prefs-h-tab">{TABS.find((t) => t.id === tab)?.label}</span>
+              <span className="prefs-h-app">Settings</span>
+            </h2>
+            <button type="button" className="btn btn-chrome btn-sm sheet-close" onClick={onClose}>
               Done
             </button>
           </div>

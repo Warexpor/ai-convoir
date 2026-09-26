@@ -1,0 +1,431 @@
+/* ─────────────────────────────────────────────────────────────
+   Phone layout (Android). `.is-phone` is set by App at ≤640px.
+   Principles: one column, chrome pinned to the edges instead of
+   floating, solid surfaces instead of blur (cheaper on phone GPUs and
+   reads as native), 48px touch targets, sheets go full screen.
+   ───────────────────────────────────────────────────────────── */
+
+.app.is-phone {
+  --surface: #0e0e0e;
+  --surface-2: #161616;
+}
+
+/* ── top app bar ─────────────────────────────────────────────── */
+
+.is-phone .main {
+  --top-h: 56px;
+}
+.is-phone .topbar {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 0 4px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.is-phone .main::before {
+  /* the bar is opaque now; keep only a short fade under it */
+  top: var(--top-h);
+  height: 20px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+  background: linear-gradient(to bottom, var(--bg), rgba(5, 5, 5, 0));
+}
+.is-phone .topbar-lead {
+  gap: 4px;
+}
+.is-phone .topbar-name {
+  font-size: 16px;
+}
+.is-phone .topbar-sub {
+  font-size: 11px;
+}
+.is-phone .topbar-actions {
+  gap: 0;
+}
+
+/* Bare icon buttons: Material-style, no pill chrome, 48px hit area. */
+.btn-bare,
+.topbar .btn-icon.btn-bare {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+.btn-bare:active,
+.topbar .btn-icon.btn-bare:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+.topbar .btn-icon.btn-bare.needs-key {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.35);
+}
+
+.overflow {
+  position: relative;
+}
+.overflow-menu {
+  top: calc(100% + 2px);
+  bottom: auto;
+  right: 4px;
+  min-width: 220px;
+  border-radius: 16px;
+  transform-origin: top right;
+  background: var(--surface-2, #161616);
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--line);
+}
+.overflow-menu .menu-item {
+  height: 48px;
+  padding: 0 14px;
+  gap: 14px;
+  font-size: 15px;
+  color: var(--text);
+}
+.menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--line);
+}
+
+/* ── transcript ──────────────────────────────────────────────── */
+
+.is-phone .chat-inner {
+  padding: calc(var(--top-h) + 12px) 18px calc(var(--dock-h, 120px) + 24px);
+}
+/* Actions live behind long-press; no per-message icons. */
+.is-phone .msg-aside {
+  display: none;
+}
+.is-phone .msg {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.is-phone .main::after {
+  display: none;
+}
+
+/* ── bottom bar ──────────────────────────────────────────────── */
+
+.is-phone .dock {
+  width: 100%;
+  bottom: 0;
+  padding: 6px 10px 10px;
+  border-radius: 22px 22px 0 0;
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 -1px 0 var(--line), 0 -18px 40px -12px rgba(0, 0, 0, 0.9);
+  animation: none;
+}
+.is-phone .dock::before {
+  border-radius: inherit;
+}
+.is-phone .dock-progress {
+  left: 22px;
+  right: 22px;
+  top: 0;
+}
+.is-phone .dock-row {
+  padding: 2px 0 8px;
+}
+.is-phone .dock-row .seg button {
+  height: 34px;
+  padding: 0 14px;
+}
+.dock-compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dock-compose .whisper {
+  flex: 1;
+  min-width: 0;
+  height: 48px;
+  border-radius: 24px;
+  background: var(--surface-2, #161616);
+  box-shadow: none;
+}
+.dock-compose .whisper input {
+  font-size: 16px; /* ≥16px stops Android from zooming on focus */
+}
+.dock-compose .btn-go {
+  height: 48px;
+  padding: 0 20px 0 16px;
+  flex-shrink: 0;
+}
+.is-phone .btn-stop {
+  width: 40px;
+  height: 40px;
+}
+
+/* ── empty state ─────────────────────────────────────────────── */
+
+.is-phone .empty {
+  padding: calc(var(--top-h) + 20px) 16px 20px;
+}
+.is-phone .empty-hero .kicker {
+  display: none;
+}
+.is-phone .empty-title {
+  font-size: 40px;
+}
+.is-phone .lineup {
+  gap: 8px;
+}
+.is-phone .stage-box textarea {
+  font-size: 17px;
+}
+/* Starters: one swipeable row instead of a wrapped cloud. */
+.is-phone .starters {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  overflow-x: auto;
+  margin: 16px -16px 0;
+  padding: 2px 16px;
+  scrollbar-width: none;
+}
+.is-phone .starters::-webkit-scrollbar {
+  display: none;
+}
+.is-phone .starter {
+  flex-shrink: 0;
+  height: 40px;
+  font-size: 14px;
+}
+
+/* ── full-screen sheets (Voices + Settings) ──────────────────── */
+
+.sheet-back {
+  display: none;
+}
+.is-phone .sheet-back {
+  display: grid;
+  place-items: center;
+  margin-left: -8px;
+  flex-shrink: 0;
+}
+.is-phone .sheet-close {
+  display: none;
+}
+
+.app.is-phone > .settings {
+  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: translate3d(100%, 0, 0);
+}
+.app.is-phone > .settings.is-open {
+  transform: none;
+}
+.is-phone .settings-head {
+  height: 56px;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+}
+.is-phone .settings-title {
+  font-size: 18px;
+}
+.is-phone .settings-sub,
+.is-phone .about-line {
+  display: none;
+}
+.is-phone .settings-body {
+  padding: 4px 16px 24px;
+}
+.is-phone .settings-foot {
+  padding: 10px 16px 12px;
+}
+.is-phone .settings-foot .btn-go {
+  height: 48px;
+}
+
+.is-phone .settings-backdrop {
+  padding: 0;
+  background: var(--bg);
+}
+.is-phone .modal-card.prefs {
+  height: 100%;
+  max-width: none;
+  border-radius: 0;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: var(--bg);
+  box-shadow: none;
+  animation: sheet-in 0.32s var(--ease-out) both;
+}
+@keyframes sheet-in {
+  from {
+    transform: translate3d(0, 24px, 0);
+    opacity: 0;
+  }
+}
+/* Header first, tabs under it, like a Material top app bar + tab row. */
+.is-phone .modal-card.prefs .prefs-main {
+  display: contents;
+}
+.is-phone .prefs-head {
+  order: -1;
+  justify-content: flex-start;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+}
+.is-phone .prefs-head h2 {
+  font-family: var(--sans, inherit);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.is-phone .prefs-nav {
+  flex-direction: row;
+  gap: 0;
+  padding: 0 8px;
+  overflow-x: auto;
+  border-right: none;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  scrollbar-width: none;
+}
+.is-phone .prefs-title,
+.is-phone .prefs-version,
+.is-phone .prefs-tab-shortcuts {
+  display: none;
+}
+.is-phone .prefs-tab {
+  flex: 1;
+  justify-content: center;
+  height: 48px;
+  border-radius: 0;
+  font-size: 14px;
+  box-shadow: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+}
+.is-phone .prefs-tab.on {
+  background: none;
+  box-shadow: none;
+  border-bottom-color: var(--text);
+}
+.is-phone .prefs-tab .icon {
+  display: none;
+}
+.is-phone .prefs-body {
+  padding: 4px 18px 24px;
+}
+
+/* ── drawer ──────────────────────────────────────────────────── */
+
+.app.is-phone > .rail {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0 20px 20px 0;
+}
+
+/* ── bottom action sheet (long-press) ────────────────────────── */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+  animation: overlay-in 0.2s var(--ease-soft) both;
+}
+.sheet-scrim.is-leaving {
+  animation: overlay-out 0.2s var(--ease-soft) both;
+}
+.action-sheet {
+  width: 100%;
+  padding: 8px 8px 12px;
+  border-radius: 24px 24px 0 0;
+  background: #161616;
+  box-shadow: 0 -1px 0 var(--line);
+  animation: action-sheet-in 0.32s var(--ease-out) both;
+}
+.sheet-scrim.is-leaving .action-sheet {
+  animation: action-sheet-out 0.22s var(--ease-soft) both;
+}
+@keyframes action-sheet-in {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+@keyframes action-sheet-out {
+  to {
+    transform: translate3d(0, 100%, 0);
+  }
+}
+.sheet-grip {
+  display: block;
+  width: 32px;
+  height: 4px;
+  margin: 2px auto 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.sheet-title {
+  padding: 4px 16px 10px;
+  font-size: 13px;
+  color: var(--faint);
+}
+.sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 14px;
+  background: none;
+  font-size: 16px;
+  color: var(--text);
+  text-align: left;
+}
+.sheet-item:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.sheet-item.is-danger {
+  color: var(--danger);
+}
+
+.prefs-h-app {
+  display: none;
+}
+.is-phone .prefs-h-app {
+  display: inline;
+}
+.is-phone .prefs-h-tab {
+  display: none;
+}
+.is-phone .modal-card.prefs {
+  border: none;
+}
+.btn-bare .icon {
+  width: 22px;
+  height: 22px;
+}
+.is-phone .starters {
+  align-self: stretch;
+}
+.app.is-phone > .settings {
+  border: none;
+}
+.sheet-item .icon {
+  width: 20px;
+  height: 20px;
+}

@@ -22,7 +22,17 @@ import {
   type FxLevel,
   type StreamMode,
 } from "./lib/config";
-import { IconRail, IconSliders, IconVoices, SlashMark } from "./components/Marks";
+import {
+  IconMenu,
+  IconRail,
+  IconSliders,
+  IconVoices,
+  SlashMark,
+} from "./components/Marks";
+import PhoneOverflow from "./components/PhoneOverflow";
+import { NARROW_QUERY, PHONE_QUERY, useMedia } from "./hooks/useMedia";
+import { useBackClose } from "./hooks/useBackClose";
+import { useEdgeSwipe } from "./hooks/useEdgeSwipe";
 import StageField from "./components/StageField";
 import StageImage from "./components/StageImage";
 import {
@@ -113,11 +123,18 @@ function App() {
   );
   useEffect(() => writeZoom(zoom), [zoom]);
 
+  const isPhone = useMedia(PHONE_QUERY);
+  const isNarrow = useMedia(NARROW_QUERY);
   useEffect(() => {
-    if (window.matchMedia("(max-width: 900px)").matches) {
+    if (window.matchMedia(NARROW_QUERY).matches) {
       setRailOpen(false);
     }
   }, []);
+  // On narrow screens the rail is an overlay drawer: Back closes it and a
+  // swipe from the left edge opens it, like any Android navigation drawer.
+  useBackClose(isNarrow && railOpen, () => setRailOpen(false));
+  useBackClose(helpOpen, () => setHelpOpen(false));
+  useEdgeSwipe(isNarrow, railOpen, setRailOpen);
 
   const showZoomMsg = useCallback((val: number) => {
     if (zoomTimer.current) clearTimeout(zoomTimer.current);
@@ -209,6 +226,7 @@ function App() {
         settingsOpen ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
         railOpen ? "rail-open-mobile" : "",
+        isPhone ? "is-phone" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -254,9 +272,7 @@ function App() {
         onDeleteCast={app.handleDeleteCast}
         onSelect={(id) => {
           app.handleSelectChat(id);
-          if (window.matchMedia("(max-width: 900px)").matches) {
-            setRailOpen(false);
-          }
+          if (isNarrow) setRailOpen(false);
         }}
         onDelete={app.handleDeleteChat}
         onClose={() => setRailOpen(false)}
@@ -267,18 +283,31 @@ function App() {
       <div className="main" id="main" tabIndex={-1} role="main">
         <header className="topbar">
           <div className="topbar-lead">
-            {!railOpen && (
+            {isPhone ? (
               <button
                 type="button"
-                className="btn btn-icon"
+                className="btn btn-icon btn-bare"
                 onClick={() => setRailOpen(true)}
-                title="Show sidebar (B)"
-                aria-label="Show sidebar"
+                aria-label="Show threads"
               >
-                <IconRail />
+                <IconMenu />
               </button>
+            ) : (
+              !railOpen && (
+                <button
+                  type="button"
+                  className="btn btn-icon"
+                  onClick={() => setRailOpen(true)}
+                  title="Show sidebar (B)"
+                  aria-label="Show sidebar"
+                >
+                  <IconRail />
+                </button>
+              )
             )}
-            {!railOpen && <SlashMark className="topbar-logo" size={20} />}
+            {!railOpen && !isPhone && (
+              <SlashMark className="topbar-logo" size={20} />
+            )}
             <div className="topbar-title">
               <span className="topbar-name">{activeTitle}</span>
               <span className="topbar-sub">
@@ -299,6 +328,29 @@ function App() {
             hasMessages={hasMessages}
           />
 
+          {isPhone ? (
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="btn btn-icon btn-bare"
+              onClick={() => {
+                setPrefsOpen(false);
+                setSettingsOpen(true);
+              }}
+              aria-label="Voices"
+            >
+              <IconVoices />
+            </button>
+            <PhoneOverflow
+              needsKey={needsKey}
+              hasMessages={hasMessages}
+              onSettings={() => openPrefs(needsKey ? "access" : undefined)}
+              onNew={() => void app.handleReset()}
+              onSave={app.handleSaveChat}
+              onExport={app.handleExport}
+            />
+          </div>
+          ) : (
           <div className="topbar-actions">
             <button
               type="button"
@@ -333,6 +385,7 @@ function App() {
               <span className="btn-label">Voices</span>
             </button>
           </div>
+          )}
         </header>
 
         {toast.message !== null && (
@@ -400,6 +453,7 @@ function App() {
             nextAccent={upNextId ? agentAccent(upNextId, config) : undefined}
             needsKey={needsKey}
             onOpenSettings={() => openPrefs("access")}
+            compact={isPhone}
             hint={narration}
             onHintChange={setNarration}
             onHintCommit={app.handleNarrationCommit}

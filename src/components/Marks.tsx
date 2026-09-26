@@ -305,3 +305,32 @@ export function IconSliders() {
     </Icon>
   );
 }
+
+/** Phone chrome: back arrow for full-screen sheets. */
+export function IconBack() {
+  return (
+    <Icon size={20}>
+      <path d="M13.5 8H2.8M7 3.6 2.6 8 7 12.4" {...stroke} strokeWidth={1.4} />
+    </Icon>
+  );
+}
+
+/** Phone chrome: navigation drawer. */
+export function IconMenu() {
+  return (
+    <Icon size={20}>
+      <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" {...stroke} strokeWidth={1.4} />
+    </Icon>
+  );
+}
+
+/** Phone chrome: vertical overflow. */
+export function IconMoreVert() {
+  return (
+    <Icon size={20}>
+      <circle cx="8" cy="3.4" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      <circle cx="8" cy="12.6" r="1.25" fill="currentColor" />
+    </Icon>
+  );
+}
