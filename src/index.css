@@ -339,8 +339,19 @@ body,
 .main::before {
   top: 0;
   height: calc(var(--top-h) + 24px);
-  /* progressive glass: the stage and transcript show through, blurred,
-     fading out below the bar instead of ending on a hard edge */
+  /* A plain scrim by default: a masked, full-width backdrop blur here
+     re-blurs on every streamed token and scroll frame and was the single
+     biggest frame cost (38 -> 56 fps streaming in a headless profile). */
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.62),
+    rgba(0, 0, 0, 0.3) 60%,
+    rgba(0, 0, 0, 0)
+  );
+}
+/* Full effects: progressive glass, the stage and transcript show through,
+   blurred, fading out below the bar instead of ending on a hard edge. */
+[data-fx="full"] .main::before {
   background: linear-gradient(
     to bottom,
     rgba(0, 0, 0, 0.42),
