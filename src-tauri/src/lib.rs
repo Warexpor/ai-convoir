@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod engine;
+mod harness;
 mod llm;
 mod logging;
 mod state;
