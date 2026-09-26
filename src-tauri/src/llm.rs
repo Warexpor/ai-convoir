@@ -220,6 +220,18 @@ fn apply_provider_headers(
         .fold(req, |r, (k, v)| r.header(k, v))
 }
 
+/// A request that never got a response: say so plainly instead of dumping
+/// reqwest's "error sending request for url (...)".
+fn send_error(e: reqwest::Error) -> String {
+    if e.is_timeout() {
+        "The provider took too long to answer. Press Retry.".into()
+    } else if e.is_connect() || e.is_request() {
+        "Couldn’t reach the provider. Check your connection and the base URL, then Retry.".into()
+    } else {
+        format!("Stream request failed: {e}")
+    }
+}
+
 fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Value {
     let msgs = chat["messages"].as_array().cloned().unwrap_or_default();
     let mut instructions = String::new();
@@ -686,7 +698,7 @@ async fn stream_responses(
             return Err(STREAM_ABORTED.into());
         }
         res = send_fut => {
-            res.map_err(|e| format!("Stream request failed: {}", e))?
+            res.map_err(send_error)?
         }
     };
 
@@ -1144,7 +1156,7 @@ async fn stream_chat_sse(
             return Err(STREAM_ABORTED.into());
         }
         res = send_fut => {
-            res.map_err(|e| format!("Stream request failed: {}", e))?
+            res.map_err(send_error)?
         }
     };
 
