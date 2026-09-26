@@ -148,10 +148,13 @@ const modelCache = new Map<string, Promise<string[]>>();
 function useProviderModels(provider: string, base: string): {
   models: string[];
   live: boolean;
+  failed: boolean;
 } {
   const def = getProvider(provider);
   const fallback = def?.models ?? [];
-  const [state, setState] = useState<{ key: string; ids: string[] } | null>(null);
+  const [state, setState] = useState<{ key: string; ids: string[]; failed?: boolean } | null>(
+    null,
+  );
   const [tick, setTick] = useState(0);
   useEffect(() => onProviderKeysChanged(() => setTick((n) => n + 1)), []);
   const apiKey = getProviderKey(provider);
@@ -167,17 +170,18 @@ function useProviderModels(provider: string, base: string): {
     }
     p.then(
       (ids) => alive && setState({ key: cacheKey, ids }),
-      () => {},
+      () => alive && setState({ key: cacheKey, ids: [], failed: true }),
     );
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey, tick]);
-  const ids = state?.key === cacheKey ? state.ids : [];
+  const mine = state?.key === cacheKey ? state : null;
+  const ids = mine?.ids ?? [];
   return ids.length
-    ? { models: ids, live: true }
-    : { models: fallback, live: false };
+    ? { models: ids, live: true, failed: false }
+    : { models: fallback, live: false, failed: !!mine?.failed };
 }
 
 /** Provider, model and thinking for one voice. Keys are set once per provider in Settings. */
@@ -193,7 +197,7 @@ function ModelPicker({
   const provider = config.provider || "opencode_go";
   const def = getProvider(provider);
   const base = baseUrlFor(provider, config.api_base_url);
-  const { models, live } = useProviderModels(provider, base);
+  const { models, live, failed } = useProviderModels(provider, base);
   const needsKey = def && !def.keyOptional && !hasProviderKey(provider);
   const efforts = effortsFor(provider);
   const effort = efforts.includes(config.reasoning_effort)
@@ -234,7 +238,13 @@ function ModelPicker({
             onChange({
               ...config,
               provider: next.id,
-              api_base_url: next.id === "custom" ? config.api_base_url : next.baseUrl,
+              // A custom endpoint starts blank, not on the previous preset's URL.
+              api_base_url:
+                next.id === "custom"
+                  ? provider === "custom"
+                    ? config.api_base_url
+                    : ""
+                  : next.baseUrl,
               model: next.models[0] ?? "",
               reasoning_effort: nextEfforts.includes(config.reasoning_effort)
                 ? config.reasoning_effort
@@ -275,9 +285,15 @@ function ModelPicker({
               ? `Sign in to ${def.name} in Settings → Providers to see its models.`
               : `Add your ${def?.name} key in Settings → Providers to see its models.`}
           </p>
-        ) : (
-          live && <p className="field-hint">{models.length} models available</p>
-        )}
+        ) : live ? (
+          <p className="field-hint">{models.length} models available</p>
+        ) : failed ? (
+          <p className="field-hint">
+            {def?.keyOptional
+              ? `Couldn’t reach ${base || "the server"}. Is it running? You can still type a model id.`
+              : "Couldn’t list models. Check the key in Settings → Providers, or type a model id."}
+          </p>
+        ) : null}
       </div>
       <div className="field">
         <label>Thinking</label>
