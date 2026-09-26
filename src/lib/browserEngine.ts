@@ -116,6 +116,29 @@ function friendlyApiError(status: number, detail: string): string {
   return `Couldn’t reach the provider (${status}): ${detail}`;
 }
 
+/** Match Rust `max_tokens_for_response_length` + `effective_max_tokens`. */
+const LENGTH_MAX_TOKENS: Record<string, number> = {
+  brief: 128,
+  small: 384,
+  normal: 2048,
+  long: 4096,
+  very_long: 8192,
+};
+const REASONING_PAD: Record<string, number> = {
+  none: 0,
+  low: 512,
+  medium: 1024,
+  high: 2048,
+};
+
+function effectiveMaxOutputTokens(cfg: AiConfig): number {
+  const byLength = LENGTH_MAX_TOKENS[cfg.response_length || "normal"] ?? 2048;
+  const raw = cfg.max_tokens ?? 0;
+  const base = raw > 0 ? Math.min(raw, byLength) : byLength;
+  const pad = REASONING_PAD[cfg.reasoning_effort || "none"] ?? 0;
+  return Math.max(1, base + pad);
+}
+
 function goHeaders(apiKey: string): HeadersInit {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -190,15 +213,24 @@ async function streamResponses(
 
   emit("stream-start", { agent: speaking, turn, created_at: createdAt });
 
+  const body: Record<string, unknown> = {
+    model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
+    instructions,
+    input,
+    stream: true,
+    max_output_tokens: effectiveMaxOutputTokens(cfg),
+  };
+  if (cfg.reasoning_effort && cfg.reasoning_effort !== "none") {
+    body.reasoning = {
+      effort: cfg.reasoning_effort,
+      summary: "auto",
+    };
+  }
+
   const res = await fetch(url, {
     method: "POST",
     headers: goHeaders(cfg.api_key),
-    body: JSON.stringify({
-      model: cfg.model.trim() || MUSE_SPARK_13_CONTRIBUTOR,
-      instructions,
-      input,
-      stream: true,
-    }),
+    body: JSON.stringify(body),
     signal: ac.signal,
   });
 

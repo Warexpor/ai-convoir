@@ -210,4 +210,16 @@ mod tests {
         let prep = prepare_turn(&inner, None, 1, true).unwrap();
         assert!(prep.uses_responses);
     }
+
+    #[test]
+    fn prepare_binds_brief_length_into_chat_body() {
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "gpt-4o-mini".into();
+        inner.ai1_config.api_base_url = "https://example.com/v1".into();
+        // Default max_tokens is 2048; Brief must tighten the request body.
+        inner.ai1_config.response_length = crate::state::ResponseLength::Brief;
+        inner.ai1_config.reasoning_effort = crate::state::ReasoningEffort::None;
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert_eq!(prep.chat_body["max_tokens"], 128);
+    }
 }
