@@ -281,7 +281,10 @@ export function useConversationApp() {
   useEffect(() => {
     if (!stream.messages.length || stream.messages.some((m) => m.streaming))
       return;
-    const t = setTimeout(autoSave, 600);
+    // A reply that lands inside the post-reset quiet window still has to be
+    // saved: wait the window out instead of dropping the save.
+    const wait = Math.max(600, skipAutosaveUntil.current - Date.now() + 50);
+    const t = setTimeout(autoSave, wait);
     return () => clearTimeout(t);
   }, [stream.messages, stream.turnCount, autoSave]);
 
