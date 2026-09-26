@@ -3081,7 +3081,9 @@ body,
   .app.rail-closed {
     --rail-w: 0px;
   }
-  .rail {
+  /* `.app > …` so these beat the `.app > :not(.stage) { z-index: 1 }`
+     layer rule; otherwise the drawer paints under the transcript. */
+  .app > .rail {
     position: fixed;
     top: 0;
     bottom: 0;
@@ -3117,7 +3119,7 @@ body,
     z-index: 70;
     width: min(420px, calc(100vw - 16px));
   }
-  .rail-scrim {
+  .app > .rail-scrim {
     display: block;
     position: fixed;
     inset: 0;
