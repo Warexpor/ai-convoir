@@ -69,18 +69,26 @@ async fn until_cancelled(cancel: &StreamCancel<'_>) {
     }
 }
 
+/// Race any future against cancel (biased: cancel wins if already set).
+/// Extracted so unit tests can prove cancel-wins without mocking `reqwest::Response`.
+async fn race_cancel<T>(
+    cancel: &StreamCancel<'_>,
+    fut: impl std::future::Future<Output = T>,
+) -> Result<T, String> {
+    tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
+        v = fut => Ok(v),
+    }
+}
+
 /// Race `res.json()` against cancel so stop/FreshStart does not hang on error bodies.
 async fn json_with_cancel(
     res: reqwest::Response,
     cancel: &StreamCancel<'_>,
 ) -> Result<Value, String> {
-    tokio::select! {
-        biased;
-        _ = until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
-        data = res.json::<Value>() => {
-            data.map_err(|e| format!("Parse failed: {}", e))
-        }
-    }
+    let data = race_cancel(cancel, res.json::<Value>()).await?;
+    data.map_err(|e| format!("Parse failed: {}", e))
 }
 
 /// Like `json_with_cancel`, but empty object on parse failure (API error bodies).
@@ -88,11 +96,8 @@ async fn error_json_with_cancel(
     res: reqwest::Response,
     cancel: &StreamCancel<'_>,
 ) -> Result<Value, String> {
-    tokio::select! {
-        biased;
-        _ = until_cancelled(cancel) => Err(STREAM_ABORTED.into()),
-        data = res.json::<Value>() => Ok(data.unwrap_or_else(|_| serde_json::json!({}))),
-    }
+    let data = race_cancel(cancel, res.json::<Value>()).await?;
+    Ok(data.unwrap_or_else(|_| serde_json::json!({})))
 }
 
 /// Non-streaming call. Returns (content, optional reasoning).
@@ -103,8 +108,15 @@ pub async fn call_llm(
     messages_context: &[Message],
     narration: Option<&str>,
 ) -> Result<(String, Option<String>), String> {
+    let reset = AtomicBool::new(false);
+    let epoch = AtomicU64::new(0);
+    let cancel = StreamCancel {
+        reset: &reset,
+        epoch: &epoch,
+        epoch_at_start: 0,
+    };
     let (content, reasoning, _usage) =
-        call_llm_with_usage(config, speaking_agent, messages_context, narration).await?;
+        call_llm_with_usage(config, speaking_agent, messages_context, narration, &cancel).await?;
     Ok((content, reasoning))
 }
 
@@ -113,6 +125,7 @@ async fn call_llm_with_usage(
     speaking_agent: &str,
     messages_context: &[Message],
     narration: Option<&str>,
+    cancel: &StreamCancel<'_>,
 ) -> Result<(String, Option<String>, TokenUsage), String> {
     let client = short_http_client();
 
@@ -121,29 +134,35 @@ async fn call_llm_with_usage(
     apply_prompt_cache_key(&mut body, &cache_key);
     let url = chat_url(&config.api_base_url);
 
-    let res = apply_go_headers(
+    let send_fut = apply_go_headers(
         client.post(&url).header("Content-Type", "application/json"),
         &config.api_key,
         "ai-convoir",
     )
     .json(&body)
-    .send()
-    .await
-    .map_err(|e| format!("Request failed: {}", e))?;
+    .send();
+
+    let res = tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => {
+            return Err(STREAM_ABORTED.into());
+        }
+        res = send_fut => {
+            res.map_err(|e| format!("Request failed: {}", e))?
+        }
+    };
 
     let status = res.status();
-    let data: Value = res
-        .json()
-        .await
-        .map_err(|e| format!("Parse failed: {}", e))?;
-
     if !status.is_success() {
+        let data = error_json_with_cancel(res, cancel).await?;
         let err_msg = data["error"]["message"]
             .as_str()
             .or_else(|| data["error"].as_str())
             .unwrap_or("unknown API error");
         return Err(format!("API {}: {}", status, err_msg));
     }
+
+    let data = json_with_cancel(res, cancel).await?;
 
     let usage = extract_usage(&data);
     let msg = &data["choices"][0]["message"];
@@ -820,7 +839,7 @@ async fn stream_responses(
             _ = until_cancelled(cancel) => {
                 return Err(STREAM_ABORTED.into());
             }
-            result = call_responses_with_usage(config, chat_body, session_id) => {
+            result = call_responses_with_usage(config, chat_body, session_id, cancel) => {
                 result?
             }
         };
@@ -845,6 +864,35 @@ async fn stream_responses(
         ));
     }
 
+    // Partial deltas arrived, but `response.completed` has a longer prefix-extending
+    // final text: emit only the missing suffix (no duplicate / no bubble rewrite).
+    if let Some((text, harvested_reasoning, done_usage)) = harvest_responses_completed(&text_buf)
+    {
+        if text.len() > full.len() && text.starts_with(&full) {
+            let suffix = text[full.len()..].to_string();
+            usage.merge(&done_usage);
+            if cancel.is_cancelled() {
+                return Err(STREAM_ABORTED.into());
+            }
+            if !suffix.is_empty() {
+                emit_chunk(app_handle, speaking_agent, turn, "content", &suffix);
+            }
+            full = text;
+            if let Some(ref hr) = harvested_reasoning {
+                if hr.len() > full_reasoning.len() && hr.starts_with(&full_reasoning) {
+                    let r_suffix = hr[full_reasoning.len()..].to_string();
+                    if !r_suffix.is_empty() {
+                        emit_chunk(app_handle, speaking_agent, turn, "reasoning", &r_suffix);
+                    }
+                    full_reasoning = hr.clone();
+                } else if full_reasoning.is_empty() {
+                    emit_chunk(app_handle, speaking_agent, turn, "reasoning", hr);
+                    full_reasoning = hr.clone();
+                }
+            }
+        }
+    }
+
     let reasoning = if full_reasoning.is_empty() {
         None
     } else {
@@ -858,27 +906,32 @@ async fn call_responses_with_usage(
     config: &AiConfig,
     chat_body: &Value,
     session_id: &str,
+    cancel: &StreamCancel<'_>,
 ) -> Result<(String, Option<String>, TokenUsage), String> {
     let client = short_http_client();
     let body = responses_body_from_chat(chat_body, config, false);
     let url = responses_url(&config.api_base_url);
-    let res = apply_go_headers(
+    let send_fut = apply_go_headers(
         client.post(&url).header("Content-Type", "application/json"),
         &config.api_key,
         session_id,
     )
     .json(&body)
-    .send()
-    .await
-    .map_err(|e| format!("Request failed: {}", e))?;
+    .send();
+
+    let res = tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => {
+            return Err(STREAM_ABORTED.into());
+        }
+        res = send_fut => {
+            res.map_err(|e| format!("Request failed: {}", e))?
+        }
+    };
 
     let status = res.status();
-    let data: Value = res
-        .json()
-        .await
-        .map_err(|e| format!("Parse failed: {}", e))?;
-
     if !status.is_success() {
+        let data = error_json_with_cancel(res, cancel).await?;
         let err_msg = data["error"]["message"]
             .as_str()
             .or_else(|| data["error"].as_str())
@@ -886,6 +939,7 @@ async fn call_responses_with_usage(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
+    let data = json_with_cancel(res, cancel).await?;
     let usage = extract_usage(&data);
     let (content, reasoning) = extract_responses_output(&data)?;
     Ok((content, reasoning, usage))
@@ -1214,7 +1268,7 @@ async fn stream_chat_sse(
             _ = until_cancelled(cancel) => {
                 return Err(STREAM_ABORTED.into());
             }
-            result = call_llm_with_usage(config, speaking_agent, messages_context, narration) => {
+            result = call_llm_with_usage(config, speaking_agent, messages_context, narration, cancel) => {
                 result?
             }
         };
@@ -1371,6 +1425,55 @@ mod cancel_tests {
         // Mid-stream reset/load.
         reset.store(true, Ordering::Release);
         assert!(c.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn race_cancel_wins_when_already_cancelled() {
+        let reset = AtomicBool::new(true);
+        let epoch = AtomicU64::new(1);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 1,
+        };
+        // Pending future never resolves; cancel must win immediately (biased select).
+        let result = race_cancel(&c, std::future::pending::<Value>()).await;
+        assert_eq!(result.unwrap_err(), STREAM_ABORTED);
+    }
+
+    #[tokio::test]
+    async fn race_cancel_future_wins_when_not_cancelled() {
+        let reset = AtomicBool::new(false);
+        let epoch = AtomicU64::new(1);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 1,
+        };
+        let result = race_cancel(&c, async { serde_json::json!({"ok": true}) }).await;
+        assert_eq!(result.unwrap()["ok"], true);
+    }
+
+    #[tokio::test]
+    async fn race_cancel_wins_over_slow_future() {
+        let reset = std::sync::Arc::new(AtomicBool::new(false));
+        let epoch = std::sync::Arc::new(AtomicU64::new(1));
+        let c = StreamCancel {
+            reset: reset.as_ref(),
+            epoch: epoch.as_ref(),
+            epoch_at_start: 1,
+        };
+        let reset_flag = std::sync::Arc::clone(&reset);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            reset_flag.store(true, Ordering::Release);
+        });
+        let result = race_cancel(&c, async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            serde_json::json!({"late": true})
+        })
+        .await;
+        assert_eq!(result.unwrap_err(), STREAM_ABORTED);
     }
 
     #[test]
@@ -1634,6 +1737,28 @@ mod cancel_tests {
         let (content, reasoning, _) = harvest_responses_completed(buf).unwrap();
         assert_eq!(content, "done");
         assert!(reasoning.is_none());
+    }
+
+    #[test]
+    fn harvest_completed_extends_partial_prefix() {
+        // Documents the stream polish rule: completed text longer + starts_with(partial)
+        // → emit only the suffix (tested here as the pure string condition).
+        let buf = concat!(
+            "event: response.output_text.delta
+",
+            r#"data: {"type":"response.output_text.delta","delta":"Hel"}"#,
+            "
+
+",
+            "event: response.completed
+",
+            r#"data: {"type":"response.completed","response":{"output_text":"Hello world"}}"#,
+        );
+        let (completed, _, _) = harvest_responses_completed(buf).unwrap();
+        let partial = "Hel";
+        assert!(completed.len() > partial.len());
+        assert!(completed.starts_with(partial));
+        assert_eq!(&completed[partial.len()..], "lo world");
     }
 
     #[test]

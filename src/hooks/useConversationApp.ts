@@ -386,8 +386,21 @@ export function useConversationApp() {
       .map((m) => `### ${agentLabel(m.agent, config)}\n\n${m.content}\n`);
     const md = `# Chat\n\n${new Date().toISOString()}\n\n${lines.join("\n")}`;
     try {
-      const path = await api.exportChat(md);
-      toast.show(`Exported to ${path}`, 5000);
+      const outcome = await api.exportChat(md);
+      switch (outcome.kind) {
+        case "shared":
+          toast.show("Shared chat", 4000);
+          break;
+        case "share-dismissed":
+          // User closed the share sheet — no false "Exported to …" toast.
+          break;
+        case "downloaded":
+          toast.show(`Downloaded ${outcome.name}`, 5000);
+          break;
+        case "saved":
+          toast.show(`Exported to ${outcome.path}`, 5000);
+          break;
+      }
     } catch (e) {
       toast.show(`Export failed: ${e}`);
     }
