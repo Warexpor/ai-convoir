@@ -373,6 +373,17 @@ async function loop() {
       const delay = state.config?.delay_ms ?? 800;
       if (delay > 0) await new Promise((r) => setTimeout(r, delay));
     }
+    // Auto hit its turn limit: the run is over, not still live.
+    if (
+      !state.reset &&
+      state.status === "Running" &&
+      state.config?.mode !== "step" &&
+      state.turnCount >= (state.config?.max_turns ?? 40)
+    ) {
+      state.status = "Idle";
+      state.paused = true;
+      emitStatus();
+    }
   } finally {
     state.loopActive = false;
     state.abort = null;

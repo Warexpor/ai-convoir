@@ -165,6 +165,7 @@ function ChatView({
     [applyWin, messages.length, prefixes, virtualize],
   );
 
+  const lastTopRef = useRef(0);
   const onScroll = useCallback(() => {
     pulseScrollBusy();
     if (scrollRaf.current) return;
@@ -173,7 +174,13 @@ function ChatView({
       const el = scrollRef.current;
       if (!el) return;
       const atBottom = nearBottom(el);
-      applyAutoScroll(atBottom);
+      // Only an upward scroll lets go of the bottom. Content that grew
+      // between the scroll and this frame (a reply landing whole) must not
+      // read as the reader scrolling away.
+      const top = el.scrollTop;
+      const up = top < lastTopRef.current - 2;
+      lastTopRef.current = top;
+      if (atBottom || up) applyAutoScroll(atBottom);
       if (virtualize) computeWindow(el, atBottom);
     });
   }, [applyAutoScroll, computeWindow, virtualize]);
