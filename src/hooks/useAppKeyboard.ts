@@ -8,6 +8,8 @@ interface KeyboardOptions {
   helpOpen: boolean;
   prefsOpen: boolean;
   railOpen: boolean;
+  /** Empty stage: Space/N would start a thread with no opening line. */
+  hasMessages: boolean;
   onTogglePrefs: () => void;
   onClosePrefs: () => void;
   onToggleSettings: () => void;
@@ -71,13 +73,15 @@ export function useAppKeyboard(opts: KeyboardOptions) {
         o.onSaveChat();
       }
       if (e.code === "Escape") {
-        if (o.status === "Running") o.onStop();
-        else if (o.helpOpen) o.onCloseHelp();
+        // Close the top layer first; Esc on an open panel must not stop
+        // the run behind it.
+        if (o.helpOpen) o.onCloseHelp();
         else if (o.settingsOpen) o.onCloseSettings();
+        else if (o.status === "Running") o.onStop();
         else if (o.railOpen) o.onCloseRail();
       }
       if (inField) return;
-      if (o.helpOpen || o.settingsOpen) {
+      if (o.helpOpen || o.settingsOpen || !o.hasMessages) {
         if (e.code === "Space" || e.code === "KeyN") return;
       }
       if (e.code === "Space" && !e.repeat) {

@@ -164,6 +164,7 @@ function App() {
     helpOpen,
     prefsOpen,
     railOpen,
+    hasMessages: stream.messages.length > 0,
     onToggleSettings: () => {
       setPrefsOpen(false);
       setSettingsOpen((p) => !p);
