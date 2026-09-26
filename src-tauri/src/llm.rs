@@ -249,8 +249,17 @@ fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Va
         "temperature": config.temperature,
     });
     // Responses API uses max_output_tokens (chat/completions used max_tokens).
+    // Omit when max_tokens==0 so the server default applies — no length docking.
     if config.max_tokens > 0 {
         body["max_output_tokens"] = serde_json::json!(config.max_tokens);
+    }
+    // Muse Spark / OpenAI Responses: nest reasoning.effort + summary so thoughts stream.
+    // (Chat Completions uses top-level reasoning_effort; that field is dropped here.)
+    if config.reasoning_effort != crate::state::ReasoningEffort::None {
+        body["reasoning"] = serde_json::json!({
+            "effort": config.reasoning_effort.as_api_str(),
+            "summary": "auto",
+        });
     }
     if let Some(key) = chat.get("prompt_cache_key").and_then(|v| v.as_str()) {
         apply_prompt_cache_key(&mut body, key);
@@ -691,6 +700,16 @@ async fn stream_responses(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
+    // Open the FE answering bubble as soon as the provider accepts the request —
+    // do not wait for the first token (thinking→answering handoff).
+    ensure_stream_start(
+        &mut stream_started,
+        app_handle,
+        speaking_agent,
+        turn,
+        created_at,
+    );
+
     let content_type = res
         .headers()
         .get("content-type")
@@ -706,7 +725,6 @@ async fn stream_responses(
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
-        emit_stream_start(app_handle, speaking_agent, turn, created_at);
         note_ttft(started, &mut ttft_ms);
         if let Some(ref r) = reasoning {
             emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
@@ -1140,6 +1158,15 @@ async fn stream_chat_sse(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
+    // Open the FE answering bubble as soon as the provider accepts the request.
+    ensure_stream_start(
+        &mut stream_started,
+        app_handle,
+        speaking_agent,
+        turn,
+        created_at,
+    );
+
     let content_type = res
         .headers()
         .get("content-type")
@@ -1192,7 +1219,6 @@ async fn stream_chat_sse(
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
-        emit_stream_start(app_handle, speaking_agent, turn, created_at);
         note_ttft(started, &mut ttft_ms);
         if let Some(ref r) = reasoning {
             emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
@@ -1503,8 +1529,38 @@ mod cancel_tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["instructions"], "be Ava");
         assert_eq!(body["reasoning"]["effort"], "high");
+        assert_eq!(body["reasoning"]["summary"], "auto");
         assert!(body.get("temperature").is_none());
         assert!(body.get("max_output_tokens").is_none());
+    }
+
+    #[test]
+    fn prepare_then_responses_body_for_muse_spark_thinking() {
+        use crate::harness::prepare::prepare_turn;
+        use crate::state::{InnerState, ReasoningEffort, ResponseLength};
+
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "muse-spark-1.3-contributor".into();
+        inner.ai1_config.api_base_url = "https://opencode.ai/zen/go/v1".into();
+        inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.system_prompt = "be Ava".into();
+        inner.ai1_config.response_length = ResponseLength::Brief;
+        inner.ai1_config.reasoning_effort = ReasoningEffort::Medium;
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert!(prep.uses_responses);
+        let sys = prep.chat_body["messages"][0]["content"].as_str().unwrap_or("");
+        assert_eq!(sys, "be Ava");
+        assert!(!sys.contains("extremely brief"));
+        assert!(prep.chat_body.get("max_tokens").is_none());
+        let body = responses_body_from_chat(&prep.chat_body, &prep.config, true);
+        assert!(
+            body.get("max_output_tokens").is_none(),
+            "max_tokens==0 must omit max_output_tokens, got {:?}",
+            body.get("max_output_tokens")
+        );
+        assert_eq!(body["reasoning"]["effort"], "medium");
+        assert_eq!(body["reasoning"]["summary"], "auto");
+        assert_eq!(body["instructions"], sys);
     }
     use crate::harness::client::{SHORT_HTTP_TIMEOUT_SECS, STREAM_HTTP_TIMEOUT_SECS};
 
@@ -1758,7 +1814,7 @@ mod cancel_tests {
 
     #[test]
     fn responses_body_omits_max_output_tokens_when_zero() {
-        let config = crate::state::AiConfig {
+        let mut config = crate::state::AiConfig {
             name: "A".into(),
             system_prompt: "sys".into(),
             model: "muse-spark-1.3-contributor".into(),
@@ -1781,9 +1837,35 @@ mod cancel_tests {
             "max_tokens==0 must omit max_output_tokens, got {:?}",
             body.get("max_output_tokens")
         );
-        // temperature still forwarded
         let temp = body["temperature"].as_f64().unwrap();
         assert!((temp - 0.5).abs() < 1e-5);
+        // Thinking enabled → reasoning nested; still no length dock / pad.
+        config.reasoning_effort = crate::state::ReasoningEffort::Medium;
+        config.response_length = crate::state::ResponseLength::Brief;
+        let think = responses_body_from_chat(&chat, &config, true);
+        assert_eq!(think["reasoning"]["effort"], "medium");
+        assert_eq!(think["reasoning"]["summary"], "auto");
+        assert!(think.get("max_output_tokens").is_none());
+    }
+
+    #[test]
+    fn responses_body_includes_reasoning_for_muse_spark() {
+        let mut config = crate::state::AiConfig::default();
+        config.model = "muse-spark-1.3-contributor".into();
+        config.api_base_url = "https://opencode.ai/zen/go/v1".into();
+        config.reasoning_effort = crate::state::ReasoningEffort::High;
+        config.max_tokens = 512;
+        let chat = serde_json::json!({
+            "messages": [
+                {"role": "system", "content": "be Ava"},
+                {"role": "user", "content": "hi"}
+            ]
+        });
+        let body = responses_body_from_chat(&chat, &config, true);
+        assert_eq!(body["reasoning"]["effort"], "high");
+        assert_eq!(body["reasoning"]["summary"], "auto");
+        // Explicit max_tokens only — no length ceiling / thinking pad.
+        assert_eq!(body["max_output_tokens"], 512);
     }
 
     #[test]

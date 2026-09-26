@@ -253,22 +253,22 @@ export function contextWindow(model: string): number {
   return 128000;
 }
 
-/** Response-length instructions appended to system prompt. */
+/**
+ * Soft response-length instructions (UI/legacy). Not appended to prompts —
+ * length/effort staking is owned by a separate agent. Kept empty so any
+ * residual caller that still concatenates them is a no-op.
+ */
 export const LENGTH_INSTRUCTIONS: Record<ResponseLength, string> = {
-  brief: "Keep your response extremely brief — at most one sentence.",
-  small: "Keep your response short — at most 2–3 sentences.",
-  normal:
-    "Respond at a natural length — thorough enough to cover the point, concise enough to stay on topic.",
-  long: "You may respond at length — provide thorough detail.",
-  very_long:
-    "Respond as extensively as you like — cover all angles and go deep.",
+  brief: "",
+  small: "",
+  normal: "",
+  long: "",
+  very_long: "",
 };
 
-/** Full system prompt with length instruction appended. */
+/** System prompt only — no length docking. */
 export function effectiveSystemPrompt(config: AiConfig): string {
-  const inst = LENGTH_INSTRUCTIONS[config.response_length || "normal"];
-  if (!inst) return config.system_prompt;
-  return config.system_prompt + (inst ? "\n\n" + inst : "");
+  return config.system_prompt;
 }
 
 /** Total estimated tokens for the active conversation. */

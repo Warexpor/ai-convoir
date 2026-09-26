@@ -18,7 +18,9 @@ function CastStrip({ config, status, upNext, hasMessages, onEditVoice }: Props) 
   const ids = activeAgentIds(config);
   const running = status === "Running";
   const listRef = useRef<HTMLOListElement>(null);
-  const focusIdx = hasMessages && upNext ? ids.indexOf(upNext) : -1;
+  // While Running, show the speaking hand-off even before the first line lands.
+  const focusIdx =
+    upNext && (hasMessages || running) ? ids.indexOf(upNext) : -1;
   const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
   const [live, setLive] = useState(false);
   const names = ids.map((id) => agentLabel(id, config)).join("|");
@@ -72,7 +74,7 @@ function CastStrip({ config, status, upNext, hasMessages, onEditVoice }: Props) 
       />
       {ids.map((id) => {
         const name = agentLabel(id, config);
-        const isNext = hasMessages && id === upNext;
+        const isNext = (hasMessages || running) && id === upNext;
         const state = isNext ? (running ? "speaking" : "next") : "idle";
         return (
           <li

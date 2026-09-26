@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { InnerState, Message } from "../types";
 import type { StreamMode } from "../lib/config";
 import { agentAccent, agentConfig, agentLabel } from "../types";
@@ -37,6 +37,13 @@ function MessageBubble({
   const isStream = !!message.streaming;
   const reasoning = (message.reasoning || "").trim();
   const hasThoughts = showThoughtsUi && reasoning.length > 0;
+  // While thoughts stream in (before the reply body), keep them expanded so
+  // "Show thinking" is visibly working — not a collapsed peek the user misses.
+  useEffect(() => {
+    if (isStream && hasThoughts && !(message.content || "").trim()) {
+      setThoughtsOpen(true);
+    }
+  }, [isStream, hasThoughts, message.content]);
   const kind = isSeed ? "seed" : isNote ? "note" : "voice";
   const accent = agentAccent(message.agent, config);
   // In paragraph/whole mode the finished reply lands in one go; give that
