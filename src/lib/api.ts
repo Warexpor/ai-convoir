@@ -29,6 +29,11 @@ export function isTauri(): boolean {
   return isTauriRuntime();
 }
 
+/** The Android/iOS app (Tauri in a mobile WebView), not a narrow desktop window. */
+export function isMobileApp(): boolean {
+  return isTauriRuntime() && /Android|iPhone|iPad/i.test(navigator.userAgent);
+}
+
 async function tryInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
@@ -212,7 +217,7 @@ export async function exportChat(content: string): Promise<ExportOutcome> {
   // Android/iOS WebView: no share sheet and no download handler, and the
   // Rust side can only write to the app's private cache, which nobody can
   // open. The clipboard is the one place the transcript is reachable.
-  if (isTauri() && /Android|iPhone|iPad/i.test(navigator.userAgent)) {
+  if (isMobileApp()) {
     await navigator.clipboard.writeText(content);
     return { kind: "copied" };
   }

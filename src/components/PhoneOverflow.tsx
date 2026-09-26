@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { isTauri } from "../lib/api";
+import { isMobileApp } from "../lib/api";
 import { IconExport, IconKey, IconMoreVert, IconNew, IconSave, IconSliders } from "./Marks";
 import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
@@ -70,7 +70,7 @@ export default function PhoneOverflow({
           {item("Save thread", <IconSave />, onSave, !hasMessages)}
           {item(
             // The Android app has no share sheet; export copies instead.
-            isTauri() ? "Copy transcript" : "Share / export",
+            isMobileApp() ? "Copy transcript" : "Share / export",
             <IconExport />,
             onExport,
             !hasMessages,
