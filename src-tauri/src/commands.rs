@@ -510,7 +510,9 @@ pub async fn list_saved_chats(
     })
 }
 
-/// Load one saved chat; if snapshot messages are empty, fill from the messages table.
+/// Load one saved chat. Messages table is the transcript source of truth:
+/// `save_message` / `delete_message` update rows without rewriting config_json,
+/// so a non-empty snapshot can still be stale relative to the table.
 #[tauri::command]
 pub async fn get_saved_chat(
     state: tauri::State<'_, Arc<AppState>>,
@@ -526,15 +528,8 @@ pub async fn get_saved_chat(
         }
         let mut value: serde_json::Value =
             serde_json::from_str(&json).map_err(|e| e.to_string())?;
-        let empty_msgs = value
-            .get("messages")
-            .and_then(|m| m.as_array())
-            .map(|a| a.is_empty())
-            .unwrap_or(true);
-        if empty_msgs {
-            let msgs = db::load_messages(conn, &chat_id)?;
-            value["messages"] = serde_json::to_value(msgs).map_err(|e| e.to_string())?;
-        }
+        let msgs = db::load_messages(conn, &chat_id)?;
+        db::hydrate_snapshot_messages(&mut value, &msgs)?;
         Ok(Some(value))
     })
 }

@@ -232,7 +232,10 @@ fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Va
         if role == "system" && instructions.is_empty() {
             instructions = content.to_string();
         } else {
-            input.push(serde_json::json!({ "role": role, "content": content }));
+            // Extra system rows (director note) → user. Matches FE browserEngine and
+            // avoids proxies that reject role=system inside Responses `input`.
+            let input_role = if role == "system" { "user" } else { role };
+            input.push(serde_json::json!({ "role": input_role, "content": content }));
         }
     }
     let model = if config.model.trim().is_empty() {
@@ -531,6 +534,22 @@ pub(crate) fn promote_reasoning_only(full: &mut String, full_reasoning: &str) ->
     }
 }
 
+/// When live content deltas were empty, prefer a harvested `response.completed`
+/// payload over promoting reasoning-only. Call **before** `promote_reasoning_only`
+/// so reasoning does not mask the real answer.
+pub(crate) fn take_harvest_if_content_empty(
+    content: &str,
+    harvested: Option<(String, Option<String>, TokenUsage)>,
+) -> Option<(String, Option<String>, TokenUsage)> {
+    if !content.is_empty() {
+        return None;
+    }
+    match harvested {
+        Some((c, r, u)) if !c.is_empty() => Some((c, r, u)),
+        _ => None,
+    }
+}
+
 /// Consume complete `\n\n`-delimited Responses SSE blocks; return leftover + pieces.
 pub(crate) fn consume_responses_sse(
     buffer: &str,
@@ -776,14 +795,10 @@ async fn stream_responses(
         return Err(STREAM_ABORTED.into());
     }
 
-    if promote_reasoning_only(&mut full, &full_reasoning) {
-        // Parity with empty-SSE / JSON fallback: FE gets a content chunk too.
-        emit_chunk(app_handle, speaking_agent, turn, "content", &full);
-    }
-
-    // Empty SSE: try parsing a collapsed JSON body, then completed-event harvest,
-    // then non-stream Responses fallback.
-    // Race cancel so stop/FreshStart does not hang on the fallback HTTP call.
+    // Recovery order when content deltas were empty:
+    // 1) collapsed JSON / response.completed harvest (beats reasoning-only promote)
+    // 2) promote reasoning-only (avoids a needless HTTP round-trip)
+    // 3) non-stream HTTP fallback
     if full.is_empty() {
         if let Ok(data) = serde_json::from_str::<Value>(text_buf.trim()) {
             if let Ok((text, reasoning)) = extract_responses_output(&data) {
@@ -809,7 +824,9 @@ async fn stream_responses(
             }
         }
 
-        if let Some((text, reasoning, done_usage)) = harvest_responses_completed(&text_buf) {
+        if let Some((text, reasoning, done_usage)) =
+            take_harvest_if_content_empty(&full, harvest_responses_completed(&text_buf))
+        {
             usage.merge(&done_usage);
             if cancel.is_cancelled() {
                 return Err(STREAM_ABORTED.into());
@@ -830,7 +847,13 @@ async fn stream_responses(
                 text, reasoning, usage, started, ttft_ms,
             ));
         }
+    }
 
+    if promote_reasoning_only(&mut full, &full_reasoning) {
+        emit_chunk(app_handle, speaking_agent, turn, "content", &full);
+    }
+
+    if full.is_empty() {
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
         }
@@ -1215,7 +1238,8 @@ async fn stream_chat_sse(
     }
 
     if !text_buf.is_empty() {
-        let (deltas, _, chunk_usage) = extract_sse_deltas_with_usage(&(text_buf + "\n\n"));
+        let flush_buf = format!("{text_buf}\n\n");
+        let (deltas, _, chunk_usage) = extract_sse_deltas_with_usage(&flush_buf);
         usage.merge(&chunk_usage);
         for piece in deltas {
             match piece {
@@ -1251,14 +1275,37 @@ async fn stream_chat_sse(
         return Err(STREAM_ABORTED.into());
     }
 
-    // Reasoning-only stream (no content deltas) — treat reasoning as the reply.
+    // Recovery order: collapsed JSON → promote reasoning-only → HTTP fallback.
+    if full.is_empty() {
+        if let Ok(data) = serde_json::from_str::<Value>(text_buf.trim()) {
+            if let Some((text, reasoning)) = extract_chat_message_pair(&data) {
+                usage.merge(&extract_usage(&data));
+                if cancel.is_cancelled() {
+                    return Err(STREAM_ABORTED.into());
+                }
+                note_ttft(started, &mut ttft_ms);
+                ensure_stream_start(
+                    &mut stream_started,
+                    app_handle,
+                    speaking_agent,
+                    turn,
+                    created_at,
+                );
+                if let Some(ref r) = reasoning {
+                    emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+                }
+                emit_chunk(app_handle, speaking_agent, turn, "content", &text);
+                return Ok(StreamOutcome::from_text(
+                    text, reasoning, usage, started, ttft_ms,
+                ));
+            }
+        }
+    }
+
     if promote_reasoning_only(&mut full, &full_reasoning) {
-        // Parity with empty-SSE fallback: FE gets a content chunk too.
         emit_chunk(app_handle, speaking_agent, turn, "content", &full);
     }
 
-    // Empty SSE: fall back to non-stream; emit chunks so FE is not left with a blank bubble.
-    // Race cancel against the fallback HTTP call so stop/FreshStart does not hang on it.
     if full.is_empty() {
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
@@ -1301,6 +1348,45 @@ async fn stream_chat_sse(
     Ok(StreamOutcome::from_text(
         full, reasoning, usage, started, ttft_ms,
     ))
+}
+
+/// Pull content + reasoning from a chat-completions JSON body (non-stream / collapsed).
+/// Returns None when the shape has no usable content (caller may HTTP-fallback).
+pub(crate) fn extract_chat_message_pair(data: &Value) -> Option<(String, Option<String>)> {
+    let choice = data
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())?;
+    let msg = choice.get("message").unwrap_or(choice);
+    match extract_text_content(&msg["content"]) {
+        Some(c) => {
+            let mut r = None;
+            for key in [
+                "reasoning_content",
+                "reasoning",
+                "thinking",
+                "reasoning_text",
+            ] {
+                if let Some(t) = extract_text_content(&msg[key]) {
+                    r = Some(t);
+                    break;
+                }
+            }
+            Some((c, r))
+        }
+        None => {
+            if let Some(r) = extract_text_content(&msg["reasoning_content"])
+                .or_else(|| extract_text_content(&msg["reasoning"]))
+                .or_else(|| extract_text_content(&msg["thinking"]))
+            {
+                Some((r.clone(), Some(r)))
+            } else if let Some(t) = extract_text_content(&choice["text"]) {
+                Some((t, None))
+            } else {
+                None
+            }
+        }
+    }
 }
 
 /// Like `extract_sse_deltas`, but also harvests `usage` from payloads (final chunk).
@@ -1784,5 +1870,80 @@ mod cancel_tests {
         });
         let (content, _) = extract_responses_output(&data).unwrap();
         assert_eq!(content, "proxy-ok");
+    }
+
+    #[test]
+    fn take_harvest_beats_reasoning_when_content_empty() {
+        let harvested = Some((
+            "real answer".into(),
+            Some("why".into()),
+            TokenUsage {
+                prompt_tokens: Some(1),
+                cached_tokens: None,
+                completion_tokens: Some(2),
+            },
+        ));
+        let got = take_harvest_if_content_empty("", harvested.clone());
+        assert_eq!(got.as_ref().map(|(c, _, _)| c.as_str()), Some("real answer"));
+        // Content already present → do not take harvest (prefix-extend path owns that).
+        assert!(take_harvest_if_content_empty("partial", harvested).is_none());
+        // Empty harvest content → None so promote/HTTP can run.
+        assert!(take_harvest_if_content_empty(
+            "",
+            Some(("".into(), None, TokenUsage::default()))
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn responses_body_maps_extra_system_to_user() {
+        let config = crate::state::AiConfig {
+            name: "A".into(),
+            system_prompt: "sys".into(),
+            model: "muse-spark-1.3-contributor".into(),
+            api_base_url: "https://opencode.ai/zen/go/v1".into(),
+            api_key: "k".into(),
+            temperature: 0.5,
+            max_tokens: 256,
+            reasoning_effort: Default::default(),
+            response_length: Default::default(),
+            color: String::new(),
+            icon: String::new(),
+        };
+        let chat = serde_json::json!({
+            "messages": [
+                {"role": "system", "content": "primary instructions"},
+                {"role": "user", "content": "hi"},
+                {"role": "system", "content": "[Director note — for you only]\nlook sad"}
+            ]
+        });
+        let body = responses_body_from_chat(&chat, &config, true);
+        assert_eq!(body["instructions"], "primary instructions");
+        let input = body["input"].as_array().unwrap();
+        assert_eq!(input.len(), 2);
+        assert_eq!(input[0]["role"], "user");
+        assert_eq!(input[0]["content"], "hi");
+        assert_eq!(input[1]["role"], "user", "director note must not stay role=system");
+        assert!(input[1]["content"].as_str().unwrap().contains("look sad"));
+    }
+
+    #[test]
+    fn extract_chat_message_pair_from_collapsed_json() {
+        let data = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "hello",
+                    "reasoning_content": "think"
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2}
+        });
+        let (c, r) = extract_chat_message_pair(&data).unwrap();
+        assert_eq!(c, "hello");
+        assert_eq!(r.as_deref(), Some("think"));
+        let empty = serde_json::json!({"choices": [{"message": {"content": ""}}]});
+        assert!(extract_chat_message_pair(&empty).is_none());
     }
 }

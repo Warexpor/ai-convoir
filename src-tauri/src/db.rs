@@ -171,6 +171,16 @@ pub fn load_messages(conn: &Connection, chat_id: &str) -> Result<Vec<Message>, S
     Ok(msgs)
 }
 
+/// Overwrite `snapshot.messages` from the messages table (source of truth).
+pub fn hydrate_snapshot_messages(
+    snapshot: &mut serde_json::Value,
+    messages: &[Message],
+) -> Result<(), String> {
+    snapshot["messages"] =
+        serde_json::to_value(messages).map_err(|e| format!("hydrate messages: {e}"))?;
+    Ok(())
+}
+
 /// Persist chat metadata (keeps the chat alive in the sidebar even after restart).
 #[allow(dead_code)] // available for meta-only updates; full snapshots use upsert_saved_chat
 pub fn upsert_chat_meta(
@@ -555,6 +565,60 @@ mod tests {
         upsert_saved_chat(&conn, "c1", 300, r#"{"id":"c1","n":3}"#, &newest).unwrap();
         let loaded = load_messages(&conn, "c1").unwrap();
         assert_eq!(loaded[0].content, "turn-3");
+
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn hydrate_snapshot_prefers_messages_table() {
+        let path = tmp_db_path("hydrate");
+        let conn = open(&path).unwrap();
+        // Stale snapshot JSON claims only turn-1.
+        upsert_saved_chat(
+            &conn,
+            "c1",
+            100,
+            r#"{"id":"c1","messages":[{"agent":"ai1","role":"assistant","content":"stale","turn":1,"created_at":1}]}"#,
+            &[Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "stale".into(),
+                turn: 1,
+                created_at: 1,
+                reasoning: None,
+            }],
+        )
+        .unwrap();
+        // Incremental commit writes a newer turn without rewriting config_json.
+        save_message(
+            &conn,
+            "c1",
+            &Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "fresh-turn".into(),
+                turn: 2,
+                created_at: 2,
+                reasoning: None,
+            },
+        )
+        .unwrap();
+        // delete_message also diverges snapshot vs table.
+        delete_message(&conn, "c1", "ai1", 1, 1).unwrap();
+
+        let (_u, json) = get_chat_meta(&conn, "c1").unwrap().unwrap();
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // Stale snapshot still has the deleted message.
+        assert_eq!(value["messages"].as_array().unwrap().len(), 1);
+        assert_eq!(value["messages"][0]["content"], "stale");
+
+        let msgs = load_messages(&conn, "c1").unwrap();
+        hydrate_snapshot_messages(&mut value, &msgs).unwrap();
+        let arr = value["messages"].as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["content"], "fresh-turn");
+        assert_eq!(arr[0]["agent"], "ai2");
 
         drop(conn);
         let _ = std::fs::remove_file(&path);
