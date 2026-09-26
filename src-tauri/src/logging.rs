@@ -11,7 +11,7 @@ pub fn log_path() -> Option<&'static PathBuf> {
 
 /// Init stderr + rotating-ish append file under app data. Safe to call once.
 pub fn init(app_data: &std::path::Path) -> Result<PathBuf, String> {
-    let path = app_data.join("ai-conversation.log");
+    let path = app_data.join("ai-convoir.log");
     let _ = std::fs::create_dir_all(app_data);
 
     let file = OpenOptions::new()
@@ -21,7 +21,7 @@ pub fn init(app_data: &std::path::Path) -> Result<PathBuf, String> {
         .map_err(|e| format!("open log file: {e}"))?;
 
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("ai_conversation=info,ai_conversation_lib=info,warn"));
+        .unwrap_or_else(|_| EnvFilter::new("ai_convoir=info,ai_convoir_lib=info,warn"));
 
     let stderr_layer = fmt::layer()
         .with_writer(std::io::stderr)

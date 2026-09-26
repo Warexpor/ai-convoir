@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ai_conversation_lib::run()
+    ai_convoir_lib::run()
 }

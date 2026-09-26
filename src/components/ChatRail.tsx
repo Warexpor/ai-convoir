@@ -253,7 +253,7 @@ export default function ChatRail({
           <div className="rail-brand">
             <SlashMark className="rail-logo" size={22} />
             <span>
-              AI Conversation
+              AI ConvoIR
               <em>v2</em>
             </span>
           </div>
