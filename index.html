@@ -11,7 +11,8 @@
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="apple-touch-icon" href="/logo.png" />
   </head>
-  <body>
+  <!-- Paint the app background before the bundle loads: no white/grey flash. -->
+  <body style="background:#050505;margin:0">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
