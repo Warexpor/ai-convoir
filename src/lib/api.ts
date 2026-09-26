@@ -159,7 +159,8 @@ export type ExportOutcome =
   | { kind: "shared" }
   | { kind: "share-dismissed" }
   | { kind: "downloaded"; name: string }
-  | { kind: "saved"; path: string };
+  | { kind: "saved"; path: string }
+  | { kind: "copied" };
 
 /**
  * Mobile-first gate for Web Share. Desktop Chrome often exposes `navigator.share`
@@ -206,6 +207,14 @@ export async function exportChat(content: string): Promise<ExportOutcome> {
       }
       // Share failed for another reason; fall through to download / Tauri.
     }
+  }
+
+  // Android/iOS WebView: no share sheet and no download handler, and the
+  // Rust side can only write to the app's private cache, which nobody can
+  // open. The clipboard is the one place the transcript is reachable.
+  if (isTauri() && /Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    await navigator.clipboard.writeText(content);
+    return { kind: "copied" };
   }
 
   if (!isTauri()) {

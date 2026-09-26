@@ -628,6 +628,9 @@ export function useConversationApp() {
         case "saved":
           toast.show(`Exported to ${outcome.path}`, 5000);
           break;
+        case "copied":
+          toast.show("Copied the transcript as markdown.", 3000);
+          break;
       }
     } catch (e) {
       toast.show(`Export failed: ${e}`);

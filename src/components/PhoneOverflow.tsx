@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { isTauri } from "../lib/api";
 import { IconExport, IconKey, IconMoreVert, IconNew, IconSave, IconSliders } from "./Marks";
 import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
@@ -67,7 +68,13 @@ export default function PhoneOverflow({
         <div className={`menu overflow-menu${open ? "" : " is-leaving"}`} role="menu">
           {item("New thread", <IconNew />, onNew)}
           {item("Save thread", <IconSave />, onSave, !hasMessages)}
-          {item("Share / export", <IconExport />, onExport, !hasMessages)}
+          {item(
+            // The Android app has no share sheet; export copies instead.
+            isTauri() ? "Copy transcript" : "Share / export",
+            <IconExport />,
+            onExport,
+            !hasMessages,
+          )}
           <div className="menu-sep" role="separator" />
           {needsKey
             ? item("Add your key", <IconKey />, onSettings)
