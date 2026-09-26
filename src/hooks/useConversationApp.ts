@@ -541,11 +541,19 @@ export function useConversationApp() {
     toast,
   ]);
 
+  const statusRef = useRef(stream.status);
+  statusRef.current = stream.status;
   /** Settings saves also update the active cast, so future threads inherit. */
   const handleSaveSettings = useCallback(
     async (cfg: InnerState) => {
+      const prevMode = configRef.current?.mode;
       await pushConfig(cfg);
       if (castIdRef.current) syncCastFromConfig(castIdRef.current, cfg);
+      // Step parks the engine in Paused between lines. Carried into Auto that
+      // reads as a paused run ("Paused", Resume, Stop) nobody paused.
+      if (prevMode === "step" && cfg.mode === "auto" && statusRef.current === "Paused") {
+        await api.stopConversation().catch(() => undefined);
+      }
     },
     [pushConfig],
   );
@@ -594,14 +602,9 @@ export function useConversationApp() {
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
       if (!config) return;
-      await pushConfig({ ...config, mode });
-      // Step parks the engine in Paused between lines. Carried into Auto that
-      // reads as a paused run ("Paused", Resume, Stop) nobody paused.
-      if (mode === "auto" && config.mode === "step" && stream.status === "Paused") {
-        await api.stopConversation().catch(() => undefined);
-      }
+      await handleSaveSettings({ ...config, mode });
     },
-    [config, pushConfig, stream.status],
+    [config, handleSaveSettings],
   );
 
   const handleNarrationCommit = useCallback(async (text: string) => {
