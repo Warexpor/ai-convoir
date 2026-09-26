@@ -190,7 +190,7 @@ function VoiceAvatar({ name, icon, color, variant = "solid", className }: Props)
       style={{
         ["--voice" as string]: color,
         ["--voice-ink" as string]: ink,
-        ["--glyph-cut" as string]: variant === "solid" ? color : "#0e0e10",
+        ["--glyph-cut" as string]: variant === "solid" ? color : "#0f0f0f",
       }}
       aria-hidden
     >

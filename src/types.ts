@@ -100,45 +100,51 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 /** Default signature hues per slot. Chrome stays monochrome; color is signal. */
 export const SLOT_COLORS: Record<string, string> = {
   ai1: "#fafafa",
-  ai2: "#a1a1aa",
-  ai3: "#75757e",
+  ai2: "#a4a4a4",
+  ai3: "#787878",
 };
 
-/** Presets: a black-and-white ladder, plus two barely-warm/cool whites.
+/** Presets: a black-and-white ladder, plus one barely-warm bone white.
  *  Voices are told apart by value, not hue; the UI renders each one as a
  *  wide gradient off its tone. */
 export const VOICE_PALETTE = [
   "#fafafa",
-  "#dcdce0",
-  "#bdbdc4",
-  "#a1a1aa",
-  "#8b8b93",
-  "#75757e",
+  "#dddddd",
+  "#bfbfbf",
+  "#a4a4a4",
+  "#8e8e8e",
+  "#787878",
   "#e8e3d9",
-  "#c9ced6",
+  "#626262",
 ];
 
-/** Older presets (saturated, then muted) → the monochrome ladder, so
+/** Older presets (saturated, muted, then cool greys) → the monochrome ladder, so
  *  existing casts follow the palette without a data migration. */
 const LEGACY_COLORS: Record<string, string> = {
   "#ff7a3d": "#fafafa",
-  "#6cc4ff": "#a1a1aa",
-  "#c49bff": "#75757e",
-  "#4fe3a5": "#bdbdc4",
-  "#ff6b9a": "#dcdce0",
+  "#6cc4ff": "#a4a4a4",
+  "#c49bff": "#787878",
+  "#4fe3a5": "#bfbfbf",
+  "#ff6b9a": "#dddddd",
   "#ffc84a": "#e8e3d9",
-  "#2fd4d4": "#c9ced6",
-  "#b6f05a": "#bdbdc4",
+  "#2fd4d4": "#626262",
+  "#b6f05a": "#bfbfbf",
   "#ff8f6b": "#fafafa",
-  "#d4d4d8": "#8b8b93",
+  "#d4d4d8": "#8e8e8e",
   "#c89a86": "#fafafa",
-  "#9cb8d4": "#a1a1aa",
-  "#aba3cc": "#75757e",
-  "#9fb49c": "#bdbdc4",
+  "#9cb8d4": "#a4a4a4",
+  "#aba3cc": "#787878",
+  "#9fb49c": "#bfbfbf",
   "#cbb591": "#e8e3d9",
-  "#c79aa8": "#dcdce0",
-  "#8e949c": "#8b8b93",
+  "#c79aa8": "#dddddd",
+  "#8e949c": "#8e8e8e",
   "#e4ded4": "#e8e3d9",
+  "#a1a1aa": "#a4a4a4",
+  "#75757e": "#787878",
+  "#dcdce0": "#dddddd",
+  "#bdbdc4": "#bfbfbf",
+  "#8b8b93": "#8e8e8e",
+  "#c9ced6": "#626262",
 };
 
 /** Anything carrying voice configs: live state, a saved chat, a cast. */
@@ -168,7 +174,7 @@ export function agentAccent(agent: string, config?: VoiceSource | null): string 
 /** Dark or light ink for text sitting on a solid voice color. */
 export function inkOn(hex: string): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex);
-  if (!m) return "#0b0b0c";
+  if (!m) return "#0b0b0b";
   const n = parseInt(m[1], 16);
   const lin = (c: number) => {
     const v = c / 255;
@@ -178,7 +184,7 @@ export function inkOn(hex: string): string {
     0.2126 * lin((n >> 16) & 255) +
     0.7152 * lin((n >> 8) & 255) +
     0.0722 * lin(n & 255);
-  return L > 0.22 ? "#0b0b0c" : "#f5f5f5";
+  return L > 0.22 ? "#0b0b0b" : "#f5f5f5";
 }
 
 export function activeAgentIds(config: InnerState | null): string[] {
