@@ -101,7 +101,12 @@ export function useConversationApp() {
   const onStreamError = useCallback(
     (msg: string) => {
       log.error(msg, "stream");
-      toast.show(msg, 9000);
+      // Engines prefix errors with the slot id ("ai1 error: …"); show the
+      // voice's name instead.
+      const shown = msg.replace(/^(ai[123]) error:/, (_, id: string) =>
+        `${agentLabel(id, configRef.current)}:`,
+      );
+      toast.show(shown, 9000);
     },
     [toast],
   );
