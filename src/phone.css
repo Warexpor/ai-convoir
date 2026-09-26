@@ -469,3 +469,8 @@
 .app.is-phone .settings-foot {
   display: none;
 }
+
+/* Four background presets: a 2×2 grid, not three plus an orphan. */
+.is-phone .bg-presets {
+  grid-template-columns: repeat(2, 1fr);
+}

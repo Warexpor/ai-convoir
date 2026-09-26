@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
+import { PHONE_QUERY, useMedia } from "../hooks/useMedia";
 import type { InnerState } from "../types";
 import { type FxLevel, type StreamMode } from "../lib/config";
 import ProviderKeys from "./ProviderKeys";
@@ -297,6 +298,7 @@ export default function SettingsModal({
   useFocusTrap(open, cardRef);
   useBackClose(open, onClose);
 
+  const isPhone = useMedia(PHONE_QUERY);
   // Draft fields that would be noisy to commit per keystroke.
   const [delay, setDelay] = useState(config?.delay_ms ?? 800);
   const [turns, setTurns] = useState(String(config?.max_turns ?? 40));
@@ -493,7 +495,10 @@ export default function SettingsModal({
                     ]}
                   />
                 </Row>
-                <Row title="Interface size" hint="Also Ctrl + / Ctrl − anywhere.">
+                <Row
+                  title="Interface size"
+                  hint={isPhone ? undefined : "Also Ctrl + / Ctrl − anywhere."}
+                >
                   <Seg
                     size="sm"
                     label="Interface size"
