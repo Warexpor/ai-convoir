@@ -331,7 +331,7 @@ async function runOneTurn(): Promise<boolean> {
     emit("stream-abort", { agent: speaking, turn });
     // fetch() rejects with a bare TypeError ("Failed to fetch") when offline.
     const why =
-      e instanceof TypeError
+      e instanceof TypeError && /fetch|network|load failed/i.test(e.message)
         ? "Couldn’t reach the provider. Check your connection, then Retry."
         : e instanceof Error
           ? e.message
