@@ -5,6 +5,7 @@ import type { Cast } from "../lib/casts";
 import { agentAccent, agentConfig, type VoiceSource } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
 import RelativeTime from "./RelativeTime";
+import Collapse from "./Collapse";
 import {
   SlashMark,
   IconChevron,
@@ -79,6 +80,23 @@ function ChatRow({
 }) {
   const [confirming, setConfirming] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  // Fold the row away, then drop it for real.
+  const remove = () => {
+    const el = rowRef.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      onDelete(chat.id);
+      return;
+    }
+    el.style.height = `${el.offsetHeight}px`;
+    setLeaving(true);
+    requestAnimationFrame(() => {
+      el.style.height = "0px";
+    });
+    window.setTimeout(() => onDelete(chat.id), 280);
+  };
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -92,7 +110,11 @@ function ChatRow({
   };
 
   return (
-    <div className={`chat-row ${active ? "active" : ""}`}>
+    <div
+      ref={rowRef}
+      className={`chat-row${active ? " active" : ""}${leaving ? " is-leaving" : ""}`}
+      inert={leaving}
+    >
       {renaming ? (
         <div className="chat-item is-renaming">
           <input
@@ -139,7 +161,7 @@ function ChatRow({
             onClick={(e) => {
               e.stopPropagation();
               setConfirming(false);
-              onDelete(chat.id);
+              remove();
             }}
           >
             Delete
@@ -391,7 +413,7 @@ export default function ChatRail({
                   )}
                 </div>
 
-                {isOpen && (
+                <Collapse open={isOpen}>
                   <div className="cast-group-list">
                     {list.length === 0 ? (
                       <button
@@ -414,7 +436,7 @@ export default function ChatRail({
                       ))
                     )}
                   </div>
-                )}
+                </Collapse>
               </section>
             );
           })}
@@ -433,7 +455,7 @@ export default function ChatRail({
                   <span className="cast-group-count">{unsorted.length}</span>
                 </button>
               </div>
-              {(q || !collapsed.has(UNSORTED)) && (
+              <Collapse open={!!q || !collapsed.has(UNSORTED)}>
                 <div className="cast-group-list">
                   {unsorted.map((c) => (
                     <ChatRow
@@ -446,7 +468,7 @@ export default function ChatRail({
                     />
                   ))}
                 </div>
-              )}
+              </Collapse>
             </section>
           )}
 

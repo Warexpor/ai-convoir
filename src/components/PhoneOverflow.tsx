@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconExport, IconKey, IconMoreVert, IconNew, IconSave, IconSliders } from "./Marks";
 import { useBackClose } from "../hooks/useBackClose";
+import { usePresence } from "../hooks/usePresence";
 
 interface Props {
   needsKey: boolean;
@@ -21,6 +22,7 @@ export default function PhoneOverflow({
   onExport,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const shown = usePresence(open, 160);
   const ref = useRef<HTMLDivElement>(null);
   useBackClose(open, () => setOpen(false));
 
@@ -61,8 +63,8 @@ export default function PhoneOverflow({
       >
         <IconMoreVert />
       </button>
-      {open && (
-        <div className="menu overflow-menu" role="menu">
+      {shown && (
+        <div className={`menu overflow-menu${open ? "" : " is-leaving"}`} role="menu">
           {item("New thread", <IconNew />, onNew)}
           {item("Save thread", <IconSave />, onSave, !hasMessages)}
           {item("Share / export", <IconExport />, onExport, !hasMessages)}

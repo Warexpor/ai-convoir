@@ -361,15 +361,6 @@ function App() {
           <div className="topbar-actions">
             <button
               type="button"
-              className="btn btn-icon btn-kbd"
-              onClick={() => setHelpOpen(true)}
-              title="Shortcuts (?)"
-              aria-label="Keyboard shortcuts"
-            >
-              ?
-            </button>
-            <button
-              type="button"
               className={`btn btn-icon${needsKey ? " needs-key" : ""}`}
               onClick={() => (prefsOpen ? setPrefsOpen(false) : openPrefs(needsKey ? "access" : undefined))}
               title="Settings (,)"

@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { usePresence } from "../hooks/usePresence";
 import {
   IconExport,
   IconHint,
@@ -83,6 +84,7 @@ function ControlBar({
   const ctxLevel = tokenRatio > 0.8 ? "hot" : tokenRatio > 0.6 ? "warm" : "cool";
 
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreShown = usePresence(moreOpen, 160);
   const [queued, setQueued] = useState(false);
   useEffect(() => {
     if (!hint.trim()) setQueued(false);
@@ -324,10 +326,10 @@ function ControlBar({
             </button>
           )}
 
-          {!(compact && status === "Idle") && (
+          {status !== "Idle" && (
           <button
             type="button"
-            className="btn btn-icon btn-stop"
+            className="btn btn-icon btn-stop is-popping"
             onClick={onStop}
             disabled={status === "Idle"}
             title="Stop generation, keep chat (Esc)"
@@ -350,8 +352,8 @@ function ControlBar({
             >
               <IconMore />
             </button>
-            {moreOpen && (
-              <div className="menu" role="menu">
+            {moreShown && (
+              <div className={`menu${moreOpen ? "" : " is-leaving"}`} role="menu">
                 {menuItem("Save thread", <IconSave />, onSaveChat, "Ctrl+S", !hasMessages)}
                 {menuItem("Export markdown", <IconExport />, onExport, "Ctrl+E", !hasMessages)}
                 {menuItem("New thread", <IconNew />, onReset, "Ctrl+Shift+R")}

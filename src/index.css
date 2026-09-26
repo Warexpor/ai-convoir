@@ -553,6 +553,15 @@ body,
 .btn-block {
   width: 100%;
 }
+.btn-stop.is-popping {
+  animation: pop-in 0.4s var(--spring) both;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
 .btn-stop:not(:disabled) {
   color: var(--danger);
   border-color: rgba(255, 95, 87, 0.35);
@@ -965,6 +974,15 @@ body,
   transition:
     background var(--dur-fast),
     transform 0.45s var(--spring);
+}
+.chat-row.is-leaving {
+  overflow: hidden;
+  opacity: 0;
+  transform: translate3d(-14px, 0, 0);
+  transition:
+    height 0.28s var(--ease-out),
+    opacity 0.18s var(--ease-soft),
+    transform 0.28s var(--ease-out);
 }
 .chat-row:active {
   transform: scale(0.98);
@@ -1689,6 +1707,16 @@ body,
   from {
     opacity: 0;
     transform: translate3d(0, 8px, 0) scale(0.88);
+  }
+}
+.menu.is-leaving {
+  pointer-events: none;
+  animation: menu-out 0.16s var(--ease-soft) both;
+}
+@keyframes menu-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.94);
   }
 }
 .menu-item {
@@ -2858,10 +2886,6 @@ body,
 .cast-group-toggle .icon {
   transition: transform 0.5s var(--spring);
 }
-.cast-group-list {
-  animation: unfold 0.45s var(--spring-soft) both;
-  transform-origin: top;
-}
 .cast-group-toggle[aria-expanded="true"] .icon {
   transform: rotate(90deg);
 }
@@ -3859,9 +3883,26 @@ body,
 .shortcut-list .shortcut-row {
   padding: 11px 0;
 }
+/* Missing key: a quiet dot on the button, not a ring around it. */
 .btn-icon.needs-key {
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: var(--chip-lip), 0 0 0 3px rgba(255, 255, 255, 0.07);
+  position: relative;
+}
+.btn-icon.needs-key::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--spark);
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: dot-in 0.5s var(--spring) both;
+}
+@keyframes dot-in {
+  from {
+    transform: scale(0);
+  }
 }
 
 @media (max-width: 720px) {
