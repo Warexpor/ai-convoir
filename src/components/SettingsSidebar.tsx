@@ -6,14 +6,11 @@ import type {
   ReasoningEffort,
   ResponseLength,
 } from "../types";
-import {
-  MUSE_SPARK_13_CONTRIBUTOR,
-  OPENCODE_GO_BASE,
-  SLOT_COLORS,
-  VOICE_PALETTE,
-  agentAccent,
-} from "../types";
+import { SLOT_COLORS, VOICE_PALETTE, agentAccent } from "../types";
 import { defaultConfig } from "../lib/config";
+import { fetchModels } from "../lib/api";
+import { PROVIDERS, baseUrlFor, getProvider } from "../lib/providers";
+import { getProviderKey, onProviderKeysChanged } from "../lib/secrets";
 import { IconChevron } from "./Marks";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
@@ -134,19 +131,123 @@ function LookEditor({
   );
 }
 
-function withSharedKey(cfg: InnerState, key: string): InnerState {
-  const apply = (c: AiConfig): AiConfig => ({
-    ...c,
-    api_key: key,
-    api_base_url: OPENCODE_GO_BASE,
-    model: MUSE_SPARK_13_CONTRIBUTOR,
-  });
-  return {
-    ...cfg,
-    ai1_config: apply(cfg.ai1_config),
-    ai2_config: apply(cfg.ai2_config),
-    ai3_config: apply(cfg.ai3_config),
-  };
+/** Live model ids per provider+base, fetched once per session. */
+const modelCache = new Map<string, Promise<string[]>>();
+
+function useProviderModels(provider: string, base: string): {
+  models: string[];
+  live: boolean;
+} {
+  const def = getProvider(provider);
+  const fallback = def?.models ?? [];
+  const [state, setState] = useState<{ key: string; ids: string[] } | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => onProviderKeysChanged(() => setTick((n) => n + 1)), []);
+  const apiKey = getProviderKey(provider);
+  const cacheKey = `${provider}|${base}|${apiKey ? "k" : ""}`;
+  useEffect(() => {
+    if (!def || !base || (!apiKey && !def.keyOptional)) return;
+    let alive = true;
+    let p = modelCache.get(cacheKey);
+    if (!p) {
+      p = fetchModels({ baseUrl: base, apiKey });
+      modelCache.set(cacheKey, p);
+      p.catch(() => modelCache.delete(cacheKey));
+    }
+    p.then(
+      (ids) => alive && setState({ key: cacheKey, ids }),
+      () => {},
+    );
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey, tick]);
+  const ids = state?.key === cacheKey ? state.ids : [];
+  return ids.length
+    ? { models: ids, live: true }
+    : { models: fallback, live: false };
+}
+
+/** Provider + model for one voice. Keys are set once per provider in Settings. */
+function ModelPicker({
+  slot,
+  config,
+  onChange,
+}: {
+  slot: string;
+  config: AiConfig;
+  onChange: (c: AiConfig) => void;
+}) {
+  const provider = config.provider || "opencode_go";
+  const def = getProvider(provider);
+  const base = baseUrlFor(provider, config.api_base_url);
+  const { models, live } = useProviderModels(provider, base);
+  const listId = `models-${slot}`;
+  const needsKey = def && !def.keyOptional && !getProviderKey(provider);
+
+  return (
+    <>
+      <div className="field">
+        <label htmlFor={`prov-${slot}`}>Provider</label>
+        <select
+          id={`prov-${slot}`}
+          value={provider}
+          onChange={(e) => {
+            const next = getProvider(e.target.value);
+            if (!next) return;
+            onChange({
+              ...config,
+              provider: next.id,
+              api_base_url: next.id === "custom" ? config.api_base_url : next.baseUrl,
+              model: next.models[0] ?? "",
+            });
+          }}
+        >
+          {PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {provider === "custom" && (
+        <div className="field">
+          <label htmlFor={`base-${slot}`}>Base URL</label>
+          <input
+            id={`base-${slot}`}
+            value={config.api_base_url}
+            spellCheck={false}
+            placeholder="https://host/v1"
+            onChange={(e) => onChange({ ...config, api_base_url: e.target.value })}
+          />
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor={`model-${slot}`}>Model</label>
+        <input
+          id={`model-${slot}`}
+          list={listId}
+          value={config.model}
+          spellCheck={false}
+          placeholder={def?.models[0] || "model id"}
+          onChange={(e) => onChange({ ...config, model: e.target.value })}
+        />
+        <datalist id={listId}>
+          {models.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
+        <p className="field-hint">
+          {needsKey
+            ? `Add your ${def?.name} key in Settings → Providers.`
+            : live
+              ? `${models.length} models available. Type to filter.`
+              : "Type any model id this provider serves."}
+        </p>
+      </div>
+    </>
+  );
 }
 
 function CharCard({
@@ -217,6 +318,7 @@ function CharCard({
               placeholder="Voice, mood, what they know…"
             />
           </div>
+          <ModelPicker slot={slot} config={config} onChange={onChange} />
           <button
             type="button"
             className="link-btn"
@@ -286,26 +388,11 @@ export default function SettingsSidebar({
     return () => {
       const cfg = localRef.current;
       const n = cfg.bot_count >= 3 ? 3 : 2;
-      const key =
-        cfg.ai1_config.api_key ||
-        cfg.ai2_config.api_key ||
-        cfg.ai3_config.api_key ||
-        "";
-      onSave(
-        withSharedKey(
-          { ...cfg, bot_count: n, max_turns: Math.max(1, cfg.max_turns) },
-          key,
-        ),
-      );
+      onSave({ ...cfg, bot_count: n, max_turns: Math.max(1, cfg.max_turns) });
     };
   }, [open, onSave, ready]);
 
   const botCount = local.bot_count >= 3 ? 3 : 2;
-  const sharedKey =
-    local.ai1_config.api_key ||
-    local.ai2_config.api_key ||
-    local.ai3_config.api_key ||
-    "";
   const dirty =
     !!config &&
     JSON.stringify({
@@ -359,16 +446,11 @@ export default function SettingsSidebar({
               return;
             }
             const n = botCount;
-            onSave(
-              withSharedKey(
-                {
-                  ...local,
-                  bot_count: n,
-                  max_turns: Math.max(1, local.max_turns),
-                },
-                sharedKey,
-              ),
-            );
+            onSave({
+              ...local,
+              bot_count: n,
+              max_turns: Math.max(1, local.max_turns),
+            });
             onClose();
           }}
         >
@@ -447,16 +529,11 @@ export default function SettingsSidebar({
           className="btn btn-go btn-block"
           disabled={!dirty && !saved}
           onClick={() => {
-            onSave(
-              withSharedKey(
-                {
-                  ...local,
-                  bot_count: botCount,
-                  max_turns: Math.max(1, local.max_turns),
-                },
-                sharedKey,
-              ),
-            );
+            onSave({
+              ...local,
+              bot_count: botCount,
+              max_turns: Math.max(1, local.max_turns),
+            });
             setSaved(true);
             window.setTimeout(() => setSaved(false), 1400);
           }}

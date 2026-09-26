@@ -62,6 +62,10 @@ pub struct AiConfig {
     /// UI-only: avatar icon ("" = initials, "g:<glyph>", or literal chars).
     #[serde(default)]
     pub icon: String,
+    /// Provider id from the frontend registry (e.g. "openai", "opencode_go").
+    /// Informational: routing keys off `api_base_url`; empty = legacy config.
+    #[serde(default)]
+    pub provider: String,
 }
 
 fn default_agent_name() -> String {
@@ -81,6 +85,7 @@ fn default_agent(name: &str, system_prompt: &str) -> AiConfig {
         response_length: ResponseLength::Normal,
         color: String::new(),
         icon: String::new(),
+        provider: "opencode_go".into(),
     }
 }
 

@@ -11,6 +11,7 @@ import {
   agentLabel,
 } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
+import { getProvider } from "../lib/providers";
 
 interface Props {
   messages: Message[];
@@ -70,6 +71,20 @@ function msgKey(msg: Message, idx: number) {
 
 function nearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_PX;
+}
+
+/** "OpenAI · gpt-5 / Anthropic · claude-sonnet-5" for the voices on stage. */
+function lineupModels(cfg: InnerState | null): string {
+  if (!cfg) return "";
+  const voices = [
+    cfg.ai1_config,
+    cfg.ai2_config,
+    ...(cfg.bot_count >= 3 ? [cfg.ai3_config] : []),
+  ];
+  const labels = voices.map(
+    (v) => `${getProvider(v.provider)?.name ?? "Custom"} · ${v.model || "no model"}`,
+  );
+  return [...new Set(labels)].join(" / ");
 }
 
 function ChatView({
@@ -377,9 +392,7 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-hero">
-          <p className="kicker">
-            OpenCode Go · Muse Spark 1.3
-          </p>
+          <p className="kicker">{lineupModels(config ?? null)}</p>
           <h1 className="empty-title">
             Set the scene.
             <span>They&rsquo;ll take it from there.</span>

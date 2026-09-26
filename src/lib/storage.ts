@@ -145,9 +145,10 @@ export function saveChatSnapshot(
     max_turns: config.max_turns,
     delay_ms: config.delay_ms,
     seed_prompt: config.seed_prompt || "",
-    ai1_config: config.ai1_config,
-    ai2_config: config.ai2_config,
-    ai3_config: config.ai3_config,
+    // Keys live in the provider key store; never write them into chat history.
+    ai1_config: { ...config.ai1_config, api_key: "" },
+    ai2_config: { ...config.ai2_config, api_key: "" },
+    ai3_config: { ...config.ai3_config, api_key: "" },
     messages: cleanMsgs,
     turn_count: turnCount,
     cast_id: castId !== undefined ? castId : (prev?.cast_id ?? null),
