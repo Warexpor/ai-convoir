@@ -1700,6 +1700,11 @@ body,
   min-width: 250px;
   padding: 5px;
   border-radius: 18px;
+  /* Menus usually open from inside another glass surface, whose blur
+     they can't see past, so they carry their own near-solid fill. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 45%),
+    rgba(20, 20, 20, 0.94);
   animation: menu-in 0.45s var(--spring) both;
   transform-origin: bottom right;
 }
@@ -3230,10 +3235,32 @@ body,
   justify-content: center;
   padding: 24px;
   background: rgba(0, 0, 0, 0.55);
-  animation: overlay-in var(--dur-med) var(--ease-soft) both;
+  /* Fade the tint, never the layer: opacity on a parent makes it a
+     backdrop root, and the card's blur would then see nothing behind it. */
+  animation: scrim-in var(--dur-med) var(--ease-soft) both;
 }
 .modal-backdrop.is-leaving {
-  animation: overlay-out var(--dur-fast) var(--ease-soft) both;
+  pointer-events: none;
+  animation: scrim-out 0.2s var(--ease-soft) both;
+}
+.modal-backdrop.is-leaving .modal-card {
+  animation: modal-out 0.2s var(--ease-soft) both;
+}
+@keyframes scrim-in {
+  from {
+    background-color: rgba(0, 0, 0, 0);
+  }
+}
+@keyframes scrim-out {
+  to {
+    background-color: rgba(0, 0, 0, 0);
+  }
+}
+@keyframes modal-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.97);
+  }
 }
 @keyframes overlay-in {
   from {
