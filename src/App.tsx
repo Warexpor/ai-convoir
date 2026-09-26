@@ -11,14 +11,17 @@ import {
   PREF_KEYS,
   missingApiKeys,
   readBoolPref,
+  readFx,
   readZoom,
   writeBoolPref,
+  writeFx,
   writeZoom,
+  type FxLevel,
 } from "./lib/config";
 import { IconRail, IconVoices, SlashMark } from "./components/Marks";
 import StageField from "./components/StageField";
 import CastStrip from "./components/CastStrip";
-import { agentAccent, agentLabel, nextAgentId } from "./types";
+import { activeAgentIds, agentAccent, agentLabel, nextAgentId } from "./types";
 
 function App() {
   const app = useConversationApp();
@@ -47,6 +50,8 @@ function App() {
     readBoolPref(PREF_KEYS.showThoughts, true),
   );
   const [zoom, setZoom] = useState(readZoom);
+  const [fx, setFx] = useState<FxLevel>(readFx);
+  useEffect(() => writeFx(fx), [fx]);
   const [zoomMsg, setZoomMsg] = useState("");
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -129,6 +134,13 @@ function App() {
   const needsKey = !config || missingApiKeys(config);
   const nextName = config && upNextId ? agentLabel(upNextId, config) : null;
   const hasMessages = stream.messages.length > 0;
+  const voiceIds = activeAgentIds(config);
+  const stageColors = useMemo(
+    () => voiceIds.map((id) => agentAccent(id, config)),
+    [config],
+  );
+  const stageFocus =
+    hasMessages && upNextId ? voiceIds.indexOf(upNextId) : -1;
   const activeTitle =
     (hasMessages && chats.find((c) => c.id === activeChatId)?.title) ||
     (hasMessages ? "Untitled thread" : "New thread");
@@ -143,9 +155,11 @@ function App() {
       ]
         .filter(Boolean)
         .join(" ")}
+      data-fx={fx}
+      data-running={stream.status === "Running" ? "" : undefined}
       style={{ zoom }}
     >
-      <StageField />
+      <StageField colors={stageColors} focus={stageFocus} fx={fx} />
       <a className="skip-link" href="#main">
         Skip to transcript
       </a>
@@ -323,6 +337,8 @@ function App() {
         onClose={() => setSettingsOpen(false)}
         showThoughtsUi={showThoughtsUi}
         onShowThoughtsUiChange={setShowThoughtsUi}
+        fx={fx}
+        onFxChange={setFx}
       />
 
       <ShortcutsModal open={helpOpen} onClose={() => setHelpOpen(false)} />

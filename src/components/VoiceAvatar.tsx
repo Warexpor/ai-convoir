@@ -58,6 +58,98 @@ export const GLYPHS: Record<string, ReactNode> = {
     </>
   ),
   diamond: <path d="M8 1.4 14.3 8 8 14.6 1.7 8 8 1.4Z" />,
+  orbit: (
+    <>
+      <circle cx="8" cy="8" r="2.7" />
+      <ellipse
+        cx="8"
+        cy="8"
+        rx="6.3"
+        ry="2.3"
+        transform="rotate(-28 8 8)"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+      />
+    </>
+  ),
+  mask: (
+    <>
+      <path d="M2.4 3.2c3.7 1.3 7.5 1.3 11.2 0v4.4c0 3.3-2.5 6-5.6 6s-5.6-2.7-5.6-6V3.2Z" />
+      <ellipse cx="5.8" cy="6.9" rx="1.25" ry=".85" fill="var(--glyph-cut)" />
+      <ellipse cx="10.2" cy="6.9" rx="1.25" ry=".85" fill="var(--glyph-cut)" />
+      <path
+        d="M5.9 9.9c1.3 1 2.9 1 4.2 0"
+        fill="none"
+        stroke="var(--glyph-cut)"
+        strokeWidth="1.1"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  feather: (
+    <>
+      <path d="M13.8 2.2C8.4 2.3 4.6 5.8 4.2 11.2l-1.8 2.2.8.7 1.8-2.2c5.5-.1 8.7-3.8 8.8-9.7Z" />
+      <path
+        d="M11.9 4.2 5.4 10.9"
+        fill="none"
+        stroke="var(--glyph-cut)"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
+    </>
+  ),
+  note: (
+    <>
+      <path
+        d="M5.7 11.3V4.2l7.4-1.9v7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <ellipse cx="4" cy="11.6" rx="2.1" ry="1.8" />
+      <ellipse cx="11.4" cy="10.1" rx="2.1" ry="1.8" />
+    </>
+  ),
+  cloud: (
+    <path d="M4.5 12.8a3.2 3.2 0 0 1-.4-6.4 4.3 4.3 0 0 1 8.3-.9 3.3 3.3 0 0 1-.3 7.3H4.5Z" />
+  ),
+  flower: (
+    <>
+      <circle cx="8" cy="4.6" r="2.5" />
+      <circle cx="11.2" cy="6.9" r="2.5" />
+      <circle cx="10" cy="10.7" r="2.5" />
+      <circle cx="6" cy="10.7" r="2.5" />
+      <circle cx="4.8" cy="6.9" r="2.5" />
+      <circle cx="8" cy="8" r="1.5" fill="var(--glyph-cut)" />
+    </>
+  ),
+  cube: (
+    <>
+      <path d="M8 1.7 13.5 4.8v6.4L8 14.3l-5.5-3.1V4.8L8 1.7Z" />
+      <path
+        d="M2.9 5.1 8 8l5.1-2.9M8 8v5.8"
+        fill="none"
+        stroke="var(--glyph-cut)"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+  comet: (
+    <>
+      <circle cx="10.4" cy="5.6" r="3" />
+      <path
+        d="M8 8 2.2 13.8M6.4 5.6 3.2 8.8M10.4 9.6l-3.2 3.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity=".55"
+      />
+    </>
+  ),
 };
 
 export const GLYPH_IDS = Object.keys(GLYPHS);

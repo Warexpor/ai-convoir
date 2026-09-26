@@ -14,6 +14,7 @@ import {
   IconStop,
 } from "./Marks";
 import type { AppStatus, ConversationMode } from "../types";
+import Seg from "./Seg";
 
 interface Props {
   status: AppStatus;
@@ -129,17 +130,18 @@ function ControlBar({
   );
 
   const who = nextName ?? "the next voice";
+  const goLabel = running ? "Pause" : status === "Paused" ? "Resume" : "Run";
 
   return (
     <div
-      className={`dock${running ? " is-running" : ""}`}
+      className={`dock glass${running ? " is-running" : ""}`}
       role="toolbar"
       aria-label="Conversation controls"
       style={nextAccent ? { ["--voice" as string]: nextAccent } : undefined}
     >
       {!isStep && (
         <span className="dock-progress" aria-hidden>
-          <i style={{ width: `${progress}%` }} />
+          <i style={{ transform: `scaleX(${progress / 100})` }} />
         </span>
       )}
 
@@ -185,26 +187,15 @@ function ControlBar({
 
       <div className="dock-row">
         <div className="dock-lead">
-          <div className="seg" role="group" aria-label="Run mode">
-            <button
-              type="button"
-              className={isStep ? "on" : ""}
-              aria-pressed={isStep}
-              title="One reply at a time"
-              onClick={() => onModeChange("step")}
-            >
-              Step
-            </button>
-            <button
-              type="button"
-              className={!isStep ? "on" : ""}
-              aria-pressed={!isStep}
-              title="Keep talking until you pause"
-              onClick={() => onModeChange("auto")}
-            >
-              Auto
-            </button>
-          </div>
+          <Seg
+            label="Run mode"
+            value={mode}
+            onChange={onModeChange}
+            options={[
+              { value: "step", label: "Step", title: "One reply at a time" },
+              { value: "auto", label: "Auto", title: "Keep talking until you pause" },
+            ]}
+          />
 
           <span
             className={`status-pill is-${status.toLowerCase()}`}
@@ -226,7 +217,7 @@ function ControlBar({
               title="How full the conversation context is"
             >
               <span className="ctx-track" aria-hidden>
-                <i style={{ width: `${Math.min(tokenPct, 100)}%` }} />
+                <i style={{ transform: `scaleX(${Math.min(tokenPct, 100) / 100})` }} />
               </span>
               {tokenPct}% ctx
             </span>
@@ -297,8 +288,14 @@ function ControlBar({
             >
               <IconNextVoice />
               <span className="btn-go-label">
-                {running ? "Writing" : "Next"}
-                {nextName && <em>{nextName}</em>}
+                <span key={running ? "w" : "n"} className="swap">
+                  {running ? "Writing" : "Next"}
+                </span>
+                {nextName && (
+                  <em key={nextName} className="swap">
+                    {nextName}
+                  </em>
+                )}
               </span>
             </button>
           ) : (
@@ -308,9 +305,14 @@ function ControlBar({
               onClick={onToggle}
               title="Start / pause (Space)"
             >
-              {running ? <IconPause /> : <IconPlay />}
+              <span className={`go-icon${running ? " is-alt" : ""}`} aria-hidden>
+                <IconPlay />
+                <IconPause />
+              </span>
               <span className="btn-go-label">
-                {running ? "Pause" : status === "Paused" ? "Resume" : "Run"}
+                <span key={goLabel} className="swap">
+                  {goLabel}
+                </span>
               </span>
             </button>
           )}

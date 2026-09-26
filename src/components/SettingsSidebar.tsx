@@ -14,10 +14,11 @@ import {
   agentAccent,
 } from "../types";
 import { fetchModels } from "../lib/api";
-import { defaultConfig } from "../lib/config";
+import { defaultConfig, type FxLevel } from "../lib/config";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
 import { IconChevron } from "./Marks";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
+import Seg from "./Seg";
 
 interface Props {
   open: boolean;
@@ -29,6 +30,8 @@ interface Props {
   /** Active cast (group) name; null when the thread has no cast. */
   castName?: string | null;
   onRenameCast?: (name: string) => void;
+  fx: FxLevel;
+  onFxChange: (v: FxLevel) => void;
 }
 
 /** Color + avatar picker for one voice. */
@@ -232,55 +235,28 @@ function CharCard({
             <>
               <div className="field">
                 <label>Thinking</label>
-                <div className="seg" role="group" aria-label="Thinking effort">
-                  {(
+                <Seg
+                  label="Thinking effort"
+                  value={config.reasoning_effort || "none"}
+                  onChange={(r) => onChange({ ...config, reasoning_effort: r })}
+                  options={(
                     ["none", "low", "medium", "high"] as ReasoningEffort[]
-                  ).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      className={
-                        (config.reasoning_effort || "none") === r ? "on" : ""
-                      }
-                      aria-pressed={(config.reasoning_effort || "none") === r}
-                      onClick={() =>
-                        onChange({ ...config, reasoning_effort: r })
-                      }
-                    >
-                      {r === "none" ? "off" : r}
-                    </button>
-                  ))}
-                </div>
+                  ).map((r) => ({ value: r, label: r === "none" ? "off" : r }))}
+                />
               </div>
               <div className="field">
                 <label>Reply length</label>
-                <div className="seg" role="group" aria-label="Reply length">
-                  {(
-                    [
-                      "brief",
-                      "small",
-                      "normal",
-                      "long",
-                      "very_long",
-                    ] as ResponseLength[]
-                  ).map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      className={
-                        (config.response_length || "normal") === r ? "on" : ""
-                      }
-                      aria-pressed={
-                        (config.response_length || "normal") === r
-                      }
-                      onClick={() =>
-                        onChange({ ...config, response_length: r })
-                      }
-                    >
-                      {r === "very_long" ? "very long" : r}
-                    </button>
-                  ))}
-                </div>
+                <Seg
+                  label="Reply length"
+                  value={config.response_length || "normal"}
+                  onChange={(r) => onChange({ ...config, response_length: r })}
+                  options={(
+                    ["brief", "small", "normal", "long", "very_long"] as ResponseLength[]
+                  ).map((r) => ({
+                    value: r,
+                    label: r === "very_long" ? "very long" : r,
+                  }))}
+                />
               </div>
             </>
           )}
@@ -299,6 +275,8 @@ export default function SettingsSidebar({
   onShowThoughtsUiChange,
   castName = null,
   onRenameCast,
+  fx,
+  onFxChange,
 }: Props) {
   const [castDraft, setCastDraft] = useState(castName ?? "");
   useEffect(() => setCastDraft(castName ?? ""), [castName]);
@@ -482,24 +460,16 @@ export default function SettingsSidebar({
         <section className="set-section">
         <h3 className="set-h">
           <span>02</span>Cast
-          <div className="seg seg-sm" role="group" aria-label="How many voices">
-            <button
-              type="button"
-              className={botCount === 2 ? "on" : ""}
-              aria-pressed={botCount === 2}
-              onClick={() => setLocal({ ...local, bot_count: 2 })}
-            >
-              2
-            </button>
-            <button
-              type="button"
-              className={botCount === 3 ? "on" : ""}
-              aria-pressed={botCount === 3}
-              onClick={() => setLocal({ ...local, bot_count: 3 })}
-            >
-              3
-            </button>
-          </div>
+          <Seg
+            size="sm"
+            label="How many voices"
+            value={botCount}
+            onChange={(n) => setLocal({ ...local, bot_count: n })}
+            options={[
+              { value: 2, label: "2" },
+              { value: 3, label: "3" },
+            ]}
+          />
         </h3>
         {castName !== null ? (
           <div className="field cast-name-field">
@@ -570,24 +540,35 @@ export default function SettingsSidebar({
             </div>
             <div className="field">
               <label>Show thinking</label>
-              <div className="seg" role="group" aria-label="Show thinking">
-                <button
-                  type="button"
-                  className={showThoughtsUi ? "on" : ""}
-                  aria-pressed={showThoughtsUi}
-                  onClick={() => onShowThoughtsUiChange(true)}
-                >
-                  Show
-                </button>
-                <button
-                  type="button"
-                  className={!showThoughtsUi ? "on" : ""}
-                  aria-pressed={!showThoughtsUi}
-                  onClick={() => onShowThoughtsUiChange(false)}
-                >
-                  Hide
-                </button>
-              </div>
+              <Seg
+                label="Show thinking"
+                value={showThoughtsUi ? "show" : "hide"}
+                onChange={(v) => onShowThoughtsUiChange(v === "show")}
+                options={[
+                  { value: "show", label: "Show" },
+                  { value: "hide", label: "Hide" },
+                ]}
+              />
+            </div>
+            <div className="field">
+              <label>Effects</label>
+              <Seg
+                label="Visual effects"
+                value={fx}
+                onChange={onFxChange}
+                options={[
+                  { value: "full", label: "Full", title: "Living background, glass everywhere" },
+                  { value: "balanced", label: "Balanced", title: "Background moves when the speaker changes" },
+                  { value: "lite", label: "Lite", title: "Still background, no blur — fastest" },
+                ]}
+              />
+              <p className="field-hint">
+                {fx === "full"
+                  ? "The background drifts constantly. Prettiest, hungriest."
+                  : fx === "balanced"
+                    ? "The background breathes when the speaker changes, then rests."
+                    : "No blur, no motion behind the text. Pick this if scrolling stutters."}
+              </p>
             </div>
             <div className="field">
               <label>Pause between turns · {local.delay_ms}ms</label>

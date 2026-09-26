@@ -8,7 +8,34 @@ export const PREF_KEYS = {
   railOpen: "ai-conversation-rail-open",
   showThoughts: "ai-conversation-show-thoughts",
   zoom: "ai-conversation-zoom",
+  fx: "ai-conversation-fx",
 } as const;
+
+/**
+ * Visual effects budget.
+ * - full: living background + glass everywhere
+ * - balanced: background breathes on speaker changes, then rests
+ * - lite: static background, no backdrop blur (weak GPUs / WebKitGTK)
+ */
+export type FxLevel = "full" | "balanced" | "lite";
+
+export function readFx(): FxLevel {
+  try {
+    const v = localStorage.getItem(PREF_KEYS.fx);
+    if (v === "full" || v === "balanced" || v === "lite") return v;
+  } catch {
+    /* */
+  }
+  return "balanced";
+}
+
+export function writeFx(v: FxLevel): void {
+  try {
+    localStorage.setItem(PREF_KEYS.fx, v);
+  } catch {
+    /* */
+  }
+}
 
 function defaultAgent(
   name: string,
