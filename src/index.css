@@ -248,6 +248,18 @@ body,
 
 /* ── layout ─────────────────────────────────────────────────── */
 
+/* Registered so the side columns can glide open and shut. */
+@property --rail-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+@property --settings-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 .app {
   --rail-w: 272px;
   --settings-w: 0px;
@@ -259,6 +271,9 @@ body,
   background: var(--bg);
   overflow: hidden;
   position: relative;
+  transition:
+    --rail-w 0.42s var(--ease-expo),
+    --settings-w 0.42s var(--ease-expo);
 }
 .app.rail-closed {
   --rail-w: 0px;
@@ -790,18 +805,20 @@ body,
   /* Translucent: the stage runs underneath the rail. */
   background: linear-gradient(90deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.06));
 }
-.app:not(.rail-closed) .rail-inner {
-  animation: rail-in 0.55s var(--ease-expo) both;
+.rail-inner {
+  transition:
+    opacity 0.3s var(--ease-soft),
+    transform 0.42s var(--ease-expo);
 }
-@keyframes rail-in {
-  from {
-    opacity: 0;
-    transform: translate3d(-18px, 0, 0);
-  }
+.app.rail-closed .rail-inner {
+  opacity: 0;
+  transform: translate3d(-18px, 0, 0);
+  transition-duration: 0.2s, 0.42s;
 }
 .app.rail-closed .rail {
   pointer-events: none;
   visibility: hidden;
+  transition: visibility 0s linear 0.42s;
 }
 .rail-inner {
   width: 272px;
@@ -2248,19 +2265,24 @@ body,
   background: linear-gradient(270deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.06));
   pointer-events: none;
   visibility: hidden;
+  transition: visibility 0s linear 0.42s;
 }
 .settings.is-open {
   pointer-events: auto;
   visibility: visible;
+  transition: none;
+}
+.settings-inner {
+  opacity: 0;
+  transform: translate3d(18px, 0, 0);
+  transition:
+    opacity 0.2s var(--ease-soft),
+    transform 0.42s var(--ease-expo);
 }
 .settings.is-open .settings-inner {
-  animation: settings-in 0.55s var(--ease-expo) both;
-}
-@keyframes settings-in {
-  from {
-    opacity: 0;
-    transform: translate3d(18px, 0, 0);
-  }
+  opacity: 1;
+  transform: none;
+  transition-duration: 0.3s, 0.42s;
 }
 .settings-inner {
   width: 400px;
