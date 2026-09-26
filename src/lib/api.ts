@@ -29,6 +29,20 @@ export function isTauri(): boolean {
   return isTauriRuntime();
 }
 
+/** Open a URL in the system browser; the app window must never navigate. */
+export async function openExternal(url: string) {
+  if (isTauri()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  window.open(url, "_blank", "noopener");
+}
+
 /** The Android/iOS app (Tauri in a mobile WebView), not a narrow desktop window. */
 export function isMobileApp(): boolean {
   return isTauriRuntime() && /Android|iPhone|iPad/i.test(navigator.userAgent);

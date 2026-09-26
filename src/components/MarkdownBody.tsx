@@ -2,10 +2,24 @@ import { memo, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { StreamMode } from "../lib/config";
+import { openExternal } from "../lib/api";
 
 const REMARK_PLUGINS = [remarkGfm];
 
 const MD_COMPONENTS = {
+  // A plain link would navigate the app's own window away from the chat
+  // (with no Back on desktop). Send web links to the system browser.
+  a: ({ href, children }: { href?: string; children?: ReactNode }) => (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        if (href && /^(https?:|mailto:)/i.test(href)) void openExternal(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
   table: ({ children }: { children?: ReactNode }) => (
     <div className="md-table-wrap">
       <table>{children}</table>

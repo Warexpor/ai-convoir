@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { InnerState } from "../types";
-import { fetchModels, isTauri } from "../lib/api";
+import { fetchModels, openExternal } from "../lib/api";
 import { PROVIDERS, type ProviderDef } from "../lib/providers";
 import Collapse from "./Collapse";
 import {
@@ -20,19 +20,6 @@ type CheckState =
   | { kind: "checking" }
   | { kind: "ok"; count: number }
   | { kind: "err"; msg: string };
-
-export async function openExternal(url: string) {
-  if (isTauri()) {
-    try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      await open(url);
-      return;
-    } catch {
-      /* fall through */
-    }
-  }
-  window.open(url, "_blank", "noopener");
-}
 
 /** Browser sign-in controls. Shared by token providers and OpenRouter. */
 function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
