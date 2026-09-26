@@ -3120,6 +3120,10 @@ body,
   padding: 7px 11px;
   border-bottom: 1px solid var(--line);
   text-align: left;
+  /* Wrap cells at spaces only; a narrow screen scrolls the table instead
+     of splitting "last" into "las / t". */
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .md-body th {
   font-weight: 600;
