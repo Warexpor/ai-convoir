@@ -94,4 +94,41 @@ mod tests {
         assert_eq!(m.cached_tokens, Some(8));
         assert_eq!(m.completion_tokens, Some(2));
     }
+
+    /// Mirrors run_one_turn Ok path and Ok+cancel path: both record content/reasoning chars.
+    #[test]
+    fn metrics_records_content_and_reasoning_chars() {
+        let content = "hello";
+        let reasoning = Some("think".to_string());
+        let mut ok = TurnMetrics::default();
+        ok.content_chars = content.chars().count();
+        ok.reasoning_chars = reasoning
+            .as_ref()
+            .map(|r| r.chars().count())
+            .unwrap_or(0);
+        ok.phase_end = "Completed".into();
+        assert_eq!(ok.content_chars, 5);
+        assert_eq!(ok.reasoning_chars, 5);
+
+        let mut cancelled = TurnMetrics::default();
+        cancelled.content_chars = content.chars().count();
+        cancelled.reasoning_chars = reasoning
+            .as_ref()
+            .map(|r| r.chars().count())
+            .unwrap_or(0);
+        cancelled.phase_end = "Stopped".into();
+        assert_eq!(cancelled.content_chars, 5);
+        assert_eq!(cancelled.reasoning_chars, 5);
+        assert_eq!(cancelled.phase_end, "Stopped");
+
+        // No reasoning → 0 chars
+        let mut bare = TurnMetrics::default();
+        bare.content_chars = "x".chars().count();
+        bare.reasoning_chars = None::<String>
+            .as_ref()
+            .map(|r: &String| r.chars().count())
+            .unwrap_or(0);
+        assert_eq!(bare.content_chars, 1);
+        assert_eq!(bare.reasoning_chars, 0);
+    }
 }

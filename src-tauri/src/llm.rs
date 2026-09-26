@@ -357,7 +357,15 @@ fn extract_responses_reasoning(data: &Value) -> Option<String> {
             if item.get("type").and_then(|t| t.as_str()) != Some("reasoning") {
                 continue;
             }
+            // Mirror extract_responses_output: summary and content parts.
             if let Some(parts) = item.get("summary").and_then(|c| c.as_array()) {
+                for part in parts {
+                    if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
+                        reasoning.push_str(t);
+                    }
+                }
+            }
+            if let Some(parts) = item.get("content").and_then(|c| c.as_array()) {
                 for part in parts {
                     if let Some(t) = part.get("text").and_then(|x| x.as_str()) {
                         reasoning.push_str(t);
@@ -370,6 +378,18 @@ fn extract_responses_reasoning(data: &Value) -> Option<String> {
         None
     } else {
         Some(reasoning)
+    }
+}
+
+/// Promote reasoning-only SSE into the content reply buffer.
+/// Returns true when promotion happened — caller should emit a content chunk
+/// so the FE matches non-stream fallback (which always emits content).
+pub(crate) fn promote_reasoning_only(full: &mut String, full_reasoning: &str) -> bool {
+    if full.is_empty() && !full_reasoning.is_empty() {
+        *full = full_reasoning.to_string();
+        true
+    } else {
+        false
     }
 }
 
@@ -621,8 +641,9 @@ async fn stream_responses(
         return Err(STREAM_ABORTED.into());
     }
 
-    if full.is_empty() && !full_reasoning.is_empty() {
-        full = full_reasoning.clone();
+    if promote_reasoning_only(&mut full, &full_reasoning) {
+        // Parity with empty-SSE / JSON fallback: FE gets a content chunk too.
+        emit_chunk(app_handle, speaking_agent, turn, "content", &full);
     }
 
     // Empty SSE: try parsing a collapsed JSON body, then non-stream Responses fallback.
@@ -1041,8 +1062,9 @@ async fn stream_chat_sse(
     }
 
     // Reasoning-only stream (no content deltas) — treat reasoning as the reply.
-    if full.is_empty() && !full_reasoning.is_empty() {
-        full = full_reasoning.clone();
+    if promote_reasoning_only(&mut full, &full_reasoning) {
+        // Parity with empty-SSE fallback: FE gets a content chunk too.
+        emit_chunk(app_handle, speaking_agent, turn, "content", &full);
     }
 
     // Empty SSE: fall back to non-stream; emit chunks so FE is not left with a blank bubble.
@@ -1354,5 +1376,83 @@ mod cancel_tests {
         let streamed = responses_body_from_chat(&chat, &config, true);
         assert_eq!(streamed["stream"], true);
         assert_eq!(streamed["max_output_tokens"], 512);
+    }
+
+    #[test]
+    fn responses_body_omits_max_output_tokens_when_zero() {
+        let config = crate::state::AiConfig {
+            name: "A".into(),
+            system_prompt: "sys".into(),
+            model: "muse-spark-1.3-contributor".into(),
+            api_base_url: "https://opencode.ai/zen/go/v1".into(),
+            api_key: "k".into(),
+            temperature: 0.5,
+            max_tokens: 0,
+            reasoning_effort: Default::default(),
+            response_length: Default::default(),
+            color: String::new(),
+            icon: String::new(),
+        };
+        let chat = serde_json::json!({
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+        let body = responses_body_from_chat(&chat, &config, false);
+        assert!(
+            body.get("max_output_tokens").is_none(),
+            "max_tokens==0 must omit max_output_tokens, got {:?}",
+            body.get("max_output_tokens")
+        );
+        // temperature still forwarded
+        let temp = body["temperature"].as_f64().unwrap();
+        assert!((temp - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn extract_responses_reasoning_reads_content_parts() {
+        // output_text path uses extract_responses_reasoning — must also read content[].
+        let data = serde_json::json!({
+            "output_text": "visible",
+            "output": [{
+                "type": "reasoning",
+                "content": [{"type": "reasoning_text", "text": "from-content"}]
+            }]
+        });
+        let (content, reasoning) = extract_responses_output(&data).unwrap();
+        assert_eq!(content, "visible");
+        assert_eq!(reasoning.as_deref(), Some("from-content"));
+    }
+
+    #[test]
+    fn extract_responses_reasoning_summary_and_content() {
+        let data = serde_json::json!({
+            "output_text": "hi",
+            "output": [{
+                "type": "reasoning",
+                "summary": [{"type": "summary_text", "text": "sum-"}],
+                "content": [{"text": "body"}]
+            }]
+        });
+        let (_, reasoning) = extract_responses_output(&data).unwrap();
+        assert_eq!(reasoning.as_deref(), Some("sum-body"));
+    }
+
+    #[test]
+    fn promote_reasoning_only_copies_when_content_empty() {
+        let mut full = String::new();
+        assert!(promote_reasoning_only(&mut full, "think aloud"));
+        assert_eq!(full, "think aloud");
+        // Second call: content already present — no promote.
+        assert!(!promote_reasoning_only(&mut full, "other"));
+        assert_eq!(full, "think aloud");
+    }
+
+    #[test]
+    fn promote_reasoning_only_skips_empty_reasoning() {
+        let mut full = String::new();
+        assert!(!promote_reasoning_only(&mut full, ""));
+        assert!(full.is_empty());
+        let mut full2 = String::from("already");
+        assert!(!promote_reasoning_only(&mut full2, "reason"));
+        assert_eq!(full2, "already");
     }
 }
