@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InnerState } from "../types";
 import { fetchModels, openExternal } from "../lib/api";
 import { PROVIDERS, type ProviderDef } from "../lib/providers";
@@ -102,6 +102,17 @@ function ProviderRow({
   }, [open, p.id]);
 
   const dirty = draft.trim() !== saved;
+  // A pasted key must not vanish because Done was pressed instead of Save:
+  // keep it when the row folds or Settings closes. Clearing still needs Remove.
+  const pending = useRef("");
+  pending.current = dirty && draft.trim() ? draft : "";
+  useEffect(() => {
+    if (!open) return;
+    return () => {
+      if (pending.current) void setProviderKey(p.id, pending.current);
+      pending.current = "";
+    };
+  }, [open, p.id]);
   const base = p.id === "custom" ? customBase : p.baseUrl;
   const status = tokens
     ? who !== null
