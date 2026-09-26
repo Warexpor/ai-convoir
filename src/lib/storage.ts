@@ -117,7 +117,9 @@ export function titleFromMessages(messages: Message[], seed: string): string {
   const first =
     messages.find((m) => m.agent === "seed")?.content ||
     seed ||
-    messages.find((m) => m.content.trim())?.content ||
+    // No opening line: a reply names the thread. Drop its markdown so the
+    // title doesn't read "**Hello**".
+    messages.find((m) => m.content.trim())?.content.replace(/[*_`#>~]+/g, "") ||
     "New chat";
   const line = first.replace(/\s+/g, " ").trim();
   return line.length > 42 ? line.slice(0, 42) + "…" : line || "New chat";
