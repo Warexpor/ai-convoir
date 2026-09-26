@@ -488,26 +488,17 @@ pub async fn upsert_saved_chat(
     })
 }
 
-/// List saved chats from SQLite (newest first). Falls back to empty if DB missing.
+/// List saved chats from SQLite (newest first), each hydrated from the messages
+/// table (source of truth). Falls back to empty if DB missing.
+/// FE boot (`hydrateChats` → `listSavedChats`) and select (`getChat` from that
+/// cache) both depend on this path — raw config_json alone can be stale after
+/// incremental `save_message` / `delete_message`.
 #[tauri::command]
 pub async fn list_saved_chats(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let arc: &Arc<AppState> = &state;
-    with_db(arc, |conn| {
-        let metas = db::list_chat_metas(conn)?;
-        let mut out = Vec::with_capacity(metas.len());
-        for (_id, _updated, json) in metas {
-            if json.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<serde_json::Value>(&json) {
-                Ok(v) => out.push(v),
-                Err(_) => continue,
-            }
-        }
-        Ok(out)
-    })
+    with_db(arc, |conn| db::list_hydrated_chats(conn))
 }
 
 /// Load one saved chat. Messages table is the transcript source of truth:
@@ -523,14 +514,7 @@ pub async fn get_saved_chat(
         let Some((_updated, json)) = db::get_chat_meta(conn, &chat_id)? else {
             return Ok(None);
         };
-        if json.trim().is_empty() {
-            return Ok(None);
-        }
-        let mut value: serde_json::Value =
-            serde_json::from_str(&json).map_err(|e| e.to_string())?;
-        let msgs = db::load_messages(conn, &chat_id)?;
-        db::hydrate_snapshot_messages(&mut value, &msgs)?;
-        Ok(Some(value))
+        db::hydrate_chat_from_meta(conn, &chat_id, &json)
     })
 }
 

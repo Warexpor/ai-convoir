@@ -99,6 +99,20 @@ export function getChat(id: string): SavedChat | undefined {
   return listChats().find((c) => c.id === id);
 }
 
+/** Prefer a freshly hydrated SQLite snapshot; fall back to localStorage cache. */
+export async function loadChat(id: string): Promise<SavedChat | undefined> {
+  const remote = await api.getSavedChat(id);
+  if (remote && isSavedChat(remote)) {
+    const chats = listChats();
+    const idx = chats.findIndex((c) => c.id === id);
+    if (idx >= 0) chats[idx] = remote;
+    else chats.unshift(remote);
+    writeJson(CHATS_KEY, chats.slice(0, 80));
+    return remote;
+  }
+  return getChat(id);
+}
+
 function titleFromMessages(messages: Message[], seed: string): string {
   const first =
     messages.find((m) => m.agent === "seed")?.content ||

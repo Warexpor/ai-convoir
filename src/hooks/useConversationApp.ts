@@ -15,6 +15,7 @@ import {
   getActiveChatId,
   getChat,
   hydrateChats,
+  loadChat,
   listChats,
   saveChatSnapshot,
   setActiveChatId,
@@ -448,7 +449,7 @@ export function useConversationApp() {
 
   const handleSelectChat = useCallback(
     async (id: string) => {
-      const chat = getChat(id);
+      const chat = await loadChat(id);
       if (!chat) return;
       const current = messagesRef.current.filter((m) => !m.streaming);
       if (current.length > 0 && chatIdRef.current !== id) autoSave();

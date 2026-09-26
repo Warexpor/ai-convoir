@@ -85,7 +85,7 @@ pub fn system_prompt_with_length(config: &AiConfig) -> String {
 
 /// Build OpenAI-compatible chat completions JSON body.
 /// Includes `reasoning_effort` only when not `None`.
-/// `stream` enables SSE streaming. Optional `narration` is injected as a final user note.
+/// `stream` enables SSE streaming. Optional `narration` is injected as a final system note.
 /// Appends response-length instruction to the system prompt.
 /// Message list is append-ordered (no reshuffle of older messages).
 pub fn build_chat_body(
