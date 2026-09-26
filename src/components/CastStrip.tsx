@@ -1,6 +1,7 @@
 import { memo } from "react";
 import type { AppStatus, InnerState } from "../types";
-import { activeAgentIds, agentAccent, agentInitials, agentLabel } from "../types";
+import { activeAgentIds, agentAccent, agentConfig, agentLabel } from "../types";
+import VoiceAvatar from "./VoiceAvatar";
 
 interface Props {
   config: InnerState | null;
@@ -25,7 +26,7 @@ function CastStrip({ config, status, upNext, hasMessages }: Props) {
           <li
             key={id}
             className={`cast-chip is-${state}`}
-            style={{ ["--voice" as string]: agentAccent(id) }}
+            style={{ ["--voice" as string]: agentAccent(id, config) }}
             title={
               state === "speaking"
                 ? `${name} is writing`
@@ -34,9 +35,12 @@ function CastStrip({ config, status, upNext, hasMessages }: Props) {
                   : name
             }
           >
-            <span className="cast-avatar" aria-hidden>
-              {agentInitials(name)}
-            </span>
+            <VoiceAvatar
+              className="cast-avatar"
+              name={name}
+              icon={agentConfig(id, config)?.icon}
+              color={agentAccent(id, config)}
+            />
             <span className="cast-name">{name}</span>
             {state !== "idle" && (
               <span className="cast-tag">

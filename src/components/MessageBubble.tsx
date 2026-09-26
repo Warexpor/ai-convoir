@@ -1,6 +1,7 @@
 import { memo, useCallback, useState } from "react";
 import type { InnerState, Message } from "../types";
-import { agentAccent, agentInitials, agentLabel } from "../types";
+import { agentAccent, agentConfig, agentLabel } from "../types";
+import VoiceAvatar from "./VoiceAvatar";
 import MarkdownBody from "./MarkdownBody";
 import RelativeTime from "./RelativeTime";
 import { IconCheck, IconChevron, IconCopy, IconTrash } from "./Marks";
@@ -30,6 +31,7 @@ function MessageBubble({
   const reasoning = (message.reasoning || "").trim();
   const hasThoughts = showThoughtsUi && reasoning.length > 0;
   const kind = isSeed ? "seed" : isNote ? "note" : "voice";
+  const accent = agentAccent(message.agent, config);
 
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -111,12 +113,20 @@ function MessageBubble({
   return (
     <article
       className={cls}
-      style={{ ["--voice" as string]: agentAccent(message.agent) }}
+      style={{ ["--voice" as string]: accent }}
     >
       <div className="msg-gutter" aria-hidden>
-        <span className="msg-avatar">
-          {isSeed ? "You" : agentInitials(label)}
-        </span>
+        {isSeed ? (
+          <span className="msg-avatar msg-avatar-you">You</span>
+        ) : (
+          <VoiceAvatar
+            className="msg-avatar"
+            variant="tint"
+            name={label}
+            icon={agentConfig(message.agent, config)?.icon}
+            color={accent}
+          />
+        )}
         <span className="msg-spine" />
       </div>
 

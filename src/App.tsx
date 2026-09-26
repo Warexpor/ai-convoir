@@ -26,7 +26,6 @@ function App() {
     toast,
     stream,
     config,
-    pushConfig,
     firstDraft,
     setFirstDraft,
     narration,
@@ -34,7 +33,10 @@ function App() {
     chats,
     activeChatId,
     refreshChats,
+    casts,
+    activeCastId,
   } = app;
+  const activeCast = casts.find((c) => c.id === activeCastId) ?? null;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -161,7 +163,14 @@ function App() {
         open={railOpen}
         chats={chats}
         activeId={activeChatId}
-        onNew={app.handleReset}
+        casts={casts}
+        activeCastId={activeCastId}
+        onNew={(castId) => void app.handleReset(castId)}
+        onCreateCast={(name) => {
+          void app.handleCreateCast(name).then(() => setSettingsOpen(true));
+        }}
+        onRenameCast={app.handleRenameCast}
+        onDeleteCast={app.handleDeleteCast}
         onSelect={(id) => {
           app.handleSelectChat(id);
           if (window.matchMedia("(max-width: 900px)").matches) {
@@ -192,6 +201,9 @@ function App() {
             <div className="topbar-title">
               <span className="topbar-name">{activeTitle}</span>
               <span className="topbar-sub">
+                {activeCast && (
+                  <span className="topbar-cast">{activeCast.name}</span>
+                )}
                 {hasMessages
                   ? `${stream.messages.length} lines · ${config?.mode === "auto" ? "Auto" : "Step"}`
                   : "Nothing said yet"}
@@ -280,7 +292,7 @@ function App() {
             onToggle={app.handleToggle}
             onStep={app.handleStep}
             onStop={app.handleStop}
-            onReset={app.handleReset}
+            onReset={() => void app.handleReset()}
             onExport={app.handleExport}
             onModeChange={app.handleModeChange}
             onSaveChat={app.handleSaveChat}
@@ -290,7 +302,7 @@ function App() {
             onRetry={app.handleRetry}
             hasMessages
             nextName={nextName}
-            nextAccent={upNextId ? agentAccent(upNextId) : undefined}
+            nextAccent={upNextId ? agentAccent(upNextId, config) : undefined}
             needsKey={needsKey}
             onOpenSettings={() => setSettingsOpen(true)}
             hint={narration}
@@ -303,7 +315,11 @@ function App() {
       <SettingsSidebar
         open={settingsOpen}
         config={config}
-        onSave={pushConfig}
+        onSave={app.handleSaveSettings}
+        castName={activeCast?.name ?? null}
+        onRenameCast={(name) =>
+          activeCast && app.handleRenameCast(activeCast.id, name)
+        }
         onClose={() => setSettingsOpen(false)}
         showThoughtsUi={showThoughtsUi}
         onShowThoughtsUiChange={setShowThoughtsUi}

@@ -29,6 +29,8 @@ export interface SavedChat {
   ai3_config: AiConfig;
   messages: Message[];
   turn_count: number;
+  /** Cast (group) this thread was started in. Missing/unknown → Unsorted. */
+  cast_id?: string | null;
 }
 
 function uid(): string {
@@ -103,6 +105,7 @@ export function saveChatSnapshot(
   config: InnerState,
   messages: Message[],
   turnCount: number,
+  castId?: string | null,
 ): SavedChat {
   const chats = listChats();
   const now = Date.now();
@@ -124,6 +127,7 @@ export function saveChatSnapshot(
     ai3_config: config.ai3_config,
     messages: cleanMsgs,
     turn_count: turnCount,
+    cast_id: castId !== undefined ? castId : (prev?.cast_id ?? null),
   };
   const next = [chat, ...chats.filter((c) => c.id !== id)];
   writeJson(CHATS_KEY, next.slice(0, 80));

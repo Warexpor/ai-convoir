@@ -6,9 +6,10 @@ import type { InnerState, Message } from "../types";
 import {
   activeAgentIds,
   agentAccent,
-  agentInitials,
+  agentConfig,
   agentLabel,
 } from "../types";
+import VoiceAvatar from "./VoiceAvatar";
 
 interface Props {
   messages: Message[];
@@ -336,13 +337,16 @@ function ChatView({
                   key={id}
                   className="lineup-card"
                   style={{
-                    ["--voice" as string]: agentAccent(id),
+                    ["--voice" as string]: agentAccent(id, config),
                     ["--i" as string]: i,
                   }}
                 >
-                  <span className="lineup-avatar" aria-hidden>
-                    {agentInitials(name)}
-                  </span>
+                  <VoiceAvatar
+                    className="lineup-avatar"
+                    name={name}
+                    icon={agentConfig(id, config)?.icon}
+                    color={agentAccent(id, config)}
+                  />
                   <span className="lineup-text">
                     <strong>{name}</strong>
                     {bio && <span>{bio}</span>}
@@ -468,7 +472,7 @@ function ChatView({
                 role="status"
                 style={
                   thinkingAgentId
-                    ? { ["--voice" as string]: agentAccent(thinkingAgentId) }
+                    ? { ["--voice" as string]: agentAccent(thinkingAgentId, config) }
                     : undefined
                 }
               >
