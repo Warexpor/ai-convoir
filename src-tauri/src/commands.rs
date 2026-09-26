@@ -1,7 +1,9 @@
 use crate::db;
 use crate::engine::{
-    next_speaker, prepare_step, start_action_with_transcript, trim_messages_for_context,
-    StartAction, OPENCODE_GO_BASE, OPENCODE_ZEN_BASE,
+    prepare_step, start_action_with_transcript, StartAction, OPENCODE_GO_BASE, OPENCODE_ZEN_BASE,
+};
+use crate::harness::{
+    emit_harness_metrics, log_turn_metrics, prepare_turn, TurnMachine, TurnMetrics, TurnPhase,
 };
 use crate::llm;
 use crate::state::{AiConfig, AppState, AppStatus, ConversationMode, InnerState, Message};
@@ -611,95 +613,108 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         return false;
     }
 
+    let mut machine = TurnMachine::new();
+    if let Err(e) = machine.begin_prepare() {
+        tracing::warn!(target: "harness", error = %e, "begin_prepare");
+        return false;
+    }
+
     let epoch_at_start = state.stream_epoch.load(Ordering::Relaxed);
     let created_at = now_ms();
 
-    let (bot_count, turn_count, max_turns, mode, config, messages, narration, chat_id) = {
+    let prepared = {
         let mut inner = match state.inner.lock() {
             Ok(i) => i,
             Err(_) => return false,
         };
-        if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
-            return false;
-        }
-        let agent = next_speaker(inner.bot_count, inner.turn_count);
-        let cfg = inner.config_for_agent(agent).clone();
         let narration = {
             let n = inner.pending_narration.trim().to_string();
             if n.is_empty() {
                 None
             } else {
-                // consume one-shot
                 inner.pending_narration.clear();
                 Some(n)
             }
         };
-        // Build context: trim messages to fit within model's context window
-        let all_msgs = inner.messages.clone();
-        let active_configs: Vec<&AiConfig> = match inner.bot_count {
-            3 => vec![&inner.ai1_config, &inner.ai2_config, &inner.ai3_config],
-            _ => vec![&inner.ai1_config, &inner.ai2_config],
-        };
-        let context_msgs =
-            trim_messages_for_context(&active_configs, &inner.seed_prompt, &all_msgs);
-        (
-            inner.bot_count,
-            inner.turn_count,
-            inner.max_turns,
-            inner.mode.clone(),
-            cfg,
-            context_msgs, // ← only send what fits in context window
-            narration,
-            inner.active_chat_id.clone(),
-        )
+        match prepare_turn(&inner, narration, created_at, true) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::info!(target: "harness", error = %e, "prepare stopped");
+                machine.stop();
+                return false;
+            }
+        }
     };
 
-    if mode != ConversationMode::Step && turn_count >= max_turns {
+    let mut metrics = TurnMetrics {
+        agent: prepared.agent.to_string(),
+        turn: prepared.turn,
+        prompt_est_tokens: prepared.prompt_est_tokens,
+        trimmed: prepared.trimmed,
+        cache_key: prepared.cache_key.clone(),
+        ttft_ms: None,
+        stream_duration_ms: None,
+        content_chars: 0,
+        reasoning_chars: 0,
+        prompt_tokens: None,
+        cached_tokens: None,
+        completion_tokens: None,
+        phase_end: String::new(),
+    };
+
+    if let Err(e) = machine.begin_stream() {
+        tracing::warn!(target: "harness", error = %e, "begin_stream");
         return false;
     }
 
-    let agent = next_speaker(bot_count, turn_count);
-    let narr_ref = narration.as_deref();
     let cancel = llm::StreamCancel {
         reset: &state.reset_flag,
         epoch: &state.stream_epoch,
         epoch_at_start,
     };
 
-    // Prefer SSE streaming; falls back to non-stream if empty
-    let result = llm::stream_llm(
-        &config,
-        agent,
-        &messages,
-        narr_ref,
-        turn_count,
-        created_at,
-        app_handle,
-        if chat_id.is_empty() {
-            "ai-convoir"
-        } else {
-            chat_id.as_str()
-        },
-        &cancel,
-    )
-    .await;
+    let result = llm::stream_prepared(&prepared, app_handle, &cancel).await;
 
     match result {
-        Ok((content, reasoning)) => {
+        Ok(outcome) => {
             if cancel.is_cancelled() {
+                machine.abort_stream();
+                metrics.phase_end = TurnPhase::Stopped.to_string();
+                metrics.ttft_ms = outcome.ttft_ms;
+                metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
+                metrics.apply_usage(&outcome.usage);
+                log_turn_metrics(&metrics);
+                emit_harness_metrics(app_handle, &metrics);
                 return false;
             }
+
+            if let Err(e) = machine.begin_commit() {
+                tracing::warn!(target: "harness", error = %e, "begin_commit");
+                return false;
+            }
+
+            metrics.ttft_ms = outcome.ttft_ms;
+            metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
+            metrics.content_chars = outcome.content.chars().count();
+            metrics.reasoning_chars = outcome
+                .reasoning
+                .as_ref()
+                .map(|r| r.chars().count())
+                .unwrap_or(0);
+            metrics.apply_usage(&outcome.usage);
+
             let msg = Message {
-                agent: agent.into(),
+                agent: prepared.agent.into(),
                 role: "assistant".into(),
-                content,
-                turn: turn_count,
-                created_at,
-                reasoning,
+                content: outcome.content,
+                turn: prepared.turn,
+                created_at: prepared.created_at,
+                reasoning: outcome.reasoning,
             };
+            let chat_id = prepared.chat_id.clone();
+
             if let Ok(mut inner) = state.inner.lock() {
                 if !cancel.is_cancelled() {
-                    // Persist to database (non-blocking, best-effort)
                     if !chat_id.is_empty() {
                         let db_path = state
                             .db_path
@@ -735,44 +750,60 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                             "turn": inner.turn_count,
                         }),
                     );
-                    // clear narration on frontend
                     let _ = app_handle.emit("narration-cleared", true);
+
+                    let _ = machine.to_next();
+                    metrics.phase_end = machine.phase().to_string();
+                } else {
+                    machine.abort_stream();
+                    metrics.phase_end = TurnPhase::Stopped.to_string();
                 }
             }
+
+            log_turn_metrics(&metrics);
+            emit_harness_metrics(app_handle, &metrics);
         }
         Err(e) if e == llm::STREAM_ABORTED => {
+            machine.abort_stream();
+            metrics.phase_end = TurnPhase::Stopped.to_string();
+            log_turn_metrics(&metrics);
+            emit_harness_metrics(app_handle, &metrics);
             tracing::info!(
                 target: "commands",
-                agent,
-                turn = turn_count,
+                agent = prepared.agent,
+                turn = prepared.turn,
                 "stream aborted"
             );
             let _ = app_handle.emit(
                 "stream-abort",
-                serde_json::json!({ "agent": agent, "turn": turn_count }),
+                serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
             );
             return false;
         }
         Err(e) => {
+            machine.fail();
+            metrics.phase_end = TurnPhase::Error.to_string();
+            log_turn_metrics(&metrics);
+            emit_harness_metrics(app_handle, &metrics);
             tracing::error!(
                 target: "commands",
-                agent,
-                turn = turn_count,
+                agent = prepared.agent,
+                turn = prepared.turn,
                 error = %e,
                 "stream error"
             );
             let _ = app_handle.emit(
                 "stream-abort",
-                serde_json::json!({ "agent": agent, "turn": turn_count }),
+                serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
             );
-            let _ = app_handle.emit("error", &format!("{} error: {}", agent, e));
+            let _ = app_handle.emit("error", &format!("{} error: {}", prepared.agent, e));
             if let Ok(mut inner) = state.inner.lock() {
                 inner.status = AppStatus::Paused;
             }
             state.pause_flag.store(true, Ordering::Relaxed);
             let _ = app_handle.emit(
                 "status-update",
-                serde_json::json!({ "status": "Paused", "turn": turn_count }),
+                serde_json::json!({ "status": "Paused", "turn": prepared.turn }),
             );
             return true;
         }
