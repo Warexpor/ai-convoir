@@ -140,10 +140,35 @@ function ChatView({
     setAutoScroll(next);
   }, []);
 
+  // First row that reaches into the viewport when pinned to the bottom,
+  // less overscan. Derived from measured heights only, never scrollTop, so
+  // the pinned effect and the scroll handler agree on the same window.
+  // (They used to disagree by a few rows and flip the window on every
+  // streamed flush, remounting and re-parsing old messages each time.)
+  const bottomStart = useCallback(
+    (el: HTMLElement) => {
+      const n = messages.length;
+      const floor = (prefixes[n] ?? 0) - el.clientHeight;
+      let lo = 0;
+      let hi = n;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (prefixes[mid + 1] <= floor) lo = mid + 1;
+        else hi = mid;
+      }
+      return Math.max(0, lo - OVERSCAN);
+    },
+    [messages.length, prefixes],
+  );
+
   const computeWindow = useCallback(
     (el: HTMLElement, atBottom: boolean) => {
       if (!virtualize) {
         applyWin(0, messages.length);
+        return;
+      }
+      if (atBottom) {
+        applyWin(bottomStart(el), messages.length);
         return;
       }
       const top = el.scrollTop;
@@ -159,10 +184,9 @@ function ChatView({
       let end = start;
       while (end < messages.length && prefixes[end] < limit) end++;
       end = Math.min(messages.length, end + OVERSCAN);
-      if (atBottom) end = messages.length;
       applyWin(start, end);
     },
-    [applyWin, messages.length, prefixes, virtualize],
+    [applyWin, bottomStart, messages.length, prefixes, virtualize],
   );
 
   const lastTopRef = useRef(0);
@@ -207,15 +231,7 @@ function ChatView({
       applyWin(0, messages.length);
       return;
     }
-    if (autoScroll) {
-      const visible = Math.ceil(el.clientHeight / EST_MSG) + OVERSCAN * 2;
-      applyWin(
-        Math.max(0, messages.length - visible),
-        messages.length,
-      );
-      return;
-    }
-    computeWindow(el, false);
+    computeWindow(el, autoScroll);
   }, [
     messages.length,
     streamSig,
