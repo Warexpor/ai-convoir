@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   IconExport,
   IconHint,
   IconKey,
+  IconLive,
   IconMore,
   IconNew,
   IconNextVoice,
@@ -89,6 +90,26 @@ function ControlBar({
     setQueued(true);
   };
   const moreRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+
+  // The dock floats over the transcript; publish its height so the
+  // scroller can reserve a runway under the last line.
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    const host = dock?.parentElement;
+    if (!dock || !host) return;
+    const publish = () =>
+      host.style.setProperty("--dock-h", `${Math.ceil(dock.offsetHeight)}px`);
+    publish();
+    host.style.setProperty("--dock-scrim", "1");
+    const ro = new ResizeObserver(publish);
+    ro.observe(dock);
+    return () => {
+      ro.disconnect();
+      host.style.removeProperty("--dock-h");
+      host.style.removeProperty("--dock-scrim");
+    };
+  }, []);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -134,6 +155,7 @@ function ControlBar({
 
   return (
     <div
+      ref={dockRef}
       className={`dock glass${running ? " is-running" : ""}`}
       role="toolbar"
       aria-label="Conversation controls"
@@ -201,7 +223,13 @@ function ControlBar({
             className={`status-pill is-${status.toLowerCase()}`}
             aria-live="polite"
           >
-            <span className="status-dot" aria-hidden />
+            {running ? (
+              <IconLive />
+            ) : status === "Paused" ? (
+              <span className="status-glyph" aria-hidden>
+                <IconPause />
+              </span>
+            ) : null}
             {statusLabel}
             {!isStep && (
               <span className="status-turns">

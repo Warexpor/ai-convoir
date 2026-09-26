@@ -6,7 +6,10 @@ interface KeyboardOptions {
   status: AppStatus;
   settingsOpen: boolean;
   helpOpen: boolean;
+  prefsOpen: boolean;
   railOpen: boolean;
+  onTogglePrefs: () => void;
+  onClosePrefs: () => void;
   onToggleSettings: () => void;
   onToggleRail: () => void;
   onToggleHelp: () => void;
@@ -35,6 +38,16 @@ export function useAppKeyboard(opts: KeyboardOptions) {
       const inField =
         tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 
+      if (e.key === "," && (!inField || e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        o.onTogglePrefs();
+        return;
+      }
+      // Settings is modal: only Esc and "," reach the app behind it.
+      if (o.prefsOpen) {
+        if (e.code === "Escape") o.onClosePrefs();
+        return;
+      }
       if (e.code === "KeyS" && !e.metaKey && !e.ctrlKey && !inField) {
         e.preventDefault();
         o.onToggleSettings();

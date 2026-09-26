@@ -2,11 +2,13 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import type { Cast } from "../lib/casts";
-import { agentAccent, type VoiceSource } from "../types";
+import { agentAccent, agentConfig, type VoiceSource } from "../types";
+import VoiceAvatar from "./VoiceAvatar";
 import RelativeTime from "./RelativeTime";
 import {
   SlashMark,
   IconChevron,
+  IconKey,
   IconNew,
   IconRailHide,
   IconSearch,
@@ -40,13 +42,24 @@ function voiceNames(v: VoiceSource & { bot_count: number }): string[] {
   return names.map((n) => n || "Voice");
 }
 
-function VoiceDots({ src }: { src: VoiceSource & { bot_count: number } }) {
+/** The cast in miniature: overlapping avatars, same glyphs as on stage. */
+function VoiceStack({ src }: { src: VoiceSource & { bot_count: number } }) {
   const n = src.bot_count >= 3 ? 3 : 2;
   return (
-    <span className="voice-dots" aria-hidden>
-      {Array.from({ length: n }, (_, i) => (
-        <i key={i} style={{ background: agentAccent(`ai${i + 1}`, src) }} />
-      ))}
+    <span className="voice-stack-mini" aria-hidden>
+      {Array.from({ length: n }, (_, i) => {
+        const id = `ai${i + 1}`;
+        const cfg = agentConfig(id, src);
+        return (
+          <VoiceAvatar
+            key={id}
+            className="mini-avatar"
+            name={cfg?.name || "Voice"}
+            icon={cfg?.icon}
+            color={agentAccent(id, src)}
+          />
+        );
+      })}
     </span>
   );
 }
@@ -111,7 +124,7 @@ function ChatRow({
         >
           <div className="chat-item-title">{chat.title}</div>
           <div className="chat-item-meta">
-            <VoiceDots src={chat} />
+            <VoiceStack src={chat} />
             <span>{voiceNames(chat).join(" · ")}</span>
             <RelativeTime at={chat.updated_at} className="chat-item-time" />
           </div>
@@ -326,7 +339,7 @@ export default function ChatRail({
                       title="Double-click to rename"
                     >
                       <IconChevron />
-                      <VoiceDots src={cast} />
+                      <VoiceStack src={cast} />
                       <span className="cast-group-name">{cast.name}</span>
                       <span className="cast-group-count">{list.length}</span>
                     </button>
@@ -473,7 +486,7 @@ export default function ChatRail({
 
         <div className="rail-foot">
           <span className={`key-state ${needsKey ? "is-missing" : "is-ok"}`}>
-            <i />
+            <IconKey />
             {needsKey ? "API key needed" : "Key connected"}
           </span>
           <span className="rail-foot-mute">{threadLabel}</span>

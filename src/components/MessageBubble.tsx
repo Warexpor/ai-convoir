@@ -1,5 +1,6 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useRef, useState } from "react";
 import type { InnerState, Message } from "../types";
+import type { StreamMode } from "../lib/config";
 import { agentAccent, agentConfig, agentLabel } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
 import MarkdownBody from "./MarkdownBody";
@@ -12,6 +13,7 @@ interface Props {
   showThoughtsUi: boolean;
   onDelete?: (agent: string, turn: number, created_at: number) => void;
   enter?: boolean;
+  streamMode?: StreamMode;
 }
 
 function MessageBubble({
@@ -20,6 +22,7 @@ function MessageBubble({
   showThoughtsUi,
   onDelete,
   enter = true,
+  streamMode = "live",
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -32,6 +35,10 @@ function MessageBubble({
   const hasThoughts = showThoughtsUi && reasoning.length > 0;
   const kind = isSeed ? "seed" : isNote ? "note" : "voice";
   const accent = agentAccent(message.agent, config);
+  // In paragraph/whole mode the finished reply lands in one go; give that
+  // landing its own entrance even if the bubble is long past its first one.
+  const revealRef = useRef(false);
+  if (isStream && streamMode !== "live") revealRef.current = true;
 
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText(message.content).then(() => {
@@ -138,8 +145,12 @@ function MessageBubble({
           )}
           {isStream ? (
             <span className="msg-live">
-              <i />
-              {message.content ? "writing" : "thinking"}
+              <span className="eq eq-sm" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
+              {message.content || streamMode === "whole" ? "writing" : "thinking"}
             </span>
           ) : (
             <RelativeTime at={message.created_at || Date.now()} />
@@ -173,8 +184,15 @@ function MessageBubble({
         )}
 
         {(message.content || !hasThoughts) && (
-          <div className="msg-text">
-            <MarkdownBody content={message.content} streaming={isStream} />
+          <div
+            className={`msg-text${!isStream && revealRef.current ? " is-reveal" : ""}`}
+            key={isStream ? "s" : "d"}
+          >
+            <MarkdownBody
+              content={message.content}
+              streaming={isStream}
+              mode={streamMode}
+            />
           </div>
         )}
       </div>
@@ -189,6 +207,7 @@ export default memo(MessageBubble, (a, b) => {
   // while the message object stays the same.
   return (
     a.showThoughtsUi === b.showThoughtsUi &&
+    a.streamMode === b.streamMode &&
     a.enter === b.enter &&
     a.onDelete === b.onDelete &&
     a.config === b.config &&
