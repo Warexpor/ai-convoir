@@ -57,6 +57,43 @@ pub fn format_narration_note(narration: &str) -> String {
     )
 }
 
+/// Soft length preset → hard output-token budget (content only; reasoning pad added separately).
+pub fn max_tokens_for_response_length(len: &ResponseLength) -> u32 {
+    match len {
+        ResponseLength::Brief => 128,
+        ResponseLength::Small => 384,
+        ResponseLength::Normal => 2048,
+        ResponseLength::Long => 4096,
+        ResponseLength::VeryLong => 8192,
+    }
+}
+
+/// Extra output budget so reasoning/thinking does not starve the visible reply.
+pub fn reasoning_token_pad(effort: &ReasoningEffort) -> u32 {
+    match effort {
+        ReasoningEffort::None => 0,
+        ReasoningEffort::Low => 512,
+        ReasoningEffort::Medium => 1024,
+        ReasoningEffort::High => 2048,
+    }
+}
+
+/// Effective `max_tokens` / `max_output_tokens` for a turn.
+///
+/// - `response_length` always supplies an intended ceiling (UI control).
+/// - Explicit `max_tokens > 0` is an additional ceiling (never raises past length).
+/// - `max_tokens == 0` falls back to the length preset (never omit — unbounded replies).
+/// - When thinking is on, pad so reasoning tokens do not consume the whole budget.
+pub fn effective_max_tokens(config: &AiConfig) -> u32 {
+    let by_length = max_tokens_for_response_length(&config.response_length);
+    let base = if config.max_tokens == 0 {
+        by_length
+    } else {
+        config.max_tokens.min(by_length)
+    };
+    base.saturating_add(reasoning_token_pad(&config.reasoning_effort)).max(1)
+}
+
 /// Compose system prompt with response-length instruction (byte-stable for a given config).
 pub fn system_prompt_with_length(config: &AiConfig) -> String {
     match config.response_length {
@@ -131,15 +168,16 @@ pub fn build_chat_body(
     if !openai_reasoning {
         body["temperature"] = json!(config.temperature);
     }
-    // Some providers reject max_tokens: 0; omit so the server default applies.
-    if config.max_tokens > 0 {
+    // Always send a length limit — max_tokens==0 used to omit and run unbounded.
+    // response_length tightens the budget; thinking pads so CoT does not starve content.
+    {
         let field = if host_of(&config.api_base_url) == "api.openai.com" {
             // api.openai.com deprecated max_tokens; reasoning models reject it outright.
             "max_completion_tokens"
         } else {
             "max_tokens"
         };
-        body[field] = json!(config.max_tokens);
+        body[field] = json!(effective_max_tokens(config));
     }
 
     if config.reasoning_effort != ReasoningEffort::None {
@@ -1027,18 +1065,38 @@ mod tests {
     }
 
     #[test]
-    fn build_body_omits_max_tokens_when_zero() {
+    fn build_body_uses_length_default_when_max_tokens_zero() {
         let mut cfg = sample_config("sys", ReasoningEffort::None);
         cfg.max_tokens = 0;
+        cfg.response_length = ResponseLength::Normal;
         let body = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert!(
-            body.get("max_tokens").is_none(),
-            "max_tokens==0 must be omitted, got {:?}",
-            body.get("max_tokens")
+        assert_eq!(body["max_tokens"], 2048);
+        cfg.response_length = ResponseLength::Brief;
+        let brief = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert_eq!(brief["max_tokens"], 128);
+        cfg.max_tokens = 2048;
+        cfg.response_length = ResponseLength::Brief;
+        let clamped = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert_eq!(
+            clamped["max_tokens"], 128,
+            "Brief must tighten default max_tokens=2048"
         );
-        cfg.max_tokens = 128;
+        cfg.max_tokens = 64;
+        cfg.response_length = ResponseLength::Normal;
         let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(body2["max_tokens"], 128);
+        assert_eq!(body2["max_tokens"], 64);
+    }
+
+    #[test]
+    fn effective_max_tokens_pads_for_thinking() {
+        let mut cfg = sample_config("sys", ReasoningEffort::None);
+        cfg.max_tokens = 0;
+        cfg.response_length = ResponseLength::Brief;
+        assert_eq!(effective_max_tokens(&cfg), 128);
+        cfg.reasoning_effort = ReasoningEffort::Low;
+        assert_eq!(effective_max_tokens(&cfg), 128 + 512);
+        cfg.reasoning_effort = ReasoningEffort::High;
+        assert_eq!(effective_max_tokens(&cfg), 128 + 2048);
     }
 
     #[test]

@@ -214,7 +214,9 @@ function App() {
     [config],
   );
   const stageFocus =
-    hasMessages && upNextId ? voiceIds.indexOf(upNextId) : -1;
+    upNextId && (hasMessages || stream.status === "Running")
+      ? voiceIds.indexOf(upNextId)
+      : -1;
   const activeTitle =
     (hasMessages && chats.find((c) => c.id === activeChatId)?.title) ||
     (hasMessages ? "Untitled thread" : "New thread");
