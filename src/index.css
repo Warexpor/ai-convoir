@@ -194,12 +194,12 @@ body,
 
 /* ── glass ──────────────────────────────────────────────────── */
 
-/* Two grades of the same material:
-   - docked glass (.glass, cast strip, composer) sits over the smooth stage
-     only, where a backdrop blur would look identical to a tint — so it is a
-     tint, and live indicators inside it cost nothing.
-   - floating glass (menus, toasts, sheet, modal) covers text, so it gets a
-     real backdrop blur, and never hosts a looping animation. */
+/* Two grades of the same material, both frosted with a backdrop blur:
+   - docked glass (.glass, cast strip, composer, rail, settings) sits over
+     the stage, with a lighter tint so the blurred field shows through.
+   - floating glass (menus, toasts, modal) covers text, and never hosts a
+     looping animation.
+   "lite" drops every blur. */
 .glass,
 .cast,
 .stage-box,
@@ -219,8 +219,13 @@ body,
 .stage-box {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.02) 45%, rgba(255, 255, 255, 0.01)),
-    rgba(15, 15, 15, 0.86);
+    rgba(15, 15, 15, 0.62);
 }
+.glass,
+.cast,
+.stage-box,
+.rail,
+.settings,
 .menu,
 .toast,
 .jump-latest,
@@ -228,6 +233,10 @@ body,
 .zoom-badge {
   -webkit-backdrop-filter: var(--blur);
   backdrop-filter: var(--blur);
+}
+[data-fx="lite"] :is(.glass, .cast, .stage-box, .rail) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 [data-fx="lite"] :is(.menu, .toast, .jump-latest, .modal-card, .settings, .settings.is-open, .zoom-badge) {
   -webkit-backdrop-filter: none;
@@ -241,17 +250,21 @@ body,
 
 .app {
   --rail-w: 272px;
+  --settings-w: 0px;
   height: 100%;
   display: grid;
-  grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--settings-w);
   grid-template-rows: minmax(0, 1fr);
-  grid-template-areas: "rail main";
+  grid-template-areas: "rail main settings";
   background: var(--bg);
   overflow: hidden;
   position: relative;
 }
 .app.rail-closed {
   --rail-w: 0px;
+}
+.app.settings-open {
+  --settings-w: 400px;
 }
 .app > * {
   min-height: 0;
@@ -1993,48 +2006,34 @@ body,
 
 /* ── settings ───────────────────────────────────────────────── */
 
-/* A floating glass sheet over the stage. It never resizes the layout,
-   so opening it does not reflow the transcript. */
+/* Docked to the right edge like the rail: it takes its own grid column,
+   full height, and the transcript reflows beside it. */
 .settings {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  bottom: 10px;
-  z-index: 50;
-  width: 400px;
+  grid-area: settings;
   overflow: hidden;
-  border-radius: 26px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015) 30%),
-    rgba(13, 13, 13, 0.62);
-  box-shadow: var(--glass-lip), 0 40px 90px -30px rgba(0, 0, 0, 0.9);
+  border: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  box-shadow: none;
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.06));
   pointer-events: none;
   visibility: hidden;
-  opacity: 0;
-  transform: translate3d(calc(100% + 24px), 0, 0);
-  transition:
-    transform 0.34s var(--ease-expo),
-    opacity 0.2s var(--ease-out),
-    visibility 0s linear 0.34s;
 }
 .settings.is-open {
   pointer-events: auto;
   visibility: visible;
-  opacity: 1;
-  transform: none;
-  /* Blur switches on once the sheet has landed: sliding a blurred panel
-     re-blurs every frame, which is what made it stutter. */
-  -webkit-backdrop-filter: var(--blur);
-  backdrop-filter: var(--blur);
-  transition:
-    transform 0.65s var(--spring-soft),
-    opacity 0.2s var(--ease-out),
-    visibility 0s,
-    -webkit-backdrop-filter 0s linear 0.6s,
-    backdrop-filter 0s linear 0.6s;
+}
+.settings.is-open .settings-inner {
+  animation: settings-in 0.55s var(--ease-expo) both;
+}
+@keyframes settings-in {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
 }
 .settings-inner {
-  width: 100%;
+  width: 400px;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -3111,13 +3110,32 @@ body,
     pointer-events: auto;
     transition: transform 0.36s var(--ease-out);
   }
-  .settings {
+  .app,
+  .app.settings-open {
+    --settings-w: 0px;
+  }
+  .app > .settings {
     position: fixed;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
+    top: 0;
+    right: 0;
+    bottom: 0;
     z-index: 70;
-    width: min(420px, calc(100vw - 16px));
+    width: min(420px, 100vw);
+    background: rgba(13, 13, 13, 0.72);
+    -webkit-backdrop-filter: var(--blur);
+    backdrop-filter: var(--blur);
+    box-shadow: var(--drop);
+    transform: translateX(100%);
+    transition:
+      transform 0.36s var(--ease-out),
+      visibility 0s linear 0.36s;
+  }
+  .app > .settings.is-open {
+    transform: none;
+    transition: transform 0.36s var(--ease-out);
+  }
+  .settings-inner {
+    width: 100%;
   }
   .app > .rail-scrim {
     display: block;
