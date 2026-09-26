@@ -44,6 +44,14 @@ export function useStreamBridge({
   const streamFlushAt = useRef(0);
   /** Cap UI paint rate while tokens arrive — every RAF floods WebKit. */
   const STREAM_FLUSH_MS = 50;
+  // Tauri's listen() is async, so every re-subscribe leaves a gap where
+  // events are dropped. Keep callbacks in refs and subscribe exactly once:
+  // otherwise a toast clearing on Next re-bound the listeners right as the
+  // turn started, losing stream-start and the Running status.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  const onNarrationClearedRef = useRef(onNarrationCleared);
+  onNarrationClearedRef.current = onNarrationCleared;
 
   useEffect(() => {
     if (status !== "Running") {
@@ -167,7 +175,7 @@ export function useStreamBridge({
     };
 
     const applyError = (msg: string) => {
-      onError(msg);
+      onErrorRef.current(msg);
       const match = msg.match(/^(ai[123])\s+error:/);
       lastFailed.current = match
         ? { agent: match[1], turn: turnRef.current }
@@ -260,7 +268,7 @@ export function useStreamBridge({
           applyStreamChunk(payload as StreamChunk),
         ),
         onBus("stream-abort", () => applyAbort()),
-        onBus("narration-cleared", () => onNarrationCleared()),
+        onBus("narration-cleared", () => onNarrationClearedRef.current()),
         onBus("stream-done", () => applyStreamDone()),
         onBus("message-deleted", (payload) =>
           applyMessageDeleted(
@@ -288,7 +296,7 @@ export function useStreamBridge({
         listen<StreamStart>("stream-start", (e) => applyStreamStart(e.payload)),
         listen<StreamChunk>("stream-chunk", (e) => applyStreamChunk(e.payload)),
         listen("stream-abort", () => applyAbort()),
-        listen("narration-cleared", () => onNarrationCleared()),
+        listen("narration-cleared", () => onNarrationClearedRef.current()),
         listen("stream-done", () => applyStreamDone()),
         listen<{ agent: string; turn: number; created_at: number }>(
           "message-deleted",
@@ -310,7 +318,7 @@ export function useStreamBridge({
       unsubs.forEach((u) => u());
       clearStreamSched();
     };
-  }, [onError, onNarrationCleared, turnRef]);
+  }, [turnRef]);
 
   const clearFailed = useCallback(() => {
     lastFailed.current = null;
