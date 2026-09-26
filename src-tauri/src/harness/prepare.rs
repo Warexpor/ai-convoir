@@ -1,7 +1,7 @@
 //! Prepare step: select speaker, trim context, build body, estimate tokens, cache key.
 
 use crate::engine::{
-    build_chat_body, next_speaker, trim_messages_for_context, uses_responses_api,
+    build_chat_body, next_speaker, trim_messages_for_context, uses_responses_for,
 };
 use crate::harness::cache::{
     apply_prompt_cache_key, apply_stream_usage_option, compute_prompt_cache_key,
@@ -113,7 +113,7 @@ pub fn prepare_turn(
         cache_key,
         prefix_fingerprint,
         chat_body,
-        uses_responses: uses_responses_api(&inner.config_for_agent(agent).model),
+        uses_responses: uses_responses_for(inner.config_for_agent(agent)),
         bot_count: inner.bot_count,
         mode: inner.mode.clone(),
         max_turns: inner.max_turns,

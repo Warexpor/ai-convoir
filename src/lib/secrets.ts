@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isTauriRuntime } from "./openaiCompat";
-import { PROVIDERS } from "./providers";
+import { PROVIDERS, getProvider } from "./providers";
 
 /**
  * Provider API keys. Desktop keeps them in the OS keychain (via the
@@ -13,6 +13,8 @@ const FALLBACK_KEY = "ai-convoir-provider-keys-v1";
 const CHANGED = "provider-keys-changed";
 
 const cache = new Map<string, string>();
+/** OAuth-token providers: signed-in account label ("" = signed in, no email). */
+const signedIn = new Map<string, string>();
 let loaded: Promise<void> | null = null;
 /** Set once the keychain refuses a call; the rest of the session uses the fallback. */
 let keychainDown = !isTauriRuntime();
@@ -54,6 +56,10 @@ export function loadProviderKeys(): Promise<void> {
     loaded = (async () => {
       const fallback = readFallback();
       for (const p of PROVIDERS) {
+        if (p.signIn === "tokens") {
+          await refreshSignIn(p.id);
+          continue;
+        }
         const fromKeychain = await keychainGet(p.id);
         const v = fromKeychain ?? fallback[p.id] ?? "";
         if (v) cache.set(p.id, v);
@@ -63,7 +69,7 @@ export function loadProviderKeys(): Promise<void> {
         }
       }
       // Anything that pushed config before keys arrived re-pushes now.
-      if (cache.size) window.dispatchEvent(new Event(CHANGED));
+      if (cache.size || signedIn.size) window.dispatchEvent(new Event(CHANGED));
     })();
   }
   return loaded;
@@ -74,7 +80,61 @@ export function getProviderKey(id: string | undefined): string {
 }
 
 export function hasProviderKey(id: string | undefined): boolean {
+  if (getProvider(id)?.signIn === "tokens") return signedIn.has(id!);
   return !!getProviderKey(id);
+}
+
+/** Browser sign-in needs the desktop app (loopback callback + keychain). */
+export function signInAvailable(): boolean {
+  return isTauriRuntime() && !keychainDown;
+}
+
+export function signedInAs(id: string): string | null {
+  return signedIn.has(id) ? signedIn.get(id)! : null;
+}
+
+async function refreshSignIn(id: string): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    const s = await invoke<{ signed_in: boolean; email: string }>("oauth_status", {
+      provider: id,
+    });
+    if (s.signed_in) signedIn.set(id, s.email || "");
+    else signedIn.delete(id);
+  } catch {
+    signedIn.delete(id);
+  }
+}
+
+/**
+ * Run a browser sign-in. `open` shows the provider's page; resolves once the
+ * browser returns to the app. OpenRouter's sign-in mints a normal key.
+ */
+export async function signIn(id: string, open: (url: string) => Promise<void>): Promise<void> {
+  const { url } = await invoke<{ url: string }>("oauth_begin", { provider: id });
+  await open(url);
+  await invoke("oauth_wait", { provider: id });
+  if (getProvider(id)?.signIn === "tokens") {
+    await refreshSignIn(id);
+  } else {
+    const key = await keychainGet(id);
+    if (key) cache.set(id, key);
+  }
+  window.dispatchEvent(new Event(CHANGED));
+}
+
+export async function cancelSignIn(id: string): Promise<void> {
+  try {
+    await invoke("oauth_cancel", { provider: id });
+  } catch {
+    /* nothing pending */
+  }
+}
+
+export async function signOut(id: string): Promise<void> {
+  await invoke("oauth_logout", { provider: id });
+  signedIn.delete(id);
+  window.dispatchEvent(new Event(CHANGED));
 }
 
 export async function setProviderKey(

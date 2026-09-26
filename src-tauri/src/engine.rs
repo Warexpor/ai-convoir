@@ -316,6 +316,16 @@ pub fn uses_responses_api(model: &str) -> bool {
     model.starts_with("muse-spark")
 }
 
+/// ChatGPT sign-in (Codex backend) only speaks the Responses API.
+pub fn is_codex_base(base: &str) -> bool {
+    host_of(base) == "chatgpt.com"
+}
+
+/// Whether this voice's turn goes through the Responses API.
+pub fn uses_responses_for(config: &AiConfig) -> bool {
+    uses_responses_api(&config.model) || is_codex_base(&config.api_base_url)
+}
+
 /// Lower-cased host of a base URL ("" when it can't be parsed).
 pub fn host_of(base: &str) -> String {
     let s = base.trim();
@@ -369,6 +379,16 @@ pub fn provider_headers(
             "https://github.com/Warexpor/ai-convoir".into(),
         ));
         h.push(("X-Title", "AI ConvoIR".into()));
+    } else if host == "chatgpt.com" {
+        // Codex backend: the access token names the ChatGPT account to bill.
+        if let Some(acc) = crate::oauth::codex_account_id(key) {
+            h.push(("chatgpt-account-id", acc));
+        }
+        h.push(("OpenAI-Beta", "responses=experimental".into()));
+        h.push(("originator", "ai_convoir".into()));
+        if !session_id.trim().is_empty() {
+            h.push(("session_id", session_id.into()));
+        }
     } else if host_is(&host, "anthropic.com") {
         // Anthropic's native endpoints (e.g. GET /v1/models) want x-api-key.
         if !key.is_empty() {
@@ -587,6 +607,26 @@ mod tests {
         assert!(!names("http://localhost:11434/v1", "").contains(&"Authorization"));
         // Lookalike hosts don't get OpenCode's session header.
         assert!(!names("https://evil-opencode.ai/v1", "k").contains(&"x-opencode-session"));
+    }
+
+    #[test]
+    fn codex_base_uses_responses_and_account_header() {
+        let mut cfg = sample_config("S", ReasoningEffort::None);
+        cfg.api_base_url = "https://chatgpt.com/backend-api/codex".into();
+        cfg.model = "gpt-5".into();
+        assert!(uses_responses_for(&cfg));
+        cfg.api_base_url = "https://api.openai.com/v1".into();
+        assert!(!uses_responses_for(&cfg));
+
+        use base64::Engine;
+        let payload = serde_json::json!({"https://api.openai.com/auth": {"chatgpt_account_id": "acc-9"}});
+        let tok = format!(
+            "h.{}.s",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string())
+        );
+        let h = provider_headers("https://chatgpt.com/backend-api/codex", &tok, "c1");
+        assert!(h.iter().any(|(k, v)| *k == "chatgpt-account-id" && v == "acc-9"));
+        assert!(h.iter().any(|(k, _)| *k == "OpenAI-Beta"));
     }
 
     #[test]

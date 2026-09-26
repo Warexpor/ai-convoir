@@ -10,7 +10,7 @@ import { SLOT_COLORS, VOICE_PALETTE, agentAccent } from "../types";
 import { defaultConfig } from "../lib/config";
 import { fetchModels } from "../lib/api";
 import { PROVIDERS, baseUrlFor, getProvider } from "../lib/providers";
-import { getProviderKey, onProviderKeysChanged } from "../lib/secrets";
+import { getProviderKey, hasProviderKey, onProviderKeysChanged } from "../lib/secrets";
 import { IconChevron } from "./Marks";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
@@ -184,7 +184,7 @@ function ModelPicker({
   const base = baseUrlFor(provider, config.api_base_url);
   const { models, live } = useProviderModels(provider, base);
   const listId = `models-${slot}`;
-  const needsKey = def && !def.keyOptional && !getProviderKey(provider);
+  const needsKey = def && !def.keyOptional && !hasProviderKey(provider);
 
   return (
     <>
@@ -240,7 +240,9 @@ function ModelPicker({
         </datalist>
         <p className="field-hint">
           {needsKey
-            ? `Add your ${def?.name} key in Settings → Providers.`
+            ? def?.signIn === "tokens"
+              ? `Sign in to ${def.name} in Settings → Providers.`
+              : `Add your ${def?.name} key in Settings → Providers.`
             : live
               ? `${models.length} models available. Type to filter.`
               : "Type any model id this provider serves."}
