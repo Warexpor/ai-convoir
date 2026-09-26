@@ -12,7 +12,7 @@ use serde_json::Value;
 
 /// Snapshot produced by the prepare phase — ready for stream orchestration.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // bot_count/mode/max_turns/prefix retained for harness metrics callers
 pub struct PreparedTurn {
     pub agent: &'static str,
     pub turn: u32,
@@ -172,5 +172,38 @@ mod tests {
         // Still ai1's turn (turn_count 0)
         let prep2 = prepare_turn(&inner, None, 2, true).unwrap();
         assert_eq!(key1, prep2.cache_key);
+    }
+
+    #[test]
+    fn prepare_marks_trimmed_and_keeps_newest() {
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "gpt-4o-mini".into();
+        // Force tiny budget via huge system prompt.
+        inner.ai1_config.system_prompt = "x".repeat(600_000);
+        inner.ai2_config.system_prompt = "y".repeat(600_000);
+        for i in 0..5 {
+            inner.messages.push(Message {
+                agent: if i % 2 == 0 { "ai1" } else { "ai2" }.into(),
+                role: "assistant".into(),
+                content: format!("msg-{i}"),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            });
+        }
+        let prep = prepare_turn(&inner, Some("note".into()), 99, true).unwrap();
+        assert!(prep.trimmed);
+        assert_eq!(prep.context_messages.len(), 1);
+        assert_eq!(prep.context_messages[0].content, "msg-4");
+        assert_eq!(prep.narration.as_deref(), Some("note"));
+        assert!(!prep.uses_responses); // gpt-4o-mini
+    }
+
+    #[test]
+    fn prepare_sets_uses_responses_for_muse_spark() {
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "muse-spark-1.3-contributor".into();
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert!(prep.uses_responses);
     }
 }

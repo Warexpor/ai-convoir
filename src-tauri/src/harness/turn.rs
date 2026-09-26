@@ -1,5 +1,5 @@
 //! Typed turn state machine:
-//! Idle → Preparing → Streaming → Committing → Next | Paused | Stopped | Error
+//! Idle → Preparing → Streaming → Committing → Next | Stopped | Error
 
 use std::fmt;
 
@@ -13,7 +13,6 @@ pub enum TurnPhase {
     Committing,
     /// Ready for the next speaker (auto cycle continues).
     Next,
-    Paused,
     Stopped,
     Error,
 }
@@ -42,7 +41,8 @@ impl fmt::Display for TransitionError {
 
 impl std::error::Error for TransitionError {}
 
-/// Drives prepare → stream → commit → next (or pause/stop/error).
+/// Drives prepare → stream → commit → next (or stop/error).
+/// Pause is owned by AppState flags / loop, not this machine.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct TurnMachine {
     phase: TurnPhase,
@@ -70,10 +70,10 @@ impl TurnMachine {
         }
     }
 
-    /// Idle | Next | Paused → Preparing
+    /// Idle | Next → Preparing
     pub fn begin_prepare(&mut self) -> Result<(), TransitionError> {
         match self.phase {
-            TurnPhase::Idle | TurnPhase::Next | TurnPhase::Paused => {
+            TurnPhase::Idle | TurnPhase::Next => {
                 self.go(TurnPhase::Preparing);
                 Ok(())
             }
@@ -114,23 +114,8 @@ impl TurnMachine {
         }
     }
 
-    /// From almost any active phase → Paused (user pause / step end)
-    pub fn pause(&mut self) -> Result<(), TransitionError> {
-        match self.phase {
-            TurnPhase::Idle
-            | TurnPhase::Preparing
-            | TurnPhase::Streaming
-            | TurnPhase::Committing
-            | TurnPhase::Next
-            | TurnPhase::Paused => {
-                self.go(TurnPhase::Paused);
-                Ok(())
-            }
-            TurnPhase::Stopped | TurnPhase::Error => Err(self.fail_trans("pause")),
-        }
-    }
-
     /// Hard stop — keep transcript; epoch bump happens outside.
+    /// Prefer this for pre-stream cancel (stream never started).
     pub fn stop(&mut self) {
         self.go(TurnPhase::Stopped);
     }
@@ -140,25 +125,7 @@ impl TurnMachine {
         self.go(TurnPhase::Error);
     }
 
-    /// Reset to Idle (fresh start / after stop cleared).
-    #[allow(dead_code)]
-    pub fn reset_idle(&mut self) {
-        self.go(TurnPhase::Idle);
-    }
-
-    /// After pause, resume into Preparing on next turn.
-    pub fn resume_from_paused(&mut self) -> Result<(), TransitionError> {
-        match self.phase {
-            TurnPhase::Paused | TurnPhase::Stopped | TurnPhase::Error | TurnPhase::Next => {
-                self.go(TurnPhase::Idle);
-                Ok(())
-            }
-            TurnPhase::Idle => Ok(()),
-            _ => Err(self.fail_trans("resume_from_paused")),
-        }
-    }
-
-    /// Abort mid-stream without commit (cancel / epoch bump).
+    /// Abort mid-stream without commit (cancel / epoch bump after stream began).
     pub fn abort_stream(&mut self) {
         match self.phase {
             TurnPhase::Streaming | TurnPhase::Preparing | TurnPhase::Committing => {
@@ -197,23 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn pause_from_streaming_and_resume() {
-        let mut m = TurnMachine::new();
-        m.begin_prepare().unwrap();
-        m.begin_stream().unwrap();
-        m.pause().unwrap();
-        assert_eq!(m.phase(), TurnPhase::Paused);
-        m.resume_from_paused().unwrap();
-        assert_eq!(m.phase(), TurnPhase::Idle);
-    }
-
-    #[test]
     fn stop_and_fail_terminal() {
         let mut m = TurnMachine::new();
         m.begin_prepare().unwrap();
         m.stop();
         assert_eq!(m.phase(), TurnPhase::Stopped);
-        assert!(m.pause().is_err());
 
         let mut m2 = TurnMachine::new();
         m2.begin_prepare().unwrap();
@@ -228,6 +183,14 @@ mod tests {
         m.begin_prepare().unwrap();
         m.begin_stream().unwrap();
         m.abort_stream();
+        assert_eq!(m.phase(), TurnPhase::Stopped);
+    }
+
+    #[test]
+    fn pre_stream_cancel_uses_stop() {
+        let mut m = TurnMachine::new();
+        m.begin_prepare().unwrap();
+        m.stop();
         assert_eq!(m.phase(), TurnPhase::Stopped);
     }
 

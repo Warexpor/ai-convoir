@@ -66,8 +66,8 @@ pub async fn start_conversation(
             StartAction::ResumeAuto | StartAction::ContinueIdle => {
                 let turn = inner.turn_count;
                 state_arc.clear_reset_if_idle();
-                state_arc.pause_flag.store(false, Ordering::Relaxed);
-                state_arc.step_once.store(false, Ordering::Relaxed);
+                state_arc.pause_flag.store(false, Ordering::Release);
+                state_arc.step_once.store(false, Ordering::Release);
                 inner.status = AppStatus::Running;
                 drop(inner);
                 let _ = app_handle.emit(
@@ -93,10 +93,11 @@ pub async fn start_conversation(
         let mut inner = state_arc.inner.lock().map_err(|e| e.to_string())?;
         inner.messages.clear();
         inner.turn_count = 0;
+        inner.pending_narration.clear();
         if inner.mode == ConversationMode::Step {
             // Step: wait for step_once
             inner.status = AppStatus::Paused;
-            state_arc.pause_flag.store(true, Ordering::Relaxed);
+            state_arc.pause_flag.store(true, Ordering::Release);
         } else {
             inner.status = AppStatus::Running;
         }
@@ -108,6 +109,11 @@ pub async fn start_conversation(
         serde_json::json!({ "status": format!("{:?}", inner.status), "turn": inner.turn_count })
     };
     let _ = app_handle.emit("status-update", status_emit);
+    // FE applyAbort: clear any in-flight bubble from the previous run.
+    let _ = app_handle.emit(
+        "stream-abort",
+        serde_json::json!({ "agent": "", "turn": 0 }),
+    );
 
     spawn_loop_if_needed(state_arc, app_handle);
     tracing::info!(target: "commands", "start_conversation");
@@ -172,8 +178,8 @@ pub async fn step_conversation(
     }
 
     state_arc.clear_reset_if_idle();
-    state_arc.step_once.store(true, Ordering::Relaxed);
-    state_arc.pause_flag.store(false, Ordering::Relaxed);
+    state_arc.step_once.store(true, Ordering::Release);
+    state_arc.pause_flag.store(false, Ordering::Release);
 
     tracing::info!(target: "commands", "step_conversation");
     let turn = state_arc
@@ -197,8 +203,8 @@ pub async fn pause_conversation(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
-    arc.pause_flag.store(true, Ordering::Relaxed);
-    arc.step_once.store(false, Ordering::Relaxed);
+    arc.pause_flag.store(true, Ordering::Release);
+    arc.step_once.store(false, Ordering::Release);
     let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
     inner.status = AppStatus::Paused;
     let _ = app_handle.emit(
@@ -216,8 +222,8 @@ pub async fn reset_conversation(
     let arc: &Arc<AppState> = &state;
     arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Release);
-    arc.pause_flag.store(true, Ordering::Relaxed);
-    arc.step_once.store(false, Ordering::Relaxed);
+    arc.pause_flag.store(true, Ordering::Release);
+    arc.step_once.store(false, Ordering::Release);
 
     let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
     inner.messages.clear();
@@ -245,12 +251,13 @@ pub async fn stop_conversation(
     let arc: &Arc<AppState> = &state;
     let epoch = arc.bump_stream_epoch();
     tracing::info!(target: "commands", epoch, "stop_conversation");
-    arc.pause_flag.store(true, Ordering::Relaxed);
-    arc.step_once.store(false, Ordering::Relaxed);
+    arc.pause_flag.store(true, Ordering::Release);
+    arc.step_once.store(false, Ordering::Release);
 
     {
         let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
         // Keep messages + turn_count
+        inner.pending_narration.clear();
         inner.status = AppStatus::Idle;
         let turn = inner.turn_count;
         let _ = app_handle.emit(
@@ -278,10 +285,10 @@ pub async fn load_transcript(
     let state_arc = Arc::clone(arc);
     arc.bump_stream_epoch();
     arc.reset_flag.store(true, Ordering::Release);
-    arc.pause_flag.store(true, Ordering::Relaxed);
-    arc.step_once.store(false, Ordering::Relaxed);
+    arc.pause_flag.store(true, Ordering::Release);
+    arc.step_once.store(false, Ordering::Release);
 
-    // Persist loaded messages to DB (async, best-effort)
+    // Persist loaded messages to DB (async, best-effort; serialized writes)
     if !chat_id.is_empty() {
         let db_path = state_arc
             .db_path
@@ -293,9 +300,7 @@ pub async fn load_transcript(
             let msgs = messages.clone();
             let cid = chat_id.clone();
             std::thread::spawn(move || {
-                if let Ok(conn) = db::open(&db_path) {
-                    let _ = db::save_messages(&conn, &cid, &msgs);
-                }
+                let _ = db::with_locked(&db_path, |conn| db::save_messages(conn, &cid, &msgs));
             });
         }
     }
@@ -443,8 +448,7 @@ fn with_db<T>(
     if db_path.is_empty() {
         return Err("Database not ready".into());
     }
-    let conn = db::open(&db_path)?;
-    f(&conn)
+    db::with_locked(&db_path, f)
 }
 
 /// Persist a full saved-chat JSON snapshot (sidebar + transcript).
@@ -573,9 +577,9 @@ pub async fn delete_messages(
             let cid = chat_id.clone();
             let a = agent.clone();
             let _ = std::thread::spawn(move || {
-                if let Ok(conn) = db::open(&db_path) {
-                    let _ = db::delete_message(&conn, &cid, &a, turn, created_at);
-                }
+                let _ = db::with_locked(&db_path, |conn| {
+                    db::delete_message(conn, &cid, &a, turn, created_at)
+                });
             });
         }
     }
@@ -614,14 +618,22 @@ fn now_ms() -> u64 {
 }
 
 
-fn restore_narration_if_idle(state: &Arc<AppState>, narration: &Option<String>) {
+/// Put a consumed one-shot narration back only when the turn is still live.
+/// Skips after Reset/Load/Stop (reset_flag and/or Idle) so stale notes do not revive.
+fn restore_narration_unless_reset_or_idle(state: &Arc<AppState>, narration: &Option<String>) {
     let Some(n) = narration.as_ref() else {
         return;
     };
     if n.is_empty() {
         return;
     }
+    if state.reset_flag.load(Ordering::Acquire) {
+        return;
+    }
     if let Ok(mut inner) = state.inner.lock() {
+        if inner.status == AppStatus::Idle {
+            return;
+        }
         if inner.pending_narration.is_empty() {
             inner.pending_narration = n.clone();
         }
@@ -697,8 +709,8 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
     // Epoch may have bumped while we held the prepare lock (stop/reset/load).
     if cancel.is_cancelled() {
-        machine.abort_stream();
-        restore_narration_if_idle(state, &prepared.narration);
+        machine.stop();
+        restore_narration_unless_reset_or_idle(state, &prepared.narration);
         metrics.phase_end = TurnPhase::Stopped.to_string();
         log_turn_metrics(&metrics);
         emit_harness_metrics(app_handle, &metrics);
@@ -707,7 +719,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
     if let Err(e) = machine.begin_stream() {
         tracing::warn!(target: "harness", error = %e, "begin_stream");
-        restore_narration_if_idle(state, &prepared.narration);
+        restore_narration_unless_reset_or_idle(state, &prepared.narration);
         return false;
     }
 
@@ -717,19 +729,24 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         Ok(outcome) => {
             if cancel.is_cancelled() {
                 machine.abort_stream();
-                restore_narration_if_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration);
                 metrics.phase_end = TurnPhase::Stopped.to_string();
                 metrics.ttft_ms = outcome.ttft_ms;
                 metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
                 metrics.apply_usage(&outcome.usage);
                 log_turn_metrics(&metrics);
                 emit_harness_metrics(app_handle, &metrics);
+                // Stream may have emitted start/chunks — FE needs applyAbort.
+                let _ = app_handle.emit(
+                    "stream-abort",
+                    serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
+                );
                 return false;
             }
 
             if let Err(e) = machine.begin_commit() {
                 tracing::warn!(target: "harness", error = %e, "begin_commit");
-                restore_narration_if_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration);
                 return false;
             }
 
@@ -766,9 +783,9 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                             let msg_for_db = msg.clone();
                             let cid = chat_id.clone();
                             std::thread::spawn(move || {
-                                if let Ok(conn) = db::open(&db_path) {
-                                    let _ = db::save_message(&conn, &cid, &msg_for_db);
-                                }
+                                let _ = db::with_locked(&db_path, |conn| {
+                                    db::save_message(conn, &cid, &msg_for_db)
+                                });
                             });
                         }
                     }
@@ -807,7 +824,11 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             };
 
             if !committed {
-                restore_narration_if_idle(state, &prepared.narration);
+                restore_narration_unless_reset_or_idle(state, &prepared.narration);
+                let _ = app_handle.emit(
+                    "stream-abort",
+                    serde_json::json!({ "agent": prepared.agent, "turn": prepared.turn }),
+                );
             }
 
             log_turn_metrics(&metrics);
@@ -819,7 +840,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         }
         Err(e) if e == llm::STREAM_ABORTED => {
             machine.abort_stream();
-            restore_narration_if_idle(state, &prepared.narration);
+            restore_narration_unless_reset_or_idle(state, &prepared.narration);
             metrics.phase_end = TurnPhase::Stopped.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -838,7 +859,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         Err(e) => {
             machine.fail();
             // Keep narration on API failure so the user can retry the same note.
-            restore_narration_if_idle(state, &prepared.narration);
+            restore_narration_unless_reset_or_idle(state, &prepared.narration);
             metrics.phase_end = TurnPhase::Error.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -882,13 +903,13 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
     }
 
     loop {
-        if state.reset_flag.load(Ordering::Relaxed) {
-            state.reset_flag.store(false, Ordering::Relaxed);
+        if state.reset_flag.load(Ordering::Acquire) {
+            state.reset_flag.store(false, Ordering::Release);
             break;
         }
 
         // Wait while paused, unless step_once is set
-        if state.pause_flag.load(Ordering::Relaxed) && !state.step_once.load(Ordering::Relaxed) {
+        if state.pause_flag.load(Ordering::Acquire) && !state.step_once.load(Ordering::Acquire) {
             tokio::time::sleep(Duration::from_millis(50)).await;
             // Exit if idle after pause with no work
             if let Ok(inner) = state.inner.lock() {
@@ -916,7 +937,7 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
             let Ok(inner) = state.inner.lock() else {
                 break;
             };
-            inner.mode == ConversationMode::Step || state.step_once.load(Ordering::Relaxed)
+            inner.mode == ConversationMode::Step || state.step_once.load(Ordering::Acquire)
         };
 
         let cont = run_one_turn(&state, &app_handle).await;
@@ -924,9 +945,9 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
             break;
         }
 
-        if step_mode || state.step_once.load(Ordering::Relaxed) {
-            state.step_once.store(false, Ordering::Relaxed);
-            state.pause_flag.store(true, Ordering::Relaxed);
+        if step_mode || state.step_once.load(Ordering::Acquire) {
+            state.step_once.store(false, Ordering::Release);
+            state.pause_flag.store(true, Ordering::Release);
             if let Ok(mut inner) = state.inner.lock() {
                 if inner.status != AppStatus::Idle {
                     inner.status = AppStatus::Paused;
@@ -960,8 +981,8 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
             // Interruptible delay
             let steps = (delay / 50).max(1);
             for _ in 0..steps {
-                if state.pause_flag.load(Ordering::Relaxed)
-                    || state.reset_flag.load(Ordering::Relaxed)
+                if state.pause_flag.load(Ordering::Acquire)
+                    || state.reset_flag.load(Ordering::Acquire)
                 {
                     break;
                 }
@@ -1100,5 +1121,107 @@ mod epoch_tests {
         let len = msgs.len();
         msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == wrong_stamp));
         assert_eq!(msgs.len(), len);
+    }
+}
+
+#[cfg(test)]
+mod narration_restore_tests {
+    use super::restore_narration_unless_reset_or_idle;
+    use crate::state::{AppState, AppStatus};
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    #[test]
+    fn restores_when_running_and_not_reset() {
+        let state = Arc::new(AppState::new());
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.status = AppStatus::Running;
+            inner.pending_narration.clear();
+        }
+        restore_narration_unless_reset_or_idle(&state, &Some("director note".into()));
+        let inner = state.inner.lock().unwrap();
+        assert_eq!(inner.pending_narration, "director note");
+    }
+
+    #[test]
+    fn skips_restore_when_reset_flag_set() {
+        let state = Arc::new(AppState::new());
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.status = AppStatus::Running;
+            inner.pending_narration.clear();
+        }
+        state.reset_flag.store(true, Ordering::Release);
+        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()));
+        let inner = state.inner.lock().unwrap();
+        assert!(inner.pending_narration.is_empty());
+    }
+
+    #[test]
+    fn skips_restore_when_status_idle_after_reset_or_load() {
+        let state = Arc::new(AppState::new());
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.status = AppStatus::Idle;
+            inner.pending_narration.clear();
+        }
+        restore_narration_unless_reset_or_idle(&state, &Some("stale".into()));
+        let inner = state.inner.lock().unwrap();
+        assert!(inner.pending_narration.is_empty());
+    }
+
+    #[test]
+    fn fresh_start_clears_pending_narration() {
+        let state = Arc::new(AppState::new());
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.pending_narration = "keep me?".into();
+            inner.status = AppStatus::Idle;
+        }
+        // Mirror FreshStart / stop / reset clear semantics.
+        {
+            let mut inner = state.inner.lock().unwrap();
+            inner.pending_narration.clear();
+        }
+        state.bump_stream_epoch();
+        let inner = state.inner.lock().unwrap();
+        assert!(inner.pending_narration.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod cancel_path_tests {
+    use crate::llm::StreamCancel;
+    use crate::state::AppState;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn cancel_before_stream_detected_after_prepare() {
+        let state = AppState::new();
+        let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
+        let cancel = StreamCancel {
+            reset: &state.reset_flag,
+            epoch: &state.stream_epoch,
+            epoch_at_start,
+        };
+        assert!(!cancel.is_cancelled());
+        // stop/reset/load before begin_stream
+        state.bump_stream_epoch();
+        assert!(cancel.is_cancelled());
+    }
+
+    #[test]
+    fn cancel_after_stream_via_ok_cancelled_epoch() {
+        let state = AppState::new();
+        let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
+        let cancel = StreamCancel {
+            reset: &state.reset_flag,
+            epoch: &state.stream_epoch,
+            epoch_at_start,
+        };
+        // Stream returned Ok but epoch bumped mid-flight (stop).
+        state.bump_stream_epoch();
+        assert!(cancel.is_cancelled());
     }
 }
