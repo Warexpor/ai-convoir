@@ -222,4 +222,28 @@ mod tests {
         let prep = prepare_turn(&inner, None, 1, true).unwrap();
         assert_eq!(prep.chat_body["max_tokens"], 128);
     }
+
+    #[test]
+    fn prepare_binds_all_length_ceilings_into_chat_body() {
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "gpt-4o-mini".into();
+        inner.ai1_config.api_base_url = "https://example.com/v1".into();
+        inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.reasoning_effort = crate::state::ReasoningEffort::None;
+        let cases = [
+            (crate::state::ResponseLength::Brief, 128),
+            (crate::state::ResponseLength::Small, 384),
+            (crate::state::ResponseLength::Normal, 2048),
+            (crate::state::ResponseLength::Long, 4096),
+            (crate::state::ResponseLength::VeryLong, 8192),
+        ];
+        for (len, expect) in cases {
+            inner.ai1_config.response_length = len.clone();
+            let prep = prepare_turn(&inner, None, 1, true).unwrap();
+            assert_eq!(
+                prep.chat_body["max_tokens"], expect,
+                "ceiling mismatch for {len:?}"
+            );
+        }
+    }
 }

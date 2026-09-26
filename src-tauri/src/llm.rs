@@ -1527,8 +1527,35 @@ mod cancel_tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["instructions"], "be Ava");
         assert_eq!(body["reasoning"]["effort"], "high");
+        assert_eq!(body["reasoning"]["summary"], "auto");
         assert!(body.get("temperature").is_none());
         assert!(body.get("max_output_tokens").is_none());
+    }
+
+    #[test]
+    fn prepare_then_responses_body_for_muse_spark_thinking() {
+        use crate::harness::prepare::prepare_turn;
+        use crate::state::{InnerState, ReasoningEffort, ResponseLength};
+
+        let mut inner = InnerState::default();
+        inner.ai1_config.model = "muse-spark-1.3-contributor".into();
+        inner.ai1_config.api_base_url = "https://opencode.ai/zen/go/v1".into();
+        inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.response_length = ResponseLength::Brief;
+        inner.ai1_config.reasoning_effort = ReasoningEffort::Medium;
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert!(prep.uses_responses);
+        // Soft Brief note must still be on the chat system row before conversion.
+        let sys = prep.chat_body["messages"][0]["content"].as_str().unwrap_or("");
+        assert!(
+            sys.contains("extremely brief"),
+            "Brief length note missing from prepare chat_body: {sys}"
+        );
+        let body = responses_body_from_chat(&prep.chat_body, &prep.config, true);
+        assert_eq!(body["max_output_tokens"], 128 + 1024);
+        assert_eq!(body["reasoning"]["effort"], "medium");
+        assert_eq!(body["reasoning"]["summary"], "auto");
+        assert_eq!(body["instructions"], sys);
     }
     use crate::harness::client::{SHORT_HTTP_TIMEOUT_SECS, STREAM_HTTP_TIMEOUT_SECS};
 
