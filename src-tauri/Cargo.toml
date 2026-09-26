@@ -1,10 +1,10 @@
 [package]
-name = "ai-conversation"
+name = "ai-convoir"
 version = "2.0.0"
 edition = "2021"
 
 [lib]
-name = "ai_conversation_lib"
+name = "ai_convoir_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

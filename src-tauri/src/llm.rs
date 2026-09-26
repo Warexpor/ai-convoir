@@ -43,7 +43,7 @@ pub async fn call_llm(
     let res = apply_go_headers(
         client.post(&url).header("Content-Type", "application/json"),
         &config.api_key,
-        "ai-conversation",
+        "ai-convoir",
     )
     .json(&body)
     .send()
@@ -114,12 +114,12 @@ fn apply_go_headers(
     session_id: &str,
 ) -> reqwest::RequestBuilder {
     let session = if session_id.trim().is_empty() {
-        "ai-conversation"
+        "ai-convoir"
     } else {
         session_id
     };
     req.header("Authorization", format!("Bearer {}", api_key))
-        .header("User-Agent", "ai-conversation/2.0")
+        .header("User-Agent", "ai-convoir/2.0")
         .header("x-opencode-session", session)
 }
 

@@ -675,7 +675,7 @@ export default function SettingsSidebar({
           {saved ? "Saved" : dirty ? "Save changes" : "All saved"}
         </button>
         <p className="about-line">
-          AI Conversation <span>v2.0</span> · <kbd>S</kbd> toggles this panel
+          AI ConvoIR <span>v2.0</span> · <kbd>S</kbd> toggles this panel
         </p>
       </div>
       </div>

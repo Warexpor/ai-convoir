@@ -16,8 +16,10 @@ export interface Cast {
   updated_at: number;
 }
 
-const CASTS_KEY = "ai-conversation-casts-v1";
-const ACTIVE_CAST_KEY = "ai-conversation-active-cast";
+const CASTS_KEY = "ai-convoir-casts-v1";
+const ACTIVE_CAST_KEY = "ai-convoir-active-cast";
+const LEGACY_CASTS_KEY = "ai-conversation-casts-v1";
+const LEGACY_ACTIVE_CAST_KEY = "ai-conversation-active-cast";
 
 function uid(): string {
   return `cast-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -34,7 +36,8 @@ function stripKey(c: AiConfig): AiConfig {
 
 export function listCasts(): Cast[] {
   try {
-    const raw = localStorage.getItem(CASTS_KEY);
+    const raw =
+      localStorage.getItem(CASTS_KEY) || localStorage.getItem(LEGACY_CASTS_KEY);
     const list = raw ? (JSON.parse(raw) as Cast[]) : [];
     return Array.isArray(list)
       ? list.filter((c) => c && typeof c.id === "string")
@@ -60,7 +63,10 @@ export function getCast(id: string | null | undefined): Cast | undefined {
 
 export function getActiveCastId(): string | null {
   try {
-    return localStorage.getItem(ACTIVE_CAST_KEY);
+    return (
+      localStorage.getItem(ACTIVE_CAST_KEY) ||
+      localStorage.getItem(LEGACY_ACTIVE_CAST_KEY)
+    );
   } catch {
     return null;
   }
@@ -69,7 +75,10 @@ export function getActiveCastId(): string | null {
 export function setActiveCastId(id: string | null) {
   try {
     if (id) localStorage.setItem(ACTIVE_CAST_KEY, id);
-    else localStorage.removeItem(ACTIVE_CAST_KEY);
+    else {
+      localStorage.removeItem(ACTIVE_CAST_KEY);
+      localStorage.removeItem(LEGACY_ACTIVE_CAST_KEY);
+    }
   } catch {
     /* quota */
   }

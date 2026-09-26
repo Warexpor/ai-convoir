@@ -1,7 +1,8 @@
 {
-  "name": "ai-conversation",
+  "name": "ai-convoir",
   "private": true,
   "version": "2.0.0",
+  "description": "AI ConvoIR \u2014 desktop multi-agent chat for 2\u20133 voices on one thread",
   "type": "module",
   "scripts": {
     "dev": "vite",

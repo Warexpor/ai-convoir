@@ -30,7 +30,7 @@ const state: EngineState = {
   turnCount: 0,
   status: "Idle",
   pendingNarration: "",
-  sessionId: "ai-conversation",
+  sessionId: "ai-convoir",
   abort: null,
   loopActive: false,
   stepOnce: false,
@@ -121,7 +121,7 @@ function goHeaders(apiKey: string): HeadersInit {
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json",
     Accept: "text/event-stream",
-    "x-opencode-session": state.sessionId || "ai-conversation",
+    "x-opencode-session": state.sessionId || "ai-convoir",
   };
 }
 
@@ -376,7 +376,7 @@ export function setEngineConfig(cfg: InnerState) {
 }
 
 export function setEngineSession(id: string) {
-  state.sessionId = id || "ai-conversation";
+  state.sessionId = id || "ai-convoir";
 }
 
 export function getEngineMessages(): Message[] {
@@ -496,7 +496,7 @@ export async function engineFetchModels(baseUrl: string, apiKey: string): Promis
   const res = await fetch(url, {
     headers: {
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-      "x-opencode-session": state.sessionId || "ai-conversation",
+      "x-opencode-session": state.sessionId || "ai-convoir",
     },
   });
   if (!res.ok) throw new Error(friendlyApiError(res.status, `Models API ${res.status}`));
