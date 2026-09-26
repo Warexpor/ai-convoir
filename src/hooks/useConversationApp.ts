@@ -11,6 +11,7 @@ import {
   persistConfig,
 } from "../lib/config";
 import {
+  clearCastIdFromChats,
   deleteChat,
   getActiveChatId,
   getChat,
@@ -520,6 +521,7 @@ export function useConversationApp() {
   const handleDeleteCast = useCallback(
     (id: string) => {
       deleteCast(id);
+      clearCastIdFromChats(id);
       if (castIdRef.current === id) selectCast(listCasts()[0]?.id ?? null);
       refreshChats();
       toast.show("Cast deleted. Its threads moved to Unsorted.", 2600);
@@ -682,11 +684,14 @@ export function useConversationApp() {
         setActiveChatIdState(null);
         chatIdRef.current = null;
         setActiveChatId(null);
+        void api.setActiveChat("");
         stream.setMessages([]);
         stream.setTurnCount(0);
         stream.setStatus("Idle");
         setNarration("");
         setFirstDraft(configRef.current?.seed_prompt || "");
+        // reset also clears BE active_chat_id; setActiveChat("") covers the
+        // window before reset lands so prepare cannot capture the deleted id.
         void api.resetConversation();
       }
       refreshChats();
