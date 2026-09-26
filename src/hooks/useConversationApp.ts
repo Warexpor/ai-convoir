@@ -20,6 +20,19 @@ import {
   setActiveChatId,
   type SavedChat,
 } from "../lib/storage";
+import {
+  applyCast,
+  createCast,
+  deleteCast,
+  ensureDefaultCast,
+  getActiveCastId,
+  getCast,
+  listCasts,
+  renameCast,
+  setActiveCastId as persistActiveCastId,
+  syncCastFromConfig,
+  type Cast,
+} from "../lib/casts";
 import { agentLabel } from "../types";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
@@ -67,6 +80,12 @@ export function useConversationApp() {
   const [activeChatId, setActiveChatIdState] = useState<string | null>(
     () => bootResume.current?.id ?? getActiveChatId(),
   );
+  const [casts, setCasts] = useState<Cast[]>(() => listCasts());
+  const [activeCastId, setActiveCastIdState] = useState<string | null>(
+    () => bootResume.current?.cast_id ?? getActiveCastId(),
+  );
+  const castIdRef = useRef(activeCastId);
+  castIdRef.current = activeCastId;
   const skipAutosaveUntil = useRef(0);
   const messagesRef = useRef(stream.messages);
   const configRef = useRef(config);
@@ -94,6 +113,18 @@ export function useConversationApp() {
 
   const refreshChats = useCallback(() => setChats(listChats()), []);
 
+  const selectCast = useCallback((id: string | null) => {
+    persistActiveCastId(id);
+    castIdRef.current = id;
+    setActiveCastIdState(id);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setCasts(listCasts());
+    window.addEventListener("casts-changed", onChange);
+    return () => window.removeEventListener("casts-changed", onChange);
+  }, []);
+
   const autoSave = useCallback(() => {
     if (Date.now() < skipAutosaveUntil.current) return;
     const cfg = configRef.current;
@@ -105,6 +136,7 @@ export function useConversationApp() {
       cfg,
       msgs,
       turnRef.current,
+      castIdRef.current,
     );
     setActiveChatIdState(saved.id);
     chatIdRef.current = saved.id;
@@ -163,6 +195,13 @@ export function useConversationApp() {
             seed_prompt: resume.seed_prompt,
           };
         }
+        const fallbackCast = ensureDefaultCast(merged);
+        const resumeCast = resume ? getCast(resume.cast_id) : undefined;
+        selectCast(
+          resume
+            ? (resumeCast?.id ?? null)
+            : (getCast(castIdRef.current)?.id ?? fallbackCast.id),
+        );
         if (cfg || resume) await pushConfig(merged);
         else {
           setConfig(merged);
@@ -244,10 +283,19 @@ export function useConversationApp() {
     toast,
   ]);
 
-  const handleReset = useCallback(async () => {
+  const handleReset = useCallback(async (castId?: string) => {
     try {
       const msgs = messagesRef.current.filter((m) => !m.streaming);
       if (msgs.length > 0) autoSave();
+      // A new thread always lives in a cast: the one asked for, else the
+      // active one, else the first. Its voices become the live config.
+      const cast =
+        getCast(castId) ?? getCast(castIdRef.current) ?? listCasts()[0];
+      if (cast) {
+        selectCast(cast.id);
+        const cfg = configRef.current;
+        if (cfg) await pushConfig(applyCast(cfg, cast));
+      }
       skipAutosaveUntil.current = Date.now() + 2500;
       await api.resetConversation();
       void api.setActiveChat("");
@@ -270,12 +318,49 @@ export function useConversationApp() {
     }
   }, [
     autoSave,
+    pushConfig,
     refreshChats,
+    selectCast,
     stream.setMessages,
     stream.setTurnCount,
     stream.setStatus,
     toast,
   ]);
+
+  /** Settings saves also update the active cast, so future threads inherit. */
+  const handleSaveSettings = useCallback(
+    async (cfg: InnerState) => {
+      await pushConfig(cfg);
+      if (castIdRef.current) syncCastFromConfig(castIdRef.current, cfg);
+    },
+    [pushConfig],
+  );
+
+  const handleCreateCast = useCallback(
+    async (name: string) => {
+      const cfg = configRef.current;
+      if (!cfg) return;
+      const cast = createCast(name, cfg);
+      await handleReset(cast.id);
+      toast.show(`New cast “${cast.name}”. Tweak the voices in Voices.`, 3200);
+      return cast;
+    },
+    [handleReset, toast],
+  );
+
+  const handleRenameCast = useCallback((id: string, name: string) => {
+    renameCast(id, name);
+  }, []);
+
+  const handleDeleteCast = useCallback(
+    (id: string) => {
+      deleteCast(id);
+      if (castIdRef.current === id) selectCast(listCasts()[0]?.id ?? null);
+      refreshChats();
+      toast.show("Cast deleted. Its threads moved to Unsorted.", 2600);
+    },
+    [refreshChats, selectCast, toast],
+  );
 
   const handleModeChange = useCallback(
     async (mode: ConversationMode) => {
@@ -361,6 +446,7 @@ export function useConversationApp() {
       setActiveChatId(chat.id);
       setActiveChatIdState(chat.id);
       chatIdRef.current = chat.id;
+      selectCast(getCast(chat.cast_id)?.id ?? null);
       try {
         await api.stopConversation().catch(() => undefined);
         const cfg: InnerState = {
@@ -397,6 +483,7 @@ export function useConversationApp() {
     [
       autoSave,
       pushConfig,
+      selectCast,
       stream.setMessages,
       stream.setTurnCount,
       stream.setStatus,
@@ -489,6 +576,12 @@ export function useConversationApp() {
     chats,
     activeChatId,
     refreshChats,
+    casts,
+    activeCastId,
+    handleSaveSettings,
+    handleCreateCast,
+    handleRenameCast,
+    handleDeleteCast,
     handleToggle,
     handleStep,
     handleStop,
