@@ -440,6 +440,11 @@ pub fn trim_messages_for_context(
         let msg_tokens =
             estimate_tokens(&m.content) + m.reasoning.as_deref().map_or(0, estimate_tokens);
         if used + msg_tokens > budget {
+            // Never send an empty transcript: keep at least the newest message
+            // even when it alone exceeds the remaining budget.
+            if kept.is_empty() {
+                kept.push(m.clone());
+            }
             break;
         }
         used += msg_tokens;
@@ -793,5 +798,56 @@ mod tests {
         assert_eq!(m1[1], m2[1]);
         assert_eq!(m1[2], m2[2]);
         assert_eq!(m2.len(), m1.len() + 1);
+    }
+
+    #[test]
+    fn trim_keeps_at_least_newest_when_over_budget() {
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        // Tiny context via absurdly long system prompt forcing budget ~0
+        let mut fat = cfg.clone();
+        fat.system_prompt = "x".repeat(600_000);
+        let refs: Vec<&AiConfig> = vec![&fat];
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "old".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "newest-should-survive".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        let kept = trim_messages_for_context(&refs, "", &msgs);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].content, "newest-should-survive");
+    }
+
+    #[test]
+    fn trim_preserves_order_and_can_drop_oldest() {
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        let refs: Vec<&AiConfig> = vec![&cfg];
+        // Default 128k window — small messages all fit
+        let msgs: Vec<Message> = (0..5)
+            .map(|i| Message {
+                agent: if i % 2 == 0 { "ai1" } else { "ai2" }.into(),
+                role: "assistant".into(),
+                content: format!("msg-{i}"),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        let kept = trim_messages_for_context(&refs, "", &msgs);
+        assert_eq!(kept.len(), 5);
+        assert_eq!(kept[0].content, "msg-0");
+        assert_eq!(kept[4].content, "msg-4");
     }
 }

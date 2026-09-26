@@ -54,8 +54,8 @@ pub struct StreamCancel<'a> {
 
 impl StreamCancel<'_> {
     pub fn is_cancelled(&self) -> bool {
-        self.reset.load(Ordering::Relaxed)
-            || self.epoch.load(Ordering::Relaxed) != self.epoch_at_start
+        self.reset.load(Ordering::Acquire)
+            || self.epoch.load(Ordering::Acquire) != self.epoch_at_start
     }
 }
 
@@ -335,6 +335,9 @@ async fn stream_responses(
                     if let Some(v) = line.strip_prefix("event:") {
                         event = v.trim();
                     } else if let Some(v) = line.strip_prefix("data:") {
+                        if !data.is_empty() {
+                            data.push('\n');
+                        }
                         data.push_str(v.trim());
                     }
                 }
@@ -358,6 +361,39 @@ async fn stream_responses(
             text_buf = parts.last().unwrap_or(&"").to_string();
         } else {
             text_buf = normalized;
+        }
+    }
+
+    // Flush a trailing event that lacked a final blank line (common on some proxies).
+    if !text_buf.trim().is_empty() {
+        let trailing = text_buf.replace("\r\n", "\n").replace('\r', "\n");
+        let mut event = "";
+        let mut data = String::new();
+        for line in trailing.lines() {
+            if let Some(v) = line.strip_prefix("event:") {
+                event = v.trim();
+            } else if let Some(v) = line.strip_prefix("data:") {
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str(v.trim());
+            }
+        }
+        let (pieces, chunk_usage) = parse_responses_event(event, &data);
+        usage.merge(&chunk_usage);
+        for piece in pieces {
+            match piece {
+                StreamPiece::Content(d) => {
+                    note_ttft(started, &mut ttft_ms);
+                    full.push_str(&d);
+                    emit_chunk(app_handle, speaking_agent, turn, "content", &d);
+                }
+                StreamPiece::Reasoning(d) => {
+                    note_ttft(started, &mut ttft_ms);
+                    full_reasoning.push_str(&d);
+                    emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
+                }
+            }
         }
     }
 
