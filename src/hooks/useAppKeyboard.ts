@@ -37,6 +37,8 @@ export function useAppKeyboard(opts: KeyboardOptions) {
       const tag = (e.target as HTMLElement)?.tagName;
       const inField =
         tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      // An open dropdown owns the keyboard; letters must not fire shortcuts.
+      if (document.querySelector(".dd-pop:not(.is-leaving), .dd-sheet")) return;
 
       if (e.key === "," && (!inField || e.ctrlKey || e.metaKey)) {
         e.preventDefault();

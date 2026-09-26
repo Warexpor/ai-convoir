@@ -184,9 +184,11 @@ export default function Dropdown<T extends string | number>({
     return () => document.removeEventListener("pointerdown", onDown, true);
   }, [open, close]);
 
+  // The popover mounts only once it has been placed, so wait for that.
+  const placed = place !== null;
   useEffect(() => {
-    if (open && search && !isPhone) searchRef.current?.focus({ preventScroll: true });
-  }, [open, search, isPhone]);
+    if (open && placed && search && !isPhone) searchRef.current?.focus({ preventScroll: true });
+  }, [open, placed, search, isPhone]);
 
   // Keep the highlighted row in view.
   useEffect(() => {
