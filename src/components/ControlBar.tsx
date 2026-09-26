@@ -78,7 +78,10 @@ function ControlBar({
   const progress = isStep
     ? 0
     : Math.min((turnCount / Math.max(maxTurns, 1)) * 100, 100);
-  const statusLabel = running ? "Live" : status === "Paused" ? "Paused" : "Ready";
+  // Step mode parks the engine in Paused between turns; that is just "ready
+  // for the next line", not a paused run, so show it as idle.
+  const shownStatus = isStep && status === "Paused" ? "Idle" : status;
+  const statusLabel = running ? "Live" : shownStatus === "Paused" ? "Paused" : "Ready";
   const tokenRatio = tokenCapacity > 0 ? tokenUsed / tokenCapacity : 0;
   const tokenPct = Math.round(tokenRatio * 100);
   const ctxLevel = tokenRatio > 0.8 ? "hot" : tokenRatio > 0.6 ? "warm" : "cool";
@@ -156,7 +159,7 @@ function ControlBar({
   );
 
   const who = nextName ?? "the next voice";
-  const goLabel = running ? "Pause" : status === "Paused" ? "Resume" : "Run";
+  const goLabel = running ? "Pause" : shownStatus === "Paused" ? "Resume" : "Run";
 
   const whisper = (
     <label
@@ -281,12 +284,12 @@ function ControlBar({
           />
 
           <span
-            className={`status-pill is-${status.toLowerCase()}`}
+            className={`status-pill is-${shownStatus.toLowerCase()}`}
             aria-live="polite"
           >
             {running ? (
               <IconLive />
-            ) : status === "Paused" ? (
+            ) : shownStatus === "Paused" ? (
               <span className="status-glyph" aria-hidden>
                 <IconPause />
               </span>
@@ -319,14 +322,14 @@ function ControlBar({
               type="button"
               className="btn btn-ghost"
               onClick={onRetry}
-              title={`Retry ${retryTarget.agent} turn ${retryTarget.turn}`}
+              title={`Retry ${nextName ?? "the failed"} turn`}
             >
               <IconRetry />
               Retry
             </button>
           )}
 
-          {status !== "Idle" && (
+          {shownStatus !== "Idle" && (
           <button
             type="button"
             className="btn btn-icon btn-stop is-popping"
