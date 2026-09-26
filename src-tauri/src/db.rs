@@ -1,5 +1,24 @@
 use crate::state::Message;
 use rusqlite::{params, Connection};
+use std::sync::{Mutex, OnceLock};
+
+/// Serialize all DB open+write paths so save_message cannot race upsert/clear.
+fn write_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Open DB under the process write lock and run `f`.
+pub fn with_locked<T>(
+    path: &str,
+    f: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let _guard = write_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let conn = open(path)?;
+    f(&conn)
+}
 
 /// Open (or create) the conversations database at `path`.
 pub fn open(path: &str) -> Result<Connection, String> {
@@ -8,8 +27,18 @@ pub fn open(path: &str) -> Result<Connection, String> {
     // Concurrent save_message threads + UI upserts: wait instead of SQLITE_BUSY.
     conn.pragma_update(None, "busy_timeout", 5000i64)
         .map_err(|e| format!("DB busy_timeout: {}", e))?;
-    // WAL allows readers during writers (best-effort; ignore if unsupported).
-    let _ = conn.pragma_update(None, "journal_mode", "WAL");
+    // WAL allows readers during writers (best-effort; log result).
+    match conn.pragma_update(None, "journal_mode", "WAL") {
+        Ok(()) => {
+            let mode: String = conn
+                .pragma_query_value(None, "journal_mode", |row| row.get(0))
+                .unwrap_or_else(|_| "unknown".into());
+            tracing::info!(target: "db", journal_mode = %mode, "sqlite journal_mode");
+        }
+        Err(e) => {
+            tracing::warn!(target: "db", error = %e, "sqlite journal_mode WAL failed");
+        }
+    }
 
     conn.execute_batch(
         "
@@ -35,12 +64,26 @@ pub fn open(path: &str) -> Result<Connection, String> {
     )
     .map_err(|e| format!("DB init: {}", e))?;
 
+    // Identity unique index enables upsert-by-identity; best-effort if legacy dupes exist.
+    if let Err(e) = conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_msgs_identity
+         ON messages(chat_id, agent, turn, created_at);",
+    ) {
+        tracing::warn!(target: "db", error = %e, "idx_msgs_identity not created");
+    }
+
     Ok(conn)
 }
 
-/// Save one message to the database.
+/// Save one message (upsert-by-identity) so races with snapshot upserts do not dupe rows.
 pub fn save_message(conn: &Connection, chat_id: &str, msg: &Message) -> Result<(), String> {
-    conn.execute(
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute(
+        "DELETE FROM messages WHERE chat_id = ?1 AND agent = ?2 AND turn = ?3 AND created_at = ?4",
+        params![chat_id, msg.agent, msg.turn, msg.created_at],
+    )
+    .map_err(|e| format!("DB save_message clear: {}", e))?;
+    tx.execute(
         "INSERT INTO messages (chat_id, agent, role, content, turn, created_at, reasoning)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
@@ -54,6 +97,7 @@ pub fn save_message(conn: &Connection, chat_id: &str, msg: &Message) -> Result<(
         ],
     )
     .map_err(|e| format!("DB save_message: {}", e))?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -261,6 +305,61 @@ mod tests {
             .unwrap();
         assert!(v >= 5000, "busy_timeout={v}");
         drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn open_enables_wal_journal_mode() {
+        let path = tmp_db_path("wal");
+        let conn = open(&path).unwrap();
+        let mode: String = conn
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_message_upserts_by_identity() {
+        let path = tmp_db_path("upsert-msg");
+        let conn = open(&path).unwrap();
+        let msg = Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "v1".into(),
+            turn: 1,
+            created_at: 42,
+            reasoning: None,
+        };
+        save_message(&conn, "c1", &msg).unwrap();
+        let mut msg2 = msg.clone();
+        msg2.content = "v2".into();
+        save_message(&conn, "c1", &msg2).unwrap();
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].content, "v2");
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn with_locked_serializes_writes() {
+        let path = tmp_db_path("locked");
+        with_locked(&path, |conn| {
+            let msg = Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "hi".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            };
+            save_message(conn, "c1", &msg)
+        })
+        .unwrap();
+        let n = with_locked(&path, |conn| Ok(load_messages(conn, "c1")?.len())).unwrap();
+        assert_eq!(n, 1);
         let _ = std::fs::remove_file(&path);
     }
 

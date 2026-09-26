@@ -5,13 +5,13 @@ use crate::engine::{
 use crate::harness::cache::{
     apply_prompt_cache_key, extract_usage, TokenUsage,
 };
-use crate::harness::client::shared_http_client;
+use crate::harness::client::{short_http_client, stream_http_client};
 use crate::harness::prepare::PreparedTurn;
 use crate::state::{AiConfig, Message};
 use futures_util::StreamExt;
 use serde_json::Value;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 /// Returned when reset/stop cancels an in-flight SSE stream.
@@ -59,6 +59,16 @@ impl StreamCancel<'_> {
     }
 }
 
+/// Poll until cancel so HTTP futures can be dropped promptly (no 900s hang).
+async fn until_cancelled(cancel: &StreamCancel<'_>) {
+    loop {
+        if cancel.is_cancelled() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// Non-streaming call. Returns (content, optional reasoning).
 #[allow(dead_code)]
 pub async fn call_llm(
@@ -78,7 +88,7 @@ async fn call_llm_with_usage(
     messages_context: &[Message],
     narration: Option<&str>,
 ) -> Result<(String, Option<String>, TokenUsage), String> {
-    let client = shared_http_client();
+    let client = short_http_client();
 
     let mut body = build_chat_body(config, speaking_agent, messages_context, false, narration);
     let cache_key = crate::harness::compute_prompt_cache_key(config, speaking_agent);
@@ -224,6 +234,52 @@ fn parse_responses_event(event: &str, data: &str) -> (Vec<StreamPiece>, TokenUsa
     (pieces, usage)
 }
 
+/// Parse one SSE event block (`event:` / one or more `data:` lines).
+pub(crate) fn parse_responses_sse_block(block: &str) -> (Vec<StreamPiece>, TokenUsage) {
+    let mut event = "";
+    let mut data = String::new();
+    for line in block.lines() {
+        if let Some(v) = line.strip_prefix("event:") {
+            event = v.trim();
+        } else if let Some(v) = line.strip_prefix("data:") {
+            if !data.is_empty() {
+                data.push('\n');
+            }
+            data.push_str(v.trim());
+        }
+    }
+    parse_responses_event(event, &data)
+}
+
+/// Flush a trailing Responses SSE fragment that lacked a final blank line.
+pub(crate) fn flush_responses_trailing(text_buf: &str) -> (Vec<StreamPiece>, TokenUsage) {
+    if text_buf.trim().is_empty() {
+        return (vec![], TokenUsage::default());
+    }
+    let trailing = text_buf.replace("\r\n", "\n").replace('\r', "\n");
+    parse_responses_sse_block(&trailing)
+}
+
+/// Consume complete `\n\n`-delimited Responses SSE blocks; return leftover + pieces.
+pub(crate) fn consume_responses_sse(
+    buffer: &str,
+) -> (Vec<StreamPiece>, String, TokenUsage) {
+    let normalized = buffer.replace("\r\n", "\n").replace('\r', "\n");
+    let parts: Vec<&str> = normalized.split("\n\n").collect();
+    if parts.len() <= 1 {
+        return (vec![], normalized, TokenUsage::default());
+    }
+    let mut pieces = Vec::new();
+    let mut usage = TokenUsage::default();
+    for block in &parts[..parts.len() - 1] {
+        let (p, u) = parse_responses_sse_block(block);
+        usage.merge(&u);
+        pieces.extend(p);
+    }
+    let rest = parts.last().unwrap_or(&"").to_string();
+    (pieces, rest, usage)
+}
+
 fn emit_chunk(app_handle: &AppHandle, agent: &str, turn: u32, kind: &str, delta: &str) {
     if delta.is_empty() {
         return;
@@ -256,6 +312,19 @@ fn note_ttft(started: Instant, ttft_ms: &mut Option<u64>) {
     }
 }
 
+fn ensure_stream_start(
+    emitted: &mut bool,
+    app_handle: &AppHandle,
+    agent: &str,
+    turn: u32,
+    created_at: u64,
+) {
+    if !*emitted {
+        emit_stream_start(app_handle, agent, turn, created_at);
+        *emitted = true;
+    }
+}
+
 async fn stream_responses(
     config: &AiConfig,
     speaking_agent: &str,
@@ -266,15 +335,16 @@ async fn stream_responses(
     session_id: &str,
     cancel: &StreamCancel<'_>,
 ) -> Result<StreamOutcome, String> {
-    let client = shared_http_client();
+    let client = stream_http_client();
     let started = Instant::now();
     let mut ttft_ms: Option<u64> = None;
     let mut usage = TokenUsage::default();
+    let mut stream_started = false;
 
     let body = responses_body_from_chat(chat_body, config, true);
     let url = responses_url(&config.api_base_url);
 
-    let res = apply_go_headers(
+    let send_fut = apply_go_headers(
         client
             .post(&url)
             .header("Content-Type", "application/json")
@@ -283,9 +353,17 @@ async fn stream_responses(
         session_id,
     )
     .json(&body)
-    .send()
-    .await
-    .map_err(|e| format!("Stream request failed: {}", e))?;
+    .send();
+
+    let res = tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => {
+            return Err(STREAM_ABORTED.into());
+        }
+        res = send_fut => {
+            res.map_err(|e| format!("Stream request failed: {}", e))?
+        }
+    };
 
     let status = res.status();
     if !status.is_success() {
@@ -297,18 +375,25 @@ async fn stream_responses(
         return Err(format!("API {}: {}", status, err_msg));
     }
 
-    emit_stream_start(app_handle, speaking_agent, turn, created_at);
-
+    // Holding `res` in this scope: dropping it on cancel aborts the HTTP body.
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
     let mut text_buf = String::new();
     let mut full = String::new();
     let mut full_reasoning = String::new();
 
-    while let Some(item) = stream.next().await {
-        if cancel.is_cancelled() {
-            return Err(STREAM_ABORTED.into());
-        }
+    loop {
+        let item = tokio::select! {
+            biased;
+            _ = until_cancelled(cancel) => {
+                drop(stream);
+                return Err(STREAM_ABORTED.into());
+            }
+            item = stream.next() => item,
+        };
+        let Some(item) = item else {
+            break;
+        };
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
         raw.extend_from_slice(&chunk);
         match std::str::from_utf8(&raw) {
@@ -325,74 +410,67 @@ async fn stream_responses(
                 }
             }
         }
-        let normalized = text_buf.replace("\r\n", "\n").replace('\r', "\n");
-        let parts: Vec<&str> = normalized.split("\n\n").collect();
-        if parts.len() > 1 {
-            for block in &parts[..parts.len() - 1] {
-                let mut event = "";
-                let mut data = String::new();
-                for line in block.lines() {
-                    if let Some(v) = line.strip_prefix("event:") {
-                        event = v.trim();
-                    } else if let Some(v) = line.strip_prefix("data:") {
-                        if !data.is_empty() {
-                            data.push('\n');
-                        }
-                        data.push_str(v.trim());
-                    }
-                }
-                let (pieces, chunk_usage) = parse_responses_event(event, &data);
-                usage.merge(&chunk_usage);
-                for piece in pieces {
-                    match piece {
-                        StreamPiece::Content(d) => {
-                            note_ttft(started, &mut ttft_ms);
-                            full.push_str(&d);
-                            emit_chunk(app_handle, speaking_agent, turn, "content", &d);
-                        }
-                        StreamPiece::Reasoning(d) => {
-                            note_ttft(started, &mut ttft_ms);
-                            full_reasoning.push_str(&d);
-                            emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
-                        }
-                    }
-                }
-            }
-            text_buf = parts.last().unwrap_or(&"").to_string();
-        } else {
-            text_buf = normalized;
-        }
-    }
-
-    // Flush a trailing event that lacked a final blank line (common on some proxies).
-    if !text_buf.trim().is_empty() {
-        let trailing = text_buf.replace("\r\n", "\n").replace('\r', "\n");
-        let mut event = "";
-        let mut data = String::new();
-        for line in trailing.lines() {
-            if let Some(v) = line.strip_prefix("event:") {
-                event = v.trim();
-            } else if let Some(v) = line.strip_prefix("data:") {
-                if !data.is_empty() {
-                    data.push('\n');
-                }
-                data.push_str(v.trim());
-            }
-        }
-        let (pieces, chunk_usage) = parse_responses_event(event, &data);
+        let (pieces, rest, chunk_usage) = consume_responses_sse(&text_buf);
         usage.merge(&chunk_usage);
+        text_buf = rest;
         for piece in pieces {
             match piece {
                 StreamPiece::Content(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "content", &d);
                 }
                 StreamPiece::Reasoning(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full_reasoning.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
                 }
+            }
+        }
+    }
+
+    // Flush a trailing event that lacked a final blank line (common on some proxies).
+    let (pieces, chunk_usage) = flush_responses_trailing(&text_buf);
+    usage.merge(&chunk_usage);
+    for piece in pieces {
+        match piece {
+            StreamPiece::Content(d) => {
+                ensure_stream_start(
+                    &mut stream_started,
+                    app_handle,
+                    speaking_agent,
+                    turn,
+                    created_at,
+                );
+                note_ttft(started, &mut ttft_ms);
+                full.push_str(&d);
+                emit_chunk(app_handle, speaking_agent, turn, "content", &d);
+            }
+            StreamPiece::Reasoning(d) => {
+                ensure_stream_start(
+                    &mut stream_started,
+                    app_handle,
+                    speaking_agent,
+                    turn,
+                    created_at,
+                );
+                note_ttft(started, &mut ttft_ms);
+                full_reasoning.push_str(&d);
+                emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
             }
         }
     }
@@ -426,7 +504,20 @@ pub async fn stream_prepared(
     } else {
         prepared.chat_id.as_str()
     };
-    stream_llm_with_body(
+    if prepared.uses_responses {
+        return stream_responses(
+            &prepared.config,
+            prepared.agent,
+            &prepared.chat_body,
+            prepared.turn,
+            prepared.created_at,
+            app_handle,
+            session_id,
+            cancel,
+        )
+        .await;
+    }
+    stream_chat_sse(
         &prepared.config,
         prepared.agent,
         &prepared.context_messages,
@@ -459,7 +550,20 @@ pub async fn stream_llm(
     let cache_key = crate::harness::compute_prompt_cache_key(config, speaking_agent);
     apply_prompt_cache_key(&mut body, &cache_key);
     crate::harness::cache::apply_stream_usage_option(&mut body);
-    stream_llm_with_body(
+    if uses_responses_api(&config.model) {
+        return stream_responses(
+            config,
+            speaking_agent,
+            &body,
+            turn,
+            created_at,
+            app_handle,
+            session_id,
+            cancel,
+        )
+        .await;
+    }
+    stream_chat_sse(
         config,
         speaking_agent,
         messages_context,
@@ -474,7 +578,7 @@ pub async fn stream_llm(
     .await
 }
 
-async fn stream_llm_with_body(
+async fn stream_chat_sse(
     config: &AiConfig,
     speaking_agent: &str,
     messages_context: &[Message],
@@ -486,28 +590,15 @@ async fn stream_llm_with_body(
     session_id: &str,
     cancel: &StreamCancel<'_>,
 ) -> Result<StreamOutcome, String> {
-    if uses_responses_api(&config.model) {
-        return stream_responses(
-            config,
-            speaking_agent,
-            chat_body,
-            turn,
-            created_at,
-            app_handle,
-            session_id,
-            cancel,
-        )
-        .await;
-    }
-
-    let client = shared_http_client();
+    let client = stream_http_client();
     let started = Instant::now();
     let mut ttft_ms: Option<u64> = None;
     let mut usage = TokenUsage::default();
+    let mut stream_started = false;
 
     let url = chat_url(&config.api_base_url);
 
-    let res = apply_go_headers(
+    let send_fut = apply_go_headers(
         client
             .post(&url)
             .header("Content-Type", "application/json")
@@ -516,9 +607,17 @@ async fn stream_llm_with_body(
         session_id,
     )
     .json(chat_body)
-    .send()
-    .await
-    .map_err(|e| format!("Stream request failed: {}", e))?;
+    .send();
+
+    let res = tokio::select! {
+        biased;
+        _ = until_cancelled(cancel) => {
+            return Err(STREAM_ABORTED.into());
+        }
+        res = send_fut => {
+            res.map_err(|e| format!("Stream request failed: {}", e))?
+        }
+    };
 
     let status = res.status();
     if !status.is_success() {
@@ -596,18 +695,24 @@ async fn stream_llm_with_body(
         ));
     }
 
-    emit_stream_start(app_handle, speaking_agent, turn, created_at);
-
     let mut stream = res.bytes_stream();
     let mut raw: Vec<u8> = Vec::new();
     let mut text_buf = String::new();
     let mut full = String::new();
     let mut full_reasoning = String::new();
 
-    while let Some(item) = stream.next().await {
-        if cancel.is_cancelled() {
-            return Err(STREAM_ABORTED.into());
-        }
+    loop {
+        let item = tokio::select! {
+            biased;
+            _ = until_cancelled(cancel) => {
+                drop(stream);
+                return Err(STREAM_ABORTED.into());
+            }
+            item = stream.next() => item,
+        };
+        let Some(item) = item else {
+            break;
+        };
         let chunk = item.map_err(|e| format!("Stream read failed: {}", e))?;
         raw.extend_from_slice(&chunk);
 
@@ -633,11 +738,25 @@ async fn stream_llm_with_body(
         for piece in deltas {
             match piece {
                 StreamPiece::Content(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "content", &d);
                 }
                 StreamPiece::Reasoning(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full_reasoning.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
@@ -652,11 +771,25 @@ async fn stream_llm_with_body(
         for piece in deltas {
             match piece {
                 StreamPiece::Content(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "content", &d);
                 }
                 StreamPiece::Reasoning(d) => {
+                    ensure_stream_start(
+                        &mut stream_started,
+                        app_handle,
+                        speaking_agent,
+                        turn,
+                        created_at,
+                    );
                     note_ttft(started, &mut ttft_ms);
                     full_reasoning.push_str(&d);
                     emit_chunk(app_handle, speaking_agent, turn, "reasoning", &d);
@@ -669,7 +802,7 @@ async fn stream_llm_with_body(
         return Err(STREAM_ABORTED.into());
     }
 
-    // Empty SSE: fall back to non-stream without emitting stream-abort (avoids UI flicker).
+    // Empty SSE: fall back to non-stream; emit chunks so FE is not left with a blank bubble.
     if full.is_empty() {
         if cancel.is_cancelled() {
             return Err(STREAM_ABORTED.into());
@@ -678,6 +811,17 @@ async fn stream_llm_with_body(
             call_llm_with_usage(config, speaking_agent, messages_context, narration).await?;
         usage.merge(&fb_usage);
         note_ttft(started, &mut ttft_ms);
+        ensure_stream_start(
+            &mut stream_started,
+            app_handle,
+            speaking_agent,
+            turn,
+            created_at,
+        );
+        if let Some(ref r) = reasoning {
+            emit_chunk(app_handle, speaking_agent, turn, "reasoning", r);
+        }
+        emit_chunk(app_handle, speaking_agent, turn, "content", &content);
         return Ok(StreamOutcome::from_text(
             content, reasoning, usage, started, ttft_ms,
         ));
@@ -725,7 +869,7 @@ fn extract_sse_deltas_with_usage(buffer: &str) -> (Vec<StreamPiece>, String, Tok
 }
 
 pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
-    let client = shared_http_client();
+    let client = short_http_client();
 
     let url = models_url(base_url);
     let mut req = client.get(&url);
@@ -758,6 +902,7 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
 #[cfg(test)]
 mod cancel_tests {
     use super::*;
+    use crate::harness::client::{SHORT_HTTP_TIMEOUT_SECS, STREAM_HTTP_TIMEOUT_SECS};
 
     #[test]
     fn stream_cancel_detects_epoch_bump() {
@@ -769,7 +914,7 @@ mod cancel_tests {
             epoch_at_start: 3,
         };
         assert!(!c.is_cancelled());
-        epoch.fetch_add(1, Ordering::Relaxed);
+        epoch.fetch_add(1, Ordering::Release);
         assert!(c.is_cancelled());
     }
 
@@ -783,7 +928,36 @@ mod cancel_tests {
             epoch_at_start: 1,
         };
         assert!(!c.is_cancelled());
-        reset.store(true, Ordering::Relaxed);
+        reset.store(true, Ordering::Release);
+        assert!(c.is_cancelled());
+    }
+
+    #[test]
+    fn cancel_before_stream_via_epoch() {
+        let reset = AtomicBool::new(false);
+        let epoch = AtomicU64::new(1);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 1,
+        };
+        // Simulate stop before first byte: epoch bumps, cancel observed.
+        epoch.fetch_add(1, Ordering::AcqRel);
+        assert!(c.is_cancelled());
+    }
+
+    #[test]
+    fn cancel_after_stream_via_reset() {
+        let reset = AtomicBool::new(false);
+        let epoch = AtomicU64::new(5);
+        let c = StreamCancel {
+            reset: &reset,
+            epoch: &epoch,
+            epoch_at_start: 5,
+        };
+        assert!(!c.is_cancelled());
+        // Mid-stream reset/load.
+        reset.store(true, Ordering::Release);
         assert!(c.is_cancelled());
     }
 
@@ -798,7 +972,61 @@ mod cancel_tests {
         assert_eq!(deltas, vec![StreamPiece::Content("Hi".into())]);
         assert!(rest.is_empty());
         assert_eq!(usage.prompt_tokens, Some(10));
-        assert_eq!(usage.cached_tokens, Some(8));
         assert_eq!(usage.completion_tokens, Some(2));
+        assert_eq!(usage.cached_tokens, Some(8));
+    }
+
+    #[test]
+    fn fetch_models_uses_short_timeout_constant() {
+        assert_eq!(SHORT_HTTP_TIMEOUT_SECS, 30);
+        assert!(SHORT_HTTP_TIMEOUT_SECS < STREAM_HTTP_TIMEOUT_SECS);
+    }
+
+    #[test]
+    fn responses_trailing_flush_without_blank_line() {
+        let buf = "event: response.output_text.delta\ndata: {\"delta\":\"tail\"}";
+        let (pieces, usage) = flush_responses_trailing(buf);
+        assert_eq!(pieces, vec![StreamPiece::Content("tail".into())]);
+        assert_eq!(usage.prompt_tokens, None);
+    }
+
+    #[test]
+    fn responses_multi_line_data_joined() {
+        let block = concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"delta\":\"hel\"}\n",
+            // Second data line is unusual but must be joined before JSON parse fails gracefully;
+            // valid case: single JSON object split across data lines is joined with newline.
+        );
+        // Single-line JSON still works:
+        let (pieces, _) = parse_responses_sse_block(
+            "event: response.output_text.delta\ndata: {\"delta\":\"hello\"}",
+        );
+        assert_eq!(pieces, vec![StreamPiece::Content("hello".into())]);
+        let _ = block;
+
+        // Multi-line JSON in data: fields joined with \n
+        let multiline = concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"delta\":\n",
+            "data: \"ab\"}",
+        );
+        let (pieces, _) = parse_responses_sse_block(multiline);
+        assert_eq!(pieces, vec![StreamPiece::Content("ab".into())]);
+    }
+
+    #[test]
+    fn consume_responses_sse_keeps_incomplete_tail() {
+        let buf = concat!(
+            "event: response.output_text.delta\n",
+            "data: {\"delta\":\"A\"}\n\n",
+            "event: response.output_text.delta\n",
+            "data: {\"delta\":\"B\"}",
+        );
+        let (pieces, rest, _) = consume_responses_sse(buf);
+        assert_eq!(pieces, vec![StreamPiece::Content("A".into())]);
+        assert!(rest.contains("delta\":\"B\""));
+        let (flushed, _) = flush_responses_trailing(&rest);
+        assert_eq!(flushed, vec![StreamPiece::Content("B".into())]);
     }
 }
