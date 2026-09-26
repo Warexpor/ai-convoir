@@ -510,8 +510,10 @@ export async function engineDeleteMessage(
   );
   const removed = before !== state.messages.length;
   if (removed) {
+    // The opening line shares turn 0 with the first reply; only replies
+    // count toward whose turn it is.
     const derived = state.messages.reduce(
-      (max, m) => Math.max(max, m.turn + 1),
+      (max, m) => (m.agent === "seed" ? max : Math.max(max, m.turn + 1)),
       0,
     );
     if (derived < state.turnCount) {

@@ -606,9 +606,11 @@ pub async fn delete_messages(
             .retain(|m| !(m.agent == agent && m.turn == turn && m.created_at == created_at));
         let removed = before != inner.messages.len();
         if removed {
+            // The seed shares turn 0 with the first reply; only replies count.
             let derived = inner
                 .messages
                 .iter()
+                .filter(|m| m.agent != "seed")
                 .map(|m| m.turn.saturating_add(1))
                 .max()
                 .unwrap_or(0);
