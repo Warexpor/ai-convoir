@@ -1,6 +1,7 @@
 use crate::engine::{
     build_chat_body, chat_url, extract_sse_deltas, extract_text_content, models_url,
-    parse_models_response, responses_url, uses_responses_api, StreamPiece,
+    is_codex_base, parse_models_response, provider_headers, responses_url, uses_responses_for,
+    StreamPiece,
 };
 use crate::harness::cache::{
     apply_prompt_cache_key, extract_usage, TokenUsage,
@@ -134,8 +135,9 @@ async fn call_llm_with_usage(
     apply_prompt_cache_key(&mut body, &cache_key);
     let url = chat_url(&config.api_base_url);
 
-    let send_fut = apply_go_headers(
+    let send_fut = apply_provider_headers(
         client.post(&url).header("Content-Type", "application/json"),
+        &config.api_base_url,
         &config.api_key,
         "ai-convoir",
     )
@@ -207,19 +209,15 @@ async fn call_llm_with_usage(
     Ok((content, reasoning, usage))
 }
 
-fn apply_go_headers(
+fn apply_provider_headers(
     req: reqwest::RequestBuilder,
+    base_url: &str,
     api_key: &str,
     session_id: &str,
 ) -> reqwest::RequestBuilder {
-    let session = if session_id.trim().is_empty() {
-        "ai-convoir"
-    } else {
-        session_id
-    };
-    req.header("Authorization", format!("Bearer {}", api_key))
-        .header("User-Agent", "ai-convoir/2.0")
-        .header("x-opencode-session", session)
+    provider_headers(base_url, api_key, session_id)
+        .into_iter()
+        .fold(req, |r, (k, v)| r.header(k, v))
 }
 
 fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Value {
@@ -257,7 +255,34 @@ fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Va
     if let Some(key) = chat.get("prompt_cache_key").and_then(|v| v.as_str()) {
         apply_prompt_cache_key(&mut body, key);
     }
+    if is_codex_base(&config.api_base_url) {
+        codex_adjust(&mut body, config);
+    }
     body
+}
+
+/// The ChatGPT Codex backend only accepts stateless streamed requests and
+/// rejects sampling/length knobs; reasoning goes in `reasoning.effort`.
+fn codex_adjust(body: &mut Value, config: &AiConfig) {
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("temperature");
+        obj.remove("max_output_tokens");
+        obj.insert("store".into(), Value::Bool(false));
+        obj.insert("stream".into(), Value::Bool(true));
+        obj.insert(
+            "include".into(),
+            serde_json::json!(["reasoning.encrypted_content"]),
+        );
+        if config.reasoning_effort != crate::state::ReasoningEffort::None {
+            obj.insert(
+                "reasoning".into(),
+                serde_json::json!({
+                    "effort": config.reasoning_effort.as_api_str(),
+                    "summary": "auto",
+                }),
+            );
+        }
+    }
 }
 
 fn parse_responses_event(event: &str, data: &str) -> (Vec<StreamPiece>, TokenUsage) {
@@ -634,11 +659,12 @@ async fn stream_responses(
     let body = responses_body_from_chat(chat_body, config, true);
     let url = responses_url(&config.api_base_url);
 
-    let send_fut = apply_go_headers(
+    let send_fut = apply_provider_headers(
         client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream"),
+        &config.api_base_url,
         &config.api_key,
         session_id,
     )
@@ -934,8 +960,9 @@ async fn call_responses_with_usage(
     let client = short_http_client();
     let body = responses_body_from_chat(chat_body, config, false);
     let url = responses_url(&config.api_base_url);
-    let send_fut = apply_go_headers(
+    let send_fut = apply_provider_headers(
         client.post(&url).header("Content-Type", "application/json"),
+        &config.api_base_url,
         &config.api_key,
         session_id,
     )
@@ -979,9 +1006,17 @@ pub async fn stream_prepared(
     } else {
         prepared.chat_id.as_str()
     };
+    // Sign-in providers get a fresh access token per turn.
+    let hydrated;
+    let config = if crate::oauth::is_oauth_provider(&prepared.config.provider) {
+        hydrated = crate::oauth::hydrate(&prepared.config).await?;
+        &hydrated
+    } else {
+        &prepared.config
+    };
     if prepared.uses_responses {
         return stream_responses(
-            &prepared.config,
+            config,
             prepared.agent,
             &prepared.chat_body,
             prepared.turn,
@@ -993,7 +1028,7 @@ pub async fn stream_prepared(
         .await;
     }
     stream_chat_sse(
-        &prepared.config,
+        config,
         prepared.agent,
         &prepared.context_messages,
         prepared.narration.as_deref(),
@@ -1025,7 +1060,7 @@ pub async fn stream_llm(
     let cache_key = crate::harness::compute_prompt_cache_key(config, speaking_agent);
     apply_prompt_cache_key(&mut body, &cache_key);
     crate::harness::cache::apply_stream_usage_option(&mut body);
-    if uses_responses_api(&config.model) {
+    if uses_responses_for(config) {
         return stream_responses(
             config,
             speaking_agent,
@@ -1073,11 +1108,12 @@ async fn stream_chat_sse(
 
     let url = chat_url(&config.api_base_url);
 
-    let send_fut = apply_go_headers(
+    let send_fut = apply_provider_headers(
         client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream"),
+        &config.api_base_url,
         &config.api_key,
         session_id,
     )
@@ -1424,10 +1460,7 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
     let client = short_http_client();
 
     let url = models_url(base_url);
-    let mut req = client.get(&url);
-    if !api_key.is_empty() {
-        req = req.header("Authorization", format!("Bearer {}", api_key));
-    }
+    let req = apply_provider_headers(client.get(&url), base_url, api_key, "ai-convoir");
 
     let res = req
         .send()
@@ -1454,6 +1487,25 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<String>, 
 #[cfg(test)]
 mod cancel_tests {
     use super::*;
+
+    #[test]
+    fn codex_body_is_stateless_stream_without_sampling_knobs() {
+        let mut config = crate::state::AiConfig::default();
+        config.api_base_url = "https://chatgpt.com/backend-api/codex".into();
+        config.model = "gpt-5".into();
+        config.reasoning_effort = crate::state::ReasoningEffort::High;
+        let chat = serde_json::json!({"messages": [
+            {"role": "system", "content": "be Ava"},
+            {"role": "user", "content": "hi"}
+        ]});
+        let body = responses_body_from_chat(&chat, &config, false);
+        assert_eq!(body["store"], false);
+        assert_eq!(body["stream"], true);
+        assert_eq!(body["instructions"], "be Ava");
+        assert_eq!(body["reasoning"]["effort"], "high");
+        assert!(body.get("temperature").is_none());
+        assert!(body.get("max_output_tokens").is_none());
+    }
     use crate::harness::client::{SHORT_HTTP_TIMEOUT_SECS, STREAM_HTTP_TIMEOUT_SECS};
 
     #[test]
@@ -1681,6 +1733,7 @@ mod cancel_tests {
             response_length: Default::default(),
             color: String::new(),
             icon: String::new(),
+            provider: String::new(),
         };
         let chat = serde_json::json!({
             "messages": [
@@ -1717,6 +1770,7 @@ mod cancel_tests {
             response_length: Default::default(),
             color: String::new(),
             icon: String::new(),
+            provider: String::new(),
         };
         let chat = serde_json::json!({
             "messages": [{"role": "user", "content": "hi"}]
@@ -1909,6 +1963,7 @@ mod cancel_tests {
             response_length: Default::default(),
             color: String::new(),
             icon: String::new(),
+            provider: String::new(),
         };
         let chat = serde_json::json!({
             "messages": [

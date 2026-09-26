@@ -121,15 +121,25 @@ pub fn build_chat_body(
         }
     }
 
+    let openai_reasoning = is_openai_reasoning_model(&config.api_base_url, &config.model);
     let mut body = json!({
         "model": config.model,
         "messages": api_messages,
-        "temperature": config.temperature,
         "stream": stream,
     });
+    // OpenAI reasoning models (gpt-5*, o-series) only accept the default temperature.
+    if !openai_reasoning {
+        body["temperature"] = json!(config.temperature);
+    }
     // Some providers reject max_tokens: 0; omit so the server default applies.
     if config.max_tokens > 0 {
-        body["max_tokens"] = json!(config.max_tokens);
+        let field = if host_of(&config.api_base_url) == "api.openai.com" {
+            // api.openai.com deprecated max_tokens; reasoning models reject it outright.
+            "max_completion_tokens"
+        } else {
+            "max_tokens"
+        };
+        body[field] = json!(config.max_tokens);
     }
 
     if config.reasoning_effort != ReasoningEffort::None {
@@ -304,6 +314,89 @@ pub fn responses_url(base: &str) -> String {
 
 pub fn uses_responses_api(model: &str) -> bool {
     model.starts_with("muse-spark")
+}
+
+/// ChatGPT sign-in (Codex backend) only speaks the Responses API.
+pub fn is_codex_base(base: &str) -> bool {
+    host_of(base) == "chatgpt.com"
+}
+
+/// Whether this voice's turn goes through the Responses API.
+pub fn uses_responses_for(config: &AiConfig) -> bool {
+    uses_responses_api(&config.model) || is_codex_base(&config.api_base_url)
+}
+
+/// Lower-cased host of a base URL ("" when it can't be parsed).
+pub fn host_of(base: &str) -> String {
+    let s = base.trim();
+    let rest = s.split_once("://").map(|(_, r)| r).unwrap_or(s);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = authority.rsplit('@').next().unwrap_or("");
+    host_port
+        .split(':')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase()
+}
+
+fn host_is(host: &str, domain: &str) -> bool {
+    host == domain || host.ends_with(&format!(".{domain}"))
+}
+
+/// OpenAI reasoning models on api.openai.com reject custom temperature.
+pub fn is_openai_reasoning_model(base: &str, model: &str) -> bool {
+    if host_of(base) != "api.openai.com" {
+        return false;
+    }
+    let m = model.trim().to_ascii_lowercase();
+    m.starts_with("gpt-5") || m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4")
+}
+
+/// Auth + identification headers for an OpenAI-compatible provider, keyed off
+/// the base URL host so any preset or custom endpoint gets the right shape.
+pub fn provider_headers(
+    base: &str,
+    api_key: &str,
+    session_id: &str,
+) -> Vec<(&'static str, String)> {
+    let host = host_of(base);
+    let mut h: Vec<(&'static str, String)> = vec![("User-Agent", "ai-convoir/2.0".into())];
+    let key = api_key.trim();
+    if !key.is_empty() {
+        h.push(("Authorization", format!("Bearer {key}")));
+    }
+    if host_is(&host, "opencode.ai") {
+        let session = if session_id.trim().is_empty() {
+            "ai-convoir"
+        } else {
+            session_id
+        };
+        h.push(("x-opencode-session", session.into()));
+    } else if host_is(&host, "openrouter.ai") {
+        // OpenRouter app attribution (optional, shows the app on their dashboard).
+        h.push((
+            "HTTP-Referer",
+            "https://github.com/Warexpor/ai-convoir".into(),
+        ));
+        h.push(("X-Title", "AI ConvoIR".into()));
+    } else if host == "chatgpt.com" {
+        // Codex backend: the access token names the ChatGPT account to bill.
+        if let Some(acc) = crate::oauth::codex_account_id(key) {
+            h.push(("chatgpt-account-id", acc));
+        }
+        h.push(("OpenAI-Beta", "responses=experimental".into()));
+        h.push(("originator", "ai_convoir".into()));
+        if !session_id.trim().is_empty() {
+            h.push(("session_id", session_id.into()));
+        }
+    } else if host_is(&host, "anthropic.com") {
+        // Anthropic's native endpoints (e.g. GET /v1/models) want x-api-key.
+        if !key.is_empty() {
+            h.push(("x-api-key", key.into()));
+        }
+        h.push(("anthropic-version", "2023-06-01".into()));
+    }
+    h
 }
 
 /// What `start_conversation` should do given current status + mode.
@@ -482,7 +575,80 @@ mod tests {
             response_length: ResponseLength::Normal,
             color: String::new(),
             icon: String::new(),
+            provider: String::new(),
         }
+    }
+
+    #[test]
+    fn host_of_parses_base_urls() {
+        assert_eq!(host_of("https://api.openai.com/v1"), "api.openai.com");
+        assert_eq!(host_of("http://localhost:11434/v1/"), "localhost");
+        assert_eq!(host_of("https://user@OpenRouter.ai/api/v1"), "openrouter.ai");
+        assert_eq!(host_of(""), "");
+    }
+
+    #[test]
+    fn provider_headers_by_host() {
+        let names = |base: &str, key: &str| -> Vec<&'static str> {
+            provider_headers(base, key, "chat-1")
+                .into_iter()
+                .map(|(k, _)| k)
+                .collect()
+        };
+        let go = names("https://opencode.ai/zen/go/v1", "k");
+        assert!(go.contains(&"Authorization") && go.contains(&"x-opencode-session"));
+        let oa = names("https://api.openai.com/v1", "k");
+        assert!(!oa.contains(&"x-opencode-session"));
+        let or = names("https://openrouter.ai/api/v1", "k");
+        assert!(or.contains(&"X-Title"));
+        let an = names("https://api.anthropic.com/v1", "k");
+        assert!(an.contains(&"x-api-key") && an.contains(&"anthropic-version"));
+        // Keyless local servers (Ollama) get no auth header.
+        assert!(!names("http://localhost:11434/v1", "").contains(&"Authorization"));
+        // Lookalike hosts don't get OpenCode's session header.
+        assert!(!names("https://evil-opencode.ai/v1", "k").contains(&"x-opencode-session"));
+    }
+
+    #[test]
+    fn codex_base_uses_responses_and_account_header() {
+        let mut cfg = sample_config("S", ReasoningEffort::None);
+        cfg.api_base_url = "https://chatgpt.com/backend-api/codex".into();
+        cfg.model = "gpt-5".into();
+        assert!(uses_responses_for(&cfg));
+        cfg.api_base_url = "https://api.openai.com/v1".into();
+        assert!(!uses_responses_for(&cfg));
+
+        use base64::Engine;
+        let payload = serde_json::json!({"https://api.openai.com/auth": {"chatgpt_account_id": "acc-9"}});
+        let tok = format!(
+            "h.{}.s",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload.to_string())
+        );
+        let h = provider_headers("https://chatgpt.com/backend-api/codex", &tok, "c1");
+        assert!(h.iter().any(|(k, v)| *k == "chatgpt-account-id" && v == "acc-9"));
+        assert!(h.iter().any(|(k, _)| *k == "OpenAI-Beta"));
+    }
+
+    #[test]
+    fn openai_reasoning_models_drop_temperature_and_use_completion_tokens() {
+        let mut cfg = sample_config("S", ReasoningEffort::None);
+        cfg.api_base_url = "https://api.openai.com/v1".into();
+        cfg.model = "gpt-5".into();
+        let body = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(body.get("temperature").is_none());
+        assert_eq!(body["max_completion_tokens"], 256);
+        assert!(body.get("max_tokens").is_none());
+
+        cfg.model = "gpt-4.1".into();
+        let body = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(body.get("temperature").is_some());
+        assert_eq!(body["max_completion_tokens"], 256);
+
+        cfg.api_base_url = "https://openrouter.ai/api/v1".into();
+        cfg.model = "openai/gpt-5".into();
+        let body = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(body.get("temperature").is_some());
+        assert_eq!(body["max_tokens"], 256);
     }
 
     #[test]
@@ -943,5 +1109,4 @@ mod tests {
             kept_m.len()
         );
     }
-
 }

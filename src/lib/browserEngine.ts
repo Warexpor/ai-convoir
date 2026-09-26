@@ -97,7 +97,7 @@ function friendlyApiError(status: number, detail: string): string {
     d.includes("geographic") ||
     d.includes("not available in")
   ) {
-    return "Muse Spark 1.3 contributor isn’t available in this region.";
+    return "That model isn’t available in this region.";
   }
   if (
     status === 401 ||
@@ -113,7 +113,7 @@ function friendlyApiError(status: number, detail: string): string {
   if (status === 400 && d.includes("session")) {
     return "The session header was missing. Refresh and try again.";
   }
-  return `Couldn’t reach OpenCode Go (${status}): ${detail}`;
+  return `Couldn’t reach the provider (${status}): ${detail}`;
 }
 
 function goHeaders(apiKey: string): HeadersInit {
@@ -176,11 +176,11 @@ async function streamResponses(
 ) {
   if (!usesResponsesApi(cfg.model)) {
     throw new Error(
-      `${cfg.model} is not enabled. This app uses Muse Spark 1.3 contributor.`,
+      `The browser preview only runs OpenCode Go muse-spark models. Use the desktop app for ${cfg.model}.`,
     );
   }
   if (!cfg.api_key.trim()) {
-    throw new Error("Add an OpenCode Go API key in Settings.");
+    throw new Error("Add an API key for this provider in Settings → Providers.");
   }
 
   const { instructions, input } = transcriptForApi(speaking, cfg);
@@ -512,6 +512,5 @@ export async function engineFetchModels(baseUrl: string, apiKey: string): Promis
   const ids = (data.data || [])
     .map((m) => m.id)
     .filter((id): id is string => !!id);
-  const locked = ids.filter((id) => id === MUSE_SPARK_13_CONTRIBUTOR);
-  return locked.length ? locked : [MUSE_SPARK_13_CONTRIBUTOR];
+  return [...new Set(ids)].sort();
 }

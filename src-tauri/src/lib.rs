@@ -4,6 +4,8 @@ mod engine;
 mod harness;
 mod llm;
 mod logging;
+mod oauth;
+mod secrets;
 mod state;
 
 use state::AppState;
@@ -76,6 +78,14 @@ pub fn run() {
             commands::delete_saved_chat,
             commands::frontend_log,
             commands::get_log_path,
+            secrets::secret_get,
+            secrets::secret_set,
+            secrets::secret_delete,
+            oauth::oauth_begin,
+            oauth::oauth_wait,
+            oauth::oauth_cancel,
+            oauth::oauth_status,
+            oauth::oauth_logout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

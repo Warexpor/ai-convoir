@@ -1,5 +1,12 @@
 import type { AiConfig, InnerState } from "../types";
 import { MUSE_SPARK_13_CONTRIBUTOR, OPENCODE_GO_BASE } from "../types";
+import {
+  DEFAULT_PROVIDER,
+  baseUrlFor,
+  getProvider,
+  inferProvider,
+} from "./providers";
+import { getProviderKey, hasProviderKey } from "./secrets";
 
 const CONFIG_KEY = "ai-convoir-config-v2";
 /** Pre-rename keys — still read so browser prefs survive the brand change. */
@@ -87,6 +94,7 @@ function defaultAgent(
   return {
     name,
     system_prompt,
+    provider: DEFAULT_PROVIDER,
     model: MUSE_SPARK_13_CONTRIBUTOR,
     api_base_url: OPENCODE_GO_BASE,
     api_key: "",
@@ -124,11 +132,19 @@ export function defaultConfig(): InnerState {
 
 function patchAgent(base: AiConfig, patch?: Partial<AiConfig>): AiConfig {
   const merged = { ...base, ...patch };
+  const provider =
+    (getProvider(merged.provider) && merged.provider) ||
+    inferProvider(merged.api_base_url);
+  const model =
+    merged.model?.trim() || getProvider(provider)?.models[0] || MUSE_SPARK_13_CONTRIBUTOR;
   return {
     ...merged,
     name: merged.name || base.name || "Agent",
-    model: MUSE_SPARK_13_CONTRIBUTOR,
-    api_base_url: OPENCODE_GO_BASE,
+    provider,
+    model,
+    api_base_url: baseUrlFor(provider, merged.api_base_url || ""),
+    // Keys live in the provider key store (lib/secrets), never in config.
+    api_key: "",
     reasoning_effort: merged.reasoning_effort || "none",
     response_length: merged.response_length || "normal",
     temperature: merged.temperature ?? 0.85,
@@ -138,27 +154,38 @@ function patchAgent(base: AiConfig, patch?: Partial<AiConfig>): AiConfig {
 
 export function normalizeConfig(raw: InnerState): InnerState {
   const fallback = defaultConfig();
-  const sharedKey =
-    raw.ai1_config?.api_key ||
-    raw.ai2_config?.api_key ||
-    raw.ai3_config?.api_key ||
-    "";
-  const withShared = (c?: AiConfig): AiConfig =>
-    patchAgent(fallback.ai1_config, {
-      ...c,
-      api_key: c?.api_key || sharedKey,
-    });
   return {
     ...raw,
-    ai1_config: withShared(raw.ai1_config),
-    ai2_config: withShared(raw.ai2_config),
-    ai3_config: withShared(raw.ai3_config),
+    ai1_config: patchAgent(fallback.ai1_config, raw.ai1_config),
+    ai2_config: patchAgent(fallback.ai2_config, raw.ai2_config),
+    ai3_config: patchAgent(fallback.ai3_config, raw.ai3_config),
     bot_count: raw.bot_count >= 3 ? 3 : 2,
     mode: raw.mode === "step" ? "step" : "auto",
     seed_prompt: raw.seed_prompt ?? "",
     max_turns: raw.max_turns || 40,
     delay_ms: raw.delay_ms ?? 800,
   };
+}
+
+/**
+ * The single key configs carried before keys moved per provider. Read once at
+ * boot so existing users keep working after the upgrade.
+ */
+export function legacyKeyOf(raw: Partial<InnerState> | null | undefined): {
+  provider: string;
+  key: string;
+} | null {
+  if (!raw) return null;
+  for (const c of [raw.ai1_config, raw.ai2_config, raw.ai3_config]) {
+    const key = c?.api_key?.trim();
+    if (key) {
+      return {
+        provider: (getProvider(c?.provider) && c?.provider) || inferProvider(c?.api_base_url),
+        key,
+      };
+    }
+  }
+  return null;
 }
 
 export function loadPersistedConfig(): Partial<InnerState> | null {
@@ -254,30 +281,39 @@ export function writeZoom(z: number): void {
   }
 }
 
-export function missingApiKeys(cfg: InnerState): boolean {
-  if (!cfg.ai1_config.api_key || !cfg.ai2_config.api_key) return true;
-  if (cfg.bot_count >= 3 && !cfg.ai3_config?.api_key) return true;
-  return false;
+function activeVoices(cfg: InnerState): AiConfig[] {
+  return cfg.bot_count >= 3
+    ? [cfg.ai1_config, cfg.ai2_config, cfg.ai3_config]
+    : [cfg.ai1_config, cfg.ai2_config];
 }
 
-/** One OpenCode Go key (and the locked model) powers every voice. */
-export function withSharedKey(cfg: InnerState, key: string): InnerState {
-  const apply = (c: AiConfig): AiConfig => ({
-    ...c,
-    api_key: key,
-    api_base_url: OPENCODE_GO_BASE,
-    model: MUSE_SPARK_13_CONTRIBUTOR,
-  });
+function voiceReady(c: AiConfig): boolean {
+  const p = getProvider(c.provider);
+  if (!p) return false;
+  if (p.id === "custom" && !c.api_base_url.trim()) return false;
+  return !!p.keyOptional || hasProviderKey(p.id);
+}
+
+/** True when any speaking voice has no usable credentials. */
+export function missingApiKeys(cfg: InnerState): boolean {
+  return activeVoices(cfg).some((c) => !voiceReady(c));
+}
+
+/** Provider names still missing a key, for prompts like "Add your … key". */
+export function missingProviderNames(cfg: InnerState): string[] {
+  const names = activeVoices(cfg)
+    .filter((c) => !voiceReady(c))
+    .map((c) => getProvider(c.provider)?.name || "provider");
+  return [...new Set(names)];
+}
+
+/** Runtime copy with each voice's key filled in, for the engine only. */
+export function withProviderKeys(cfg: InnerState): InnerState {
+  const fill = (c: AiConfig): AiConfig => ({ ...c, api_key: getProviderKey(c.provider) });
   return {
     ...cfg,
-    ai1_config: apply(cfg.ai1_config),
-    ai2_config: apply(cfg.ai2_config),
-    ai3_config: apply(cfg.ai3_config),
+    ai1_config: fill(cfg.ai1_config),
+    ai2_config: fill(cfg.ai2_config),
+    ai3_config: fill(cfg.ai3_config),
   };
-}
-
-export function sharedKeyOf(cfg: InnerState): string {
-  return (
-    cfg.ai1_config.api_key || cfg.ai2_config.api_key || cfg.ai3_config.api_key || ""
-  );
 }

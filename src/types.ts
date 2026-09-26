@@ -18,6 +18,8 @@ export interface AiConfig {
   color?: string;
   /** Avatar: "" → initials, "g:<glyph>" → built-in glyph, else 1–2 literal chars. */
   icon?: string;
+  /** Provider id from lib/providers (missing on configs saved before multi-provider). */
+  provider?: string;
 }
 
 export interface Message {
