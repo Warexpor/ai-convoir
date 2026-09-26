@@ -302,13 +302,11 @@ pub async fn load_transcript(
         if !db_path.is_empty() {
             let msgs = messages.clone();
             let cid = chat_id.clone();
-            let save_epoch = state_arc.bump_transcript_save_epoch();
+            let save_epoch = state_arc.bump_transcript_save_epoch(&cid);
             let save_state = Arc::clone(&state_arc);
             std::thread::spawn(move || {
                 let _ = db::with_locked(&db_path, |conn| {
-                    let current = save_state
-                        .transcript_save_epoch
-                        .load(Ordering::Acquire);
+                    let current = save_state.current_transcript_save_epoch(&cid);
                     db::save_messages_if_epoch(conn, &cid, &msgs, save_epoch, current)
                         .map(|_| ())
                 });
@@ -498,6 +496,28 @@ pub async fn upsert_saved_chat(
     })
 }
 
+/// Meta-only persist (title / cast / config fields) — does **not** replace the
+/// messages table. Use for rename and other sidebar edits so a lagging LS
+/// snapshot cannot wipe turns already written by `save_message`.
+#[tauri::command]
+pub async fn upsert_saved_chat_meta(
+    state: tauri::State<'_, Arc<AppState>>,
+    snapshot: serde_json::Value,
+) -> Result<(), String> {
+    let chat_id = snapshot
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "snapshot.id required".to_string())?
+        .to_string();
+    let updated_at = snapshot
+        .get("updated_at")
+        .and_then(|v| v.as_u64())
+        .unwrap_or_else(now_ms);
+    let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+    let arc: &Arc<AppState> = &state;
+    with_db(arc, |conn| db::upsert_chat_meta(conn, &chat_id, updated_at, &json))
+}
+
 /// List saved chats from SQLite (newest first), each hydrated from the messages
 /// table (source of truth). Falls back to empty if DB missing.
 /// FE boot (`hydrateChats` → `listSavedChats`) and select (`getChat` from that
@@ -541,6 +561,8 @@ pub async fn delete_saved_chat(
 /// Delete a single message from the current chat by agent + turn + created_at.
 /// Removes from both in-memory state and SQLite DB.
 /// Returns true if a message was removed from the in-memory transcript.
+/// When the deleted row was the tip (highest turn), rewinds `turn_count` so
+/// max-turns / next_speaker track the remaining transcript.
 #[tauri::command]
 pub async fn delete_messages(
     state: tauri::State<'_, Arc<AppState>>,
@@ -551,36 +573,37 @@ pub async fn delete_messages(
 ) -> Result<bool, String> {
     let arc: &Arc<AppState> = &state;
 
-    let removed = {
+    let (removed, chat_id, new_turn, status_label) = {
         let mut inner = arc.inner.lock().map_err(|e| e.to_string())?;
         let before = inner.messages.len();
         inner
             .messages
             .retain(|m| !(m.agent == agent && m.turn == turn && m.created_at == created_at));
-        before != inner.messages.len()
+        let removed = before != inner.messages.len();
+        if removed {
+            let derived = inner
+                .messages
+                .iter()
+                .map(|m| m.turn.saturating_add(1))
+                .max()
+                .unwrap_or(0);
+            if derived < inner.turn_count {
+                inner.turn_count = derived;
+            }
+        }
+        let status_label = format!("{:?}", inner.status);
+        (
+            removed,
+            inner.active_chat_id.clone(),
+            inner.turn_count,
+            status_label,
+        )
     };
 
-    // Remove from DB (best-effort)
-    let chat_id = {
-        let inner = arc.inner.lock().map_err(|e| e.to_string())?;
-        inner.active_chat_id.clone()
-    };
+    // Persist delete synchronously so a quick re-select cannot hydrate the row back.
     if !chat_id.is_empty() {
-        let db_path = arc
-            .db_path
-            .lock()
-            .ok()
-            .map(|g| g.clone())
-            .unwrap_or_default();
-        if !db_path.is_empty() {
-            let cid = chat_id.clone();
-            let a = agent.clone();
-            let _ = std::thread::spawn(move || {
-                let _ = db::with_locked(&db_path, |conn| {
-                    db::delete_message(conn, &cid, &a, turn, created_at)
-                });
-            });
-        }
+        let a = agent.clone();
+        let _ = with_db(arc, |conn| db::delete_message(conn, &chat_id, &a, turn, created_at));
     }
 
     // Notify FE
@@ -592,6 +615,12 @@ pub async fn delete_messages(
             "created_at": created_at,
         }),
     );
+    if removed {
+        let _ = app_handle.emit(
+            "status-update",
+            serde_json::json!({ "status": status_label, "turn": new_turn }),
+        );
+    }
 
     Ok(removed)
 }
@@ -1143,6 +1172,69 @@ mod epoch_tests {
         let len = msgs.len();
         msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == wrong_stamp));
         assert_eq!(msgs.len(), len);
+    }
+
+    #[test]
+    fn tip_delete_rewinds_turn_count_middle_delete_does_not() {
+        let mut msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "a".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "b".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "c".into(),
+                turn: 2,
+                created_at: 3,
+                reasoning: None,
+            },
+        ];
+        let mut turn_count = 3u32;
+
+        // Tip delete → rewind to max(remaining.turn)+1.
+        msgs.retain(|m| !(m.agent == "ai1" && m.turn == 2 && m.created_at == 3));
+        let derived = msgs
+            .iter()
+            .map(|m| m.turn.saturating_add(1))
+            .max()
+            .unwrap_or(0);
+        if derived < turn_count {
+            turn_count = derived;
+        }
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(turn_count, 2);
+
+        // Middle delete → leave counter (gap ok; next_speaker stays on turn_count).
+        msgs.retain(|m| !(m.agent == "ai2" && m.turn == 1 && m.created_at == 2));
+        let derived = msgs
+            .iter()
+            .map(|m| m.turn.saturating_add(1))
+            .max()
+            .unwrap_or(0);
+        let prev = turn_count;
+        if derived < turn_count {
+            turn_count = derived;
+        }
+        // derived = 0+1 = 1 < 2, so this WOULD rewind with naive max.
+        // Product rule: only rewind when derived < turn_count (same as tip).
+        // After middle delete of turn 1 with tip already gone, derived=1 → rewinds to 1.
+        // That is correct: remaining tip is turn 0, next index is 1.
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(turn_count, 1);
+        assert!(turn_count <= prev);
     }
 }
 

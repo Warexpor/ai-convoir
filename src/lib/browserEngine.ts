@@ -486,6 +486,14 @@ export async function engineDeleteMessage(
   );
   const removed = before !== state.messages.length;
   if (removed) {
+    const derived = state.messages.reduce(
+      (max, m) => Math.max(max, m.turn + 1),
+      0,
+    );
+    if (derived < state.turnCount) {
+      state.turnCount = derived;
+      emitStatus();
+    }
     emit("message-deleted", { agent, turn, created_at });
   }
   return removed;

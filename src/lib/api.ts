@@ -247,6 +247,12 @@ export async function upsertSavedChat(snapshot: unknown): Promise<void> {
   await invokeCmd("upsert_saved_chat", { snapshot });
 }
 
+/** Meta-only (title/config) — does not replace the messages table. */
+export async function upsertSavedChatMeta(snapshot: unknown): Promise<void> {
+  if (!isTauri()) return;
+  await invokeCmd("upsert_saved_chat_meta", { snapshot });
+}
+
 export async function listSavedChats(): Promise<unknown[] | null> {
   return tryInvoke<unknown[]>("list_saved_chats");
 }

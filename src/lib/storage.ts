@@ -176,7 +176,9 @@ export function renameChat(id: string, title: string) {
   );
   writeJson(CHATS_KEY, chats);
   const updated = chats.find((c) => c.id === id);
-  if (updated) void api.upsertSavedChat(updated);
+  // Meta-only: a full upsert with lagging LS messages can wipe DB turns that
+  // save_message already wrote (updated_at bump would beat the stale guard).
+  if (updated) void api.upsertSavedChatMeta(updated);
 }
 
 export function listApis(): SavedApi[] {
