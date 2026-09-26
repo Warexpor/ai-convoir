@@ -248,15 +248,17 @@ body,
 
 /* ── layout ─────────────────────────────────────────────────── */
 
-/* Registered so the side columns can glide open and shut. */
+/* Registered so the side columns can glide open and shut. Not inherited:
+   only .app's grid reads them, and an inherited property being animated
+   restyles every descendant on every frame. */
 @property --rail-w {
   syntax: "<length>";
-  inherits: true;
+  inherits: false;
   initial-value: 0px;
 }
 @property --settings-w {
   syntax: "<length>";
-  inherits: true;
+  inherits: false;
   initial-value: 0px;
 }
 
