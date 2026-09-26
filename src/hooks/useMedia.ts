@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
 /** Phone layout: one column, full-screen sheets, bottom bar. */
-export const PHONE_QUERY = "(max-width: 640px)";
+/** A phone turned sideways is wide but short; it still wants the phone UI. */
+export const PHONE_QUERY =
+  "(max-width: 640px), (max-height: 500px) and (pointer: coarse)";
 /** Rail becomes an overlay drawer below this width. */
 export const NARROW_QUERY = "(max-width: 900px)";
 

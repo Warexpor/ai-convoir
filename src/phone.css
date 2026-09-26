@@ -44,6 +44,11 @@
 .is-phone .topbar-actions {
   gap: 0;
 }
+/* The cast lives in the Voices sheet on phones (also in landscape, where
+   the width alone would bring the desktop strip back). */
+.is-phone .topbar .cast {
+  display: none;
+}
 
 /* Bare icon buttons: Material-style, no pill chrome, 48px hit area. */
 .btn-bare,
