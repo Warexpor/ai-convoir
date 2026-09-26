@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef } from "react";
 import { isScrollBusy, onScrollBusy } from "../lib/scrollBusy";
 import type { FxLevel } from "../lib/config";
+import type { ShaderPreset } from "../lib/background";
 
 const VERT = `
 attribute vec2 a_pos;
@@ -9,11 +10,7 @@ void main() {
 }
 `;
 
-/* Nocturne: domain-warped smoke in pure greyscale under one wide diagonal
-   sweep of light. Each voice's tone (as brightness only) lights the smoke;
-   the speaker's light swells, the rest stays near black so the transcript
-   keeps its contrast. */
-const FRAG = `
+const COMMON = `
 precision highp float;
 uniform vec2 u_res;
 uniform float u_time;
@@ -56,21 +53,11 @@ float pool(vec2 p, vec2 at, vec2 stretch, float k) {
   return exp(-dot(d, d) * k);
 }
 
-void main() {
-  vec2 uv = gl_FragCoord.xy / u_res;
-  float asp = u_res.x / max(u_res.y, 1.0);
-  vec2 p = (uv - 0.5) * vec2(asp, 1.0);
-  float t = u_time * 0.045;
+const vec3 LUM = vec3(0.2126, 0.7152, 0.0722);
 
-  vec2 q = vec2(fbm(p * 1.4 + vec2(0.0, t)), fbm(p * 1.4 + vec2(5.2, 1.3) - t));
-  vec2 r = vec2(
-    fbm(p * 1.2 + q * 1.9 + vec2(1.7, 9.2) + t * 0.6),
-    fbm(p * 1.2 + q * 1.9 + vec2(8.3, 2.8) - t * 0.4)
-  );
-  float smoke = fbm(p * 1.1 + r * 1.6);
-
-  vec3 col = vec3(mix(0.012, 0.04, uv.y));
-
+/* Each voice owns a pool of light at the stage's edges; the speaker's
+   swells. Returned as brightness only — the stage is pure greyscale. */
+float voiceLight(vec2 p, float asp, float t) {
   float e = 0.5 * asp;
   vec2 a1 = vec2(-e + 0.08, 0.36) + 0.05 * vec2(sin(t * 2.1), cos(t * 1.7));
   vec2 a2 = vec2(e - 0.06, 0.02) + 0.05 * vec2(cos(t * 1.8), sin(t * 2.3));
@@ -78,28 +65,106 @@ void main() {
   float g1 = pool(p, a1, vec2(1.0, 1.35), 1.9);
   float g2 = pool(p, a2, vec2(1.2, 0.95), 2.1);
   float g3 = pool(p, a3, vec2(0.9, 1.6), 1.8);
+  return dot(u_c1, LUM) * g1 * u_w.x + dot(u_c2, LUM) * g2 * u_w.y + dot(u_c3, LUM) * g3 * u_w.z;
+}
 
-  float veil = 0.35 + 0.95 * smoke * smoke;
-  vec3 light = u_c1 * g1 * u_w.x + u_c2 * g2 * u_w.y + u_c3 * g3 * u_w.z;
-  // Voices light the room in value only: pure greyscale, no tint.
-  float lum = dot(light, vec3(0.2126, 0.7152, 0.0722));
-  // Portrait screens pack the light pools behind the text; dim them.
-  float gain = mix(0.5, 1.0, smoothstep(0.55, 1.25, asp));
-  float v = lum * veil * 0.36 + pow(smoke, 3.0) * 0.07;
+/* Portrait screens pack the light behind the text; dim them. */
+float gainFor(float asp) {
+  return mix(0.5, 1.0, smoothstep(0.55, 1.25, asp));
+}
 
-  // One wide gradient: a slow diagonal sweep of light from the top left.
-  float sweep = dot(p, normalize(vec2(0.55, -1.0)));
-  v += smoothstep(0.9, -0.7, sweep) * 0.045;
-
-  col += vec3(v * gain);
-
+vec4 finish(vec3 col, vec2 p) {
   float vig = smoothstep(1.3, 0.2, length(p * vec2(0.85, 1.0)));
   col *= 0.72 + 0.28 * vig;
-
   col += (hash(gl_FragCoord.xy + fract(u_time)) - 0.5) * (2.5 / 255.0);
-  gl_FragColor = vec4(col, 1.0);
+  return vec4(col, 1.0);
 }
+
 `;
+
+/* Every preset is greyscale, lit by the voices' brightness, and cheap
+   enough at half resolution to run on software GL. */
+const PRESETS: Record<ShaderPreset, string> = {
+  /* Domain-warped smoke under one wide diagonal sweep of light. */
+  nocturne: `
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float asp = u_res.x / max(u_res.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(asp, 1.0);
+  float t = u_time * 0.045;
+  vec2 q = vec2(fbm(p * 1.4 + vec2(0.0, t)), fbm(p * 1.4 + vec2(5.2, 1.3) - t));
+  vec2 r = vec2(
+    fbm(p * 1.2 + q * 1.9 + vec2(1.7, 9.2) + t * 0.6),
+    fbm(p * 1.2 + q * 1.9 + vec2(8.3, 2.8) - t * 0.4)
+  );
+  float smoke = fbm(p * 1.1 + r * 1.6);
+  float veil = 0.35 + 0.95 * smoke * smoke;
+  float v = voiceLight(p, asp, t) * veil * 0.36 + pow(smoke, 3.0) * 0.07;
+  float sweep = dot(p, normalize(vec2(0.55, -1.0)));
+  v += smoothstep(0.9, -0.7, sweep) * 0.045;
+  vec3 col = vec3(mix(0.012, 0.04, uv.y) + v * gainFor(asp));
+  gl_FragColor = finish(col, p);
+}`,
+
+  /* Tall curtains of light hanging from the top, swaying slowly. */
+  veil: `
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float asp = u_res.x / max(u_res.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(asp, 1.0);
+  float t = u_time * 0.05;
+  float x = p.x * 1.5 + 0.4 * fbm(vec2(p.y * 0.7 + t, t * 0.6));
+  float curtain = fbm(vec2(x * 2.4, t * 0.5));
+  curtain = pow(smoothstep(0.32, 0.82, curtain), 1.5);
+  float hang = smoothstep(-0.75, 0.5, p.y);
+  float light = voiceLight(vec2(p.x, p.y * 0.5 + 0.1), asp, t);
+  float v = curtain * hang * (0.05 + 0.3 * light) + light * 0.05;
+  v += smoothstep(-0.2, 0.55, p.y) * 0.02;
+  vec3 col = vec3(mix(0.01, 0.03, uv.y) + v * gainFor(asp));
+  gl_FragColor = finish(col, p);
+}`,
+
+  /* Topographic lines over a slowly shifting height field. */
+  contour: `
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float asp = u_res.x / max(u_res.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(asp, 1.0);
+  float t = u_time * 0.03;
+  float h = fbm(p * 1.5 + vec2(t, -t * 0.7)) + 0.3 * fbm(p * 3.1 - t);
+  float k = h * 11.0;
+  float f = fract(k);
+  float d = min(f, 1.0 - f);
+#ifdef GL_OES_standard_derivatives
+  // Hairlines of constant on-screen width, however steep the slope.
+  float line = 1.0 - smoothstep(0.35, 1.35, d / max(fwidth(k), 1e-4));
+#else
+  float line = 1.0 - smoothstep(0.02, 0.07, d);
+#endif
+  float major = step(0.5, fract(k / 5.0 + 0.1)) * step(fract(k / 5.0 + 0.1), 0.7);
+  float light = voiceLight(p, asp, t);
+  float v = line * (0.022 + 0.2 * light) * (1.0 + 0.6 * major) + light * 0.05;
+  vec3 col = vec3(mix(0.012, 0.032, uv.y) + v * gainFor(asp));
+  gl_FragColor = finish(col, p);
+}`,
+
+  /* Near-black, a single wide fall of light, and film grain. */
+  monolith: `
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_res;
+  float asp = u_res.x / max(u_res.y, 1.0);
+  vec2 p = (uv - 0.5) * vec2(asp, 1.0);
+  float t = u_time * 0.04;
+  vec2 src = vec2(0.18 * asp, 0.78);
+  vec2 d = (p - src) * vec2(0.62, 0.95);
+  float fall = exp(-dot(d, d) * 1.6);
+  float light = voiceLight(p, asp, t);
+  float v = fall * (0.11 + 0.06 * dot(u_w, vec3(0.333))) + light * 0.035;
+  v += (hash(floor(gl_FragCoord.xy) + fract(u_time * 0.37)) - 0.5) * 0.018;
+  vec3 col = vec3(mix(0.006, 0.02, uv.y) + v * gainFor(asp));
+  gl_FragColor = finish(col, p);
+}`,
+};
 
 /** Render at a fraction of CSS pixels — the field is soft anyway. */
 const SCALE = 0.5;
@@ -141,7 +206,7 @@ type Renderer = {
   dispose: () => void;
 };
 
-function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
+function createRenderer(canvas: HTMLCanvasElement, preset: ShaderPreset): Renderer | null {
   const gl = canvas.getContext("webgl", {
     alpha: false,
     antialias: false,
@@ -153,7 +218,9 @@ function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
   });
   if (!gl) return null;
   const vs = compile(gl, gl.VERTEX_SHADER, VERT);
-  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG);
+  const derivs = !!gl.getExtension("OES_standard_derivatives");
+  const ext = derivs ? "#extension GL_OES_standard_derivatives : enable\n" : "";
+  const fs = compile(gl, gl.FRAGMENT_SHADER, ext + COMMON + PRESETS[preset]);
   if (!vs || !fs) return null;
   const prog = gl.createProgram();
   if (!prog) return null;
@@ -191,6 +258,7 @@ function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },
     dispose() {
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
       gl.deleteProgram(prog);
       gl.deleteShader(vs);
       gl.deleteShader(fs);
@@ -199,12 +267,35 @@ function createRenderer(canvas: HTMLCanvasElement): Renderer | null {
   };
 }
 
+const thumbs = new Map<ShaderPreset, string | null>();
+
+/** A still of a preset for the settings picker, rendered once and cached.
+ *  The context is released right after, so it never counts against the
+ *  browser's WebGL context limit. */
+export function presetThumb(preset: ShaderPreset): string | null {
+  if (thumbs.has(preset)) return thumbs.get(preset) ?? null;
+  const canvas = document.createElement("canvas");
+  const r = createRenderer(canvas, preset);
+  let url: string | null = null;
+  if (r) {
+    r.resize(240, 150);
+    const t = targets(["#fafafa", "#a4a4a4", "#787878"], 0);
+    r.draw({ t: 3, rgb: t.rgb, w: t.w });
+    url = canvas.toDataURL("image/jpeg", 0.85);
+    r.dispose();
+  }
+  thumbs.set(preset, url);
+  return url;
+}
+
 interface Props {
   /** Voice colors in slot order (2 or 3). */
   colors: string[];
   /** Index into `colors` of the voice that is speaking / up next, or -1. */
   focus: number;
   fx: FxLevel;
+  /** Fixed for the component's life; remount (key) to switch. */
+  preset: ShaderPreset;
 }
 
 function targets(colors: string[], focus: number) {
@@ -227,7 +318,7 @@ type Engine = {
  *   a single frame. No per-frame shader work, even on software GL.
  * - full: a living ~30fps loop, paused while scrolling or hidden.
  */
-function StageField({ colors, focus, fx }: Props) {
+function StageField({ colors, focus, fx, preset }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const aRef = useRef<HTMLCanvasElement>(null);
   const bRef = useRef<HTMLCanvasElement>(null);
@@ -239,8 +330,8 @@ function StageField({ colors, focus, fx }: Props) {
     const ca = aRef.current;
     const cb = bRef.current;
     if (!wrap || !ca || !cb) return;
-    const ra = createRenderer(ca);
-    const rb = createRenderer(cb);
+    const ra = createRenderer(ca, preset);
+    const rb = createRenderer(cb, preset);
     if (!ra || !rb) return;
 
     const motionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -383,6 +474,8 @@ function StageField({ colors, focus, fx }: Props) {
       ra.dispose();
       rb.dispose();
     };
+    // The preset is fixed per mount (callers key on it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
