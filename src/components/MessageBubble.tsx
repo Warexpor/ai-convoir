@@ -109,7 +109,6 @@ function MessageBubble({
     return (
       <article className={cls}>
         <div className="note-line">
-          <span className="note-tag">Stage note</span>
           <p>{message.content}</p>
           {actions}
         </div>
@@ -122,28 +121,18 @@ function MessageBubble({
       className={cls}
       style={{ ["--voice" as string]: accent }}
     >
-      <div className="msg-gutter" aria-hidden>
-        {isSeed ? (
-          <span className="msg-avatar msg-avatar-you">You</span>
-        ) : (
-          <VoiceAvatar
-            className="msg-avatar"
-            variant="tint"
-            name={label}
-            icon={agentConfig(message.agent, config)?.icon}
-            color={accent}
-          />
-        )}
-        <span className="msg-spine" />
-      </div>
-
       <div className="msg-body">
-        <div className="msg-meta">
-          <span className="msg-name">{isSeed ? "Opening line" : label}</span>
-          {!isSeed && message.turn > 0 && (
-            <span className="msg-turn">T{String(message.turn).padStart(2, "0")}</span>
+        <header className="msg-meta">
+          {!isSeed && (
+            <VoiceAvatar
+              className="msg-avatar"
+              name={label}
+              icon={agentConfig(message.agent, config)?.icon}
+              color={accent}
+            />
           )}
-          {isStream ? (
+          <span className="msg-name">{isSeed ? "Opening line" : label}</span>
+          {isStream && (
             <span className="msg-live">
               <span className="eq eq-sm" aria-hidden>
                 <i />
@@ -152,11 +141,15 @@ function MessageBubble({
               </span>
               {message.content || streamMode === "whole" ? "writing" : "thinking"}
             </span>
-          ) : (
-            <RelativeTime at={message.created_at || Date.now()} />
           )}
-          {actions}
-        </div>
+          <span className="msg-aside">
+            {!isStream && <RelativeTime at={message.created_at || Date.now()} />}
+            {!isSeed && message.turn > 0 && (
+              <span className="msg-turn">#{message.turn}</span>
+            )}
+            {actions}
+          </span>
+        </header>
 
         {hasThoughts && (
           <div className={`thoughts ${thoughtsOpen ? "open" : ""}`}>

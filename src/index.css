@@ -85,6 +85,7 @@
   --dur-slow: 0.5s;
 
   --col: 780px;
+  --read: 720px;
 }
 
 /* Real springs where linear() easing exists (Chromium 113+, WebKit 17.2+). */
@@ -1067,7 +1068,7 @@ body,
    full height and reserves their space as padding. The bottom padding is
    the runway: the latest line never sits glued to the dock. */
 .chat-inner {
-  max-width: var(--col);
+  max-width: var(--read);
   margin: 0 auto;
   padding: calc(var(--top-h) + 28px) 28px
     calc(var(--dock-h, 110px) + 56px + 6vh);
@@ -1077,50 +1078,42 @@ body,
   flex-direction: column;
 }
 .chat-list > div {
-  padding-bottom: 28px;
+  padding-bottom: 40px;
 }
 .chat-spacer {
   flex-shrink: 0;
 }
 
+/* A message is one column: a quiet header line, then the words. No
+   gutter, no spine, no chrome — the voice is carried by a small avatar,
+   its name and the serif body; time, turn and actions surface on hover. */
 .msg {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  column-gap: 16px;
   animation: msg-in 0.6s var(--ease-expo) both;
 }
 @keyframes msg-in {
   from {
     opacity: 0;
-    transform: translate3d(0, 16px, 0);
+    transform: translate3d(0, 14px, 0);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-/* Entrance choreography: avatar pops, the spine draws down, the body rises. */
 .msg .msg-avatar {
   animation: avatar-pop 0.7s var(--spring) both;
-}
-.msg .msg-spine {
-  transform-origin: top;
-  animation: spine-draw 0.9s var(--ease-expo) 0.12s both;
 }
 .msg .msg-meta,
 .msg .msg-text,
 .msg .thoughts {
   animation: rise 0.6s var(--ease-expo) both;
 }
-.msg .msg-meta {
-  animation-delay: 0.05s;
-}
 .msg .thoughts,
 .msg .msg-text {
-  animation-delay: 0.1s;
+  animation-delay: 0.08s;
 }
 .msg.msg-static,
-.msg.msg-static :is(.msg-avatar, .msg-spine, .msg-meta, .msg-text, .thoughts) {
+.msg.msg-static :is(.msg-avatar, .msg-meta, .msg-text, .thoughts) {
   animation: none;
 }
 @keyframes avatar-pop {
@@ -1129,52 +1122,29 @@ body,
     transform: scale(0.5) rotate(-12deg);
   }
 }
-@keyframes spine-draw {
-  from {
-    transform: scaleY(0);
-  }
-}
 @keyframes rise {
   from {
     opacity: 0;
     transform: translate3d(0, 8px, 0);
   }
 }
-.msg-gutter {
+.msg-body {
+  min-width: 0;
+}
+.msg-meta {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding-top: 1px;
+  gap: 9px;
+  min-height: 28px;
+  margin-bottom: 6px;
 }
 .msg-avatar {
-  width: 34px;
-  height: 34px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
-  border-radius: 11px;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 24px -8px color-mix(in srgb, var(--voice) 60%, transparent);
-}
-.msg-avatar-you {
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-}
-.msg-spine {
-  flex: 1;
-  width: 2px;
-  min-height: 12px;
-  margin-bottom: -26px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--voice) 38%, transparent),
-    transparent
-  );
+  border-radius: 7px;
+  font-size: 8.5px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 .msg.streaming .msg-avatar::after {
   content: "";
@@ -1185,33 +1155,11 @@ body,
   animation: ring-out 1.6s var(--ease-out) infinite;
   will-change: transform, opacity;
 }
-.msg-body {
-  min-width: 0;
-}
-.msg-meta {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 34px;
-  margin-bottom: 2px;
-}
 .msg-name {
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 560;
   letter-spacing: -0.005em;
-  color: var(--voice);
-}
-.msg-turn {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--faint);
-  padding: 1px 5px;
-  border-radius: 5px;
-  border: 1px solid var(--line);
-}
-.msg-time {
-  font-size: 11.5px;
-  color: var(--faint);
+  color: var(--text);
 }
 .msg-live {
   display: inline-flex;
@@ -1221,29 +1169,46 @@ body,
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--voice);
+  color: var(--mute);
 }
-.msg-actions {
+/* time · turn · actions: one faint cluster, only while you look */
+.msg-aside {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 10px;
   opacity: 0;
   transform: translate3d(6px, 0, 0);
   transition:
     opacity var(--dur-fast),
     transform 0.4s var(--spring-soft);
 }
-.msg:hover .msg-actions,
-.msg:focus-within .msg-actions,
-.msg.confirming .msg-actions {
+.msg:hover .msg-aside,
+.msg:focus-within .msg-aside,
+.msg.confirming .msg-aside {
   opacity: 1;
   transform: none;
 }
 @media (hover: none) {
-  .msg-actions {
+  .msg-aside {
     opacity: 1;
+    transform: none;
   }
+  .msg-aside .msg-time,
+  .msg-aside .msg-turn {
+    display: none;
+  }
+}
+.msg-time,
+.msg-turn {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+}
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 .msg-action {
   width: 28px;
@@ -1276,20 +1241,23 @@ body,
 .msg-action-del:hover {
   color: var(--danger);
 }
-.msg-text {
-  padding-right: 8px;
-}
 
-/* opening line — the prompt that starts the scene */
+/* opening line — the prompt that starts the scene: large, bare, and
+   closed off from the talk below by a hairline */
 .msg-seed {
   --voice: #ededed;
+  padding-bottom: 30px;
+  position: relative;
 }
-.msg-seed .msg-avatar-you {
-  font-size: 9.5px;
-  color: #0b0b0c;
-  background: var(--text);
-  border-color: var(--text);
-  box-shadow: 0 0 30px -6px rgba(255, 255, 255, 0.35);
+.msg-seed::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--grad-hair);
+  opacity: 0.5;
 }
 .msg-seed .msg-name {
   font-family: var(--mono);
@@ -1299,32 +1267,24 @@ body,
   text-transform: uppercase;
   color: var(--mute);
 }
-.msg-seed .msg-text {
-  padding: 16px 20px 18px;
-  border-radius: 4px var(--r-lg) var(--r-lg) var(--r-lg);
-  background: var(--chip-fill);
-  border: 1px solid;
-  border-color: var(--glass-edge);
-  box-shadow: var(--glass-lip);
-}
 .msg-seed .md-body,
 .msg-seed .md-plain {
-  font-size: 18px;
-  font-weight: 450;
-  line-height: 1.5;
-  letter-spacing: -0.012em;
+  font-size: 23px;
+  font-weight: 400;
+  line-height: 1.38;
+  letter-spacing: -0.015em;
+  color: #fff;
 }
 
-/* stage note — narration between turns */
+/* stage note — narration between turns, set like a stage direction */
 .msg-note {
-  display: block;
+  position: relative;
 }
 .note-line {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 18px;
   padding: 2px 0;
-  color: var(--mute);
 }
 .note-line::before,
 .note-line::after {
@@ -1336,55 +1296,49 @@ body,
 .note-line::after {
   background: linear-gradient(to left, transparent, var(--line-2));
 }
-.note-tag {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
 .note-line p {
   margin: 0;
   max-width: 70%;
-  font-size: 14px;
-  color: var(--text-2);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--mute);
   text-align: center;
-}
-.msg-note {
-  position: relative;
 }
 .note-line .msg-actions {
   position: absolute;
   right: 0;
   top: 50%;
-  transform: translateY(-50%);
   padding-left: 6px;
   background: var(--bg);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-fast);
+}
+.msg-note:hover .msg-actions,
+.msg-note:focus-within .msg-actions,
+.msg-note.confirming .msg-actions {
+  opacity: 1;
 }
 
 /* thoughts */
 .thoughts {
-  margin: 2px 0 10px;
+  margin: 0 0 10px;
 }
 .thoughts-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   max-width: 100%;
-  padding: 5px 12px 5px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--chip-fill);
-  box-shadow: var(--chip-lip);
+  padding: 2px 0;
+  border: none;
+  background: none;
   font-size: 12px;
-  color: var(--mute);
-  transition:
-    color var(--dur-fast),
-    border-color var(--dur-fast);
+  color: var(--faint);
+  transition: color var(--dur-fast);
 }
 .thoughts-toggle:hover {
-  color: var(--text);
-  border-color: var(--line-2);
+  color: var(--text-2);
 }
 .thoughts-toggle .icon {
   transition: transform 0.5s var(--spring);
@@ -1424,14 +1378,13 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: 52px;
-  padding: 4px 0 28px;
+  padding: 4px 0 36px;
   font-size: 13px;
   color: var(--mute);
   animation: fade-up var(--dur-med) var(--ease-out) both;
 }
 .thinking strong {
-  color: var(--voice);
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -3172,22 +3125,12 @@ body,
     padding: calc(var(--top-h) + 20px) 16px
       calc(var(--dock-h, 110px) + 40px + 4vh);
   }
-  .msg {
-    grid-template-columns: 28px minmax(0, 1fr);
-    column-gap: 12px;
-  }
-  .msg-avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 9px;
-    font-size: 9.5px;
-  }
-  .thinking {
-    margin-left: 40px;
+  .chat-list > div {
+    padding-bottom: 32px;
   }
   .msg-seed .md-body,
   .msg-seed .md-plain {
-    font-size: 18px;
+    font-size: 19px;
   }
   .note-line p {
     max-width: 85%;
