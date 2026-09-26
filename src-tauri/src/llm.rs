@@ -1,7 +1,7 @@
 use crate::engine::{
-    build_chat_body, chat_url, effective_max_tokens, extract_sse_deltas, extract_text_content,
-    is_codex_base, models_url, parse_models_response, provider_headers, responses_url,
-    uses_responses_for, StreamPiece,
+    build_chat_body, chat_url, extract_sse_deltas, extract_text_content, models_url,
+    is_codex_base, parse_models_response, provider_headers, responses_url, uses_responses_for,
+    StreamPiece,
 };
 use crate::harness::cache::{
     apply_prompt_cache_key, extract_usage, TokenUsage,
@@ -249,8 +249,10 @@ fn responses_body_from_chat(chat: &Value, config: &AiConfig, stream: bool) -> Va
         "temperature": config.temperature,
     });
     // Responses API uses max_output_tokens (chat/completions used max_tokens).
-    // Always set — max_tokens==0 falls back to response_length (never unbounded).
-    body["max_output_tokens"] = serde_json::json!(effective_max_tokens(config));
+    // Omit when max_tokens==0 so the server default applies — no length docking.
+    if config.max_tokens > 0 {
+        body["max_output_tokens"] = serde_json::json!(config.max_tokens);
+    }
     // Muse Spark / OpenAI Responses: nest reasoning.effort + summary so thoughts stream.
     // (Chat Completions uses top-level reasoning_effort; that field is dropped here.)
     if config.reasoning_effort != crate::state::ReasoningEffort::None {
@@ -1541,18 +1543,21 @@ mod cancel_tests {
         inner.ai1_config.model = "muse-spark-1.3-contributor".into();
         inner.ai1_config.api_base_url = "https://opencode.ai/zen/go/v1".into();
         inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.system_prompt = "be Ava".into();
         inner.ai1_config.response_length = ResponseLength::Brief;
         inner.ai1_config.reasoning_effort = ReasoningEffort::Medium;
         let prep = prepare_turn(&inner, None, 1, true).unwrap();
         assert!(prep.uses_responses);
-        // Soft Brief note must still be on the chat system row before conversion.
         let sys = prep.chat_body["messages"][0]["content"].as_str().unwrap_or("");
-        assert!(
-            sys.contains("extremely brief"),
-            "Brief length note missing from prepare chat_body: {sys}"
-        );
+        assert_eq!(sys, "be Ava");
+        assert!(!sys.contains("extremely brief"));
+        assert!(prep.chat_body.get("max_tokens").is_none());
         let body = responses_body_from_chat(&prep.chat_body, &prep.config, true);
-        assert_eq!(body["max_output_tokens"], 128 + 1024);
+        assert!(
+            body.get("max_output_tokens").is_none(),
+            "max_tokens==0 must omit max_output_tokens, got {:?}",
+            body.get("max_output_tokens")
+        );
         assert_eq!(body["reasoning"]["effort"], "medium");
         assert_eq!(body["reasoning"]["summary"], "auto");
         assert_eq!(body["instructions"], sys);
@@ -1808,7 +1813,7 @@ mod cancel_tests {
     }
 
     #[test]
-    fn responses_body_uses_length_default_when_max_tokens_zero() {
+    fn responses_body_omits_max_output_tokens_when_zero() {
         let mut config = crate::state::AiConfig {
             name: "A".into(),
             system_prompt: "sys".into(),
@@ -1827,16 +1832,20 @@ mod cancel_tests {
             "messages": [{"role": "user", "content": "hi"}]
         });
         let body = responses_body_from_chat(&chat, &config, false);
-        assert_eq!(body["max_output_tokens"], 2048);
+        assert!(
+            body.get("max_output_tokens").is_none(),
+            "max_tokens==0 must omit max_output_tokens, got {:?}",
+            body.get("max_output_tokens")
+        );
         let temp = body["temperature"].as_f64().unwrap();
         assert!((temp - 0.5).abs() < 1e-5);
-        // Thinking enabled → reasoning nested + pad on budget.
+        // Thinking enabled → reasoning nested; still no length dock / pad.
         config.reasoning_effort = crate::state::ReasoningEffort::Medium;
         config.response_length = crate::state::ResponseLength::Brief;
         let think = responses_body_from_chat(&chat, &config, true);
         assert_eq!(think["reasoning"]["effort"], "medium");
         assert_eq!(think["reasoning"]["summary"], "auto");
-        assert_eq!(think["max_output_tokens"], 128 + 1024);
+        assert!(think.get("max_output_tokens").is_none());
     }
 
     #[test]
@@ -1855,8 +1864,8 @@ mod cancel_tests {
         let body = responses_body_from_chat(&chat, &config, true);
         assert_eq!(body["reasoning"]["effort"], "high");
         assert_eq!(body["reasoning"]["summary"], "auto");
-        // Length Normal (default) ceiling 2048, explicit 512 wins as tighter.
-        assert_eq!(body["max_output_tokens"], 512 + 2048);
+        // Explicit max_tokens only — no length ceiling / thinking pad.
+        assert_eq!(body["max_output_tokens"], 512);
     }
 
     #[test]

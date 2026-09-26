@@ -57,82 +57,17 @@ pub fn format_narration_note(narration: &str) -> String {
     )
 }
 
-/// Soft length preset → hard output-token budget (content only; reasoning pad added separately).
+/// System prompt for API body / prompt-cache (byte-stable for a given config).
 ///
-/// Twin of FE `LENGTH_MAX_TOKENS` / `REASONING_PAD` in `src/lib/browserEngine.ts` —
-/// keep ceilings and pads in sync across TS and Rust.
-pub fn max_tokens_for_response_length(len: &ResponseLength) -> u32 {
-    match len {
-        ResponseLength::Brief => 128,
-        ResponseLength::Small => 384,
-        ResponseLength::Normal => 2048,
-        ResponseLength::Long => 4096,
-        ResponseLength::VeryLong => 8192,
-    }
-}
-
-/// Extra output budget so reasoning/thinking does not starve the visible reply.
-pub fn reasoning_token_pad(effort: &ReasoningEffort) -> u32 {
-    match effort {
-        ReasoningEffort::None => 0,
-        ReasoningEffort::Low => 512,
-        ReasoningEffort::Medium => 1024,
-        ReasoningEffort::High => 2048,
-    }
-}
-
-/// Effective `max_tokens` / `max_output_tokens` for a turn.
-///
-/// - `response_length` always supplies an intended ceiling (UI control).
-/// - Explicit `max_tokens > 0` is an additional ceiling (never raises past length).
-/// - `max_tokens == 0` falls back to the length preset (never omit — unbounded replies).
-/// - When thinking is on, pad so reasoning tokens do not consume the whole budget.
-///   Soft length instruction from `system_prompt_with_length` still applies — pad is
-///   CoT headroom, not permission to ignore Brief/Small soft caps.
-pub fn effective_max_tokens(config: &AiConfig) -> u32 {
-    let by_length = max_tokens_for_response_length(&config.response_length);
-    let base = if config.max_tokens == 0 {
-        by_length
-    } else {
-        config.max_tokens.min(by_length)
-    };
-    base.saturating_add(reasoning_token_pad(&config.reasoning_effort)).max(1)
-}
-
-/// Compose system prompt with response-length instruction (byte-stable for a given config).
-///
-/// Twin of FE `LENGTH_INSTRUCTIONS` / `effectiveSystemPrompt` in `src/types.ts`.
-/// Soft length intent always stays attached — including when `effective_max_tokens`
-/// pads for thinking (Brief+High ≈ 2176 hard budget still gets "one sentence" soft note).
+/// No longer appends response_length soft notes — length/effort staking is owned
+/// by a separate agent. Kept as a named helper so cache + callers stay stable.
 pub fn system_prompt_with_length(config: &AiConfig) -> String {
-    match config.response_length {
-        ResponseLength::Brief => format!(
-            "{}\n\nKeep your response extremely brief — at most one sentence.",
-            config.system_prompt
-        ),
-        ResponseLength::Small => format!(
-            "{}\n\nKeep your response short — at most 2–3 sentences.",
-            config.system_prompt
-        ),
-        ResponseLength::Normal => format!(
-            "{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.",
-            config.system_prompt
-        ),
-        ResponseLength::Long => format!(
-            "{}\n\nYou may respond at length — provide thorough detail.",
-            config.system_prompt
-        ),
-        ResponseLength::VeryLong => format!(
-            "{}\n\nRespond as extensively as you like — cover all angles and go deep.",
-            config.system_prompt
-        ),
-    }
+    config.system_prompt.clone()
 }
 
 /// Build OpenAI-compatible chat completions JSON body.
 /// Includes `reasoning_effort` only when not `None`.
 /// `stream` enables SSE streaming. Optional `narration` is injected as a final system note.
-/// Appends response-length instruction to the system prompt.
 /// Message list is append-ordered (no reshuffle of older messages).
 pub fn build_chat_body(
     config: &AiConfig,
@@ -177,16 +112,16 @@ pub fn build_chat_body(
     if !openai_reasoning {
         body["temperature"] = json!(config.temperature);
     }
-    // Always send a length limit — max_tokens==0 used to omit and run unbounded.
-    // response_length tightens the budget; thinking pads so CoT does not starve content.
-    {
+    // Some providers reject max_tokens: 0; omit so the server default applies.
+    // Do not dock response_length into hard ceilings — another agent owns that.
+    if config.max_tokens > 0 {
         let field = if host_of(&config.api_base_url) == "api.openai.com" {
             // api.openai.com deprecated max_tokens; reasoning models reject it outright.
             "max_completion_tokens"
         } else {
             "max_tokens"
         };
-        body[field] = json!(effective_max_tokens(config));
+        body[field] = json!(config.max_tokens);
     }
 
     if config.reasoning_effort != ReasoningEffort::None {
@@ -1074,96 +1009,27 @@ mod tests {
     }
 
     #[test]
-    fn build_body_uses_length_default_when_max_tokens_zero() {
+    fn build_body_omits_max_tokens_when_zero() {
         let mut cfg = sample_config("sys", ReasoningEffort::None);
         cfg.max_tokens = 0;
-        cfg.response_length = ResponseLength::Normal;
         let body = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(body["max_tokens"], 2048);
-        cfg.response_length = ResponseLength::Brief;
-        let brief = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(brief["max_tokens"], 128);
-        cfg.response_length = ResponseLength::Small;
-        assert_eq!(build_chat_body(&cfg, "ai1", &[], false, None)["max_tokens"], 384);
-        cfg.response_length = ResponseLength::Long;
-        assert_eq!(build_chat_body(&cfg, "ai1", &[], false, None)["max_tokens"], 4096);
-        cfg.response_length = ResponseLength::VeryLong;
-        assert_eq!(build_chat_body(&cfg, "ai1", &[], false, None)["max_tokens"], 8192);
-        cfg.max_tokens = 2048;
-        cfg.response_length = ResponseLength::Brief;
-        let clamped = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(
-            clamped["max_tokens"], 128,
-            "Brief must tighten default max_tokens=2048"
-        );
-        cfg.max_tokens = 64;
-        cfg.response_length = ResponseLength::Normal;
-        let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(body2["max_tokens"], 64);
-    }
-
-    #[test]
-    fn openai_com_max_tokens_zero_uses_length_as_max_completion_tokens() {
-        let mut cfg = sample_config("sys", ReasoningEffort::None);
-        cfg.api_base_url = "https://api.openai.com/v1".into();
-        cfg.model = "gpt-4.1".into();
-        cfg.max_tokens = 0;
-        cfg.response_length = ResponseLength::Normal;
-        let body = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(body["max_completion_tokens"], 2048);
-        assert!(body.get("max_tokens").is_none());
-        cfg.response_length = ResponseLength::Brief;
-        let brief = build_chat_body(&cfg, "ai1", &[], false, None);
-        assert_eq!(brief["max_completion_tokens"], 128);
-        cfg.response_length = ResponseLength::Small;
-        assert_eq!(
-            build_chat_body(&cfg, "ai1", &[], false, None)["max_completion_tokens"],
-            384
-        );
-        cfg.response_length = ResponseLength::Long;
-        assert_eq!(
-            build_chat_body(&cfg, "ai1", &[], false, None)["max_completion_tokens"],
-            4096
-        );
-        cfg.response_length = ResponseLength::VeryLong;
-        assert_eq!(
-            build_chat_body(&cfg, "ai1", &[], false, None)["max_completion_tokens"],
-            8192
-        );
-    }
-
-    #[test]
-    fn effective_max_tokens_pads_for_thinking() {
-        let mut cfg = sample_config("sys", ReasoningEffort::None);
-        cfg.max_tokens = 0;
-        cfg.response_length = ResponseLength::Brief;
-        assert_eq!(effective_max_tokens(&cfg), 128);
-        cfg.reasoning_effort = ReasoningEffort::Low;
-        assert_eq!(effective_max_tokens(&cfg), 128 + 512);
-        cfg.reasoning_effort = ReasoningEffort::Medium;
-        assert_eq!(effective_max_tokens(&cfg), 128 + 1024);
-        cfg.reasoning_effort = ReasoningEffort::High;
-        assert_eq!(effective_max_tokens(&cfg), 128 + 2048);
-    }
-
-    #[test]
-    fn brief_plus_thinking_keeps_length_system_note() {
-        // Hard budget pads for CoT, but soft Brief instruction must still ride along.
-        let mut cfg = sample_config("You are Ava.", ReasoningEffort::High);
-        cfg.max_tokens = 0;
-        cfg.response_length = ResponseLength::Brief;
-        assert_eq!(effective_max_tokens(&cfg), 128 + 2048);
-        let sys = system_prompt_with_length(&cfg);
         assert!(
-            sys.contains("Keep your response extremely brief — at most one sentence."),
-            "Brief soft note missing with thinking on: {sys}"
+            body.get("max_tokens").is_none(),
+            "max_tokens==0 must be omitted, got {:?}",
+            body.get("max_tokens")
         );
-        let body = build_chat_body(&cfg, "ai1", &[], false, None);
-        let content = body["messages"][0]["content"].as_str().unwrap_or("");
-        assert!(content.contains("extremely brief"));
-        cfg.response_length = ResponseLength::Small;
-        let small = system_prompt_with_length(&cfg);
-        assert!(small.contains("at most 2–3 sentences."));
+        assert!(body.get("max_completion_tokens").is_none());
+        cfg.max_tokens = 128;
+        let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert_eq!(body2["max_tokens"], 128);
+        // response_length must not dock into hard ceilings or soft system notes.
+        cfg.response_length = ResponseLength::Brief;
+        cfg.max_tokens = 0;
+        let brief = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(brief.get("max_tokens").is_none());
+        let sys = brief["messages"][0]["content"].as_str().unwrap_or("");
+        assert_eq!(sys, "sys");
+        assert!(!sys.contains("extremely brief"));
     }
 
     #[test]

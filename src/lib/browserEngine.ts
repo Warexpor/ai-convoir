@@ -1,5 +1,4 @@
 import type { AiConfig, InnerState, Message, StreamKind } from "../types";
-import { LENGTH_INSTRUCTIONS } from "../types";
 import { emit } from "./bus";
 import {
   MUSE_SPARK_13_CONTRIBUTOR,
@@ -116,33 +115,6 @@ function friendlyApiError(status: number, detail: string): string {
   return `Couldn’t reach the provider (${status}): ${detail}`;
 }
 
-/**
- * Soft length → hard output-token ceilings (+ reasoning pad below).
- * Twin of Rust `max_tokens_for_response_length` / `reasoning_token_pad` /
- * `effective_max_tokens` in `src-tauri/src/engine.rs` — keep in sync.
- */
-const LENGTH_MAX_TOKENS: Record<string, number> = {
-  brief: 128,
-  small: 384,
-  normal: 2048,
-  long: 4096,
-  very_long: 8192,
-};
-const REASONING_PAD: Record<string, number> = {
-  none: 0,
-  low: 512,
-  medium: 1024,
-  high: 2048,
-};
-
-function effectiveMaxOutputTokens(cfg: AiConfig): number {
-  const byLength = LENGTH_MAX_TOKENS[cfg.response_length || "normal"] ?? 2048;
-  const raw = cfg.max_tokens ?? 0;
-  const base = raw > 0 ? Math.min(raw, byLength) : byLength;
-  const pad = REASONING_PAD[cfg.reasoning_effort || "none"] ?? 0;
-  return Math.max(1, base + pad);
-}
-
 function goHeaders(apiKey: string): HeadersInit {
   return {
     Authorization: `Bearer ${apiKey}`,
@@ -153,13 +125,8 @@ function goHeaders(apiKey: string): HeadersInit {
 }
 
 function transcriptForApi(speaking: string, cfg: AiConfig) {
-  // Soft length intent always stays on the system/instructions path —
-  // even when thinking pads max_output_tokens for CoT (Brief+High ≈ 2176).
-  const lengthNote =
-    LENGTH_INSTRUCTIONS[cfg.response_length || "normal"] || "";
-  const instructions = lengthNote
-    ? `${cfg.system_prompt}\n\n${lengthNote}`
-    : cfg.system_prompt;
+  // No soft length notes — length/effort staking owned elsewhere.
+  const instructions = cfg.system_prompt;
   const input = state.messages.map((m) => ({
     role: m.agent === speaking ? "assistant" : "user",
     content: m.content,
@@ -222,7 +189,6 @@ async function streamResponses(
     instructions,
     input,
     stream: true,
-    max_output_tokens: effectiveMaxOutputTokens(cfg),
   };
   if (cfg.reasoning_effort && cfg.reasoning_effort !== "none") {
     body.reasoning = {
