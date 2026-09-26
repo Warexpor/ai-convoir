@@ -57,10 +57,37 @@ pub fn format_narration_note(narration: &str) -> String {
     )
 }
 
+/// Compose system prompt with response-length instruction (byte-stable for a given config).
+pub fn system_prompt_with_length(config: &AiConfig) -> String {
+    match config.response_length {
+        ResponseLength::Brief => format!(
+            "{}\n\nKeep your response extremely brief — at most one sentence.",
+            config.system_prompt
+        ),
+        ResponseLength::Small => format!(
+            "{}\n\nKeep your response short — at most 2–3 sentences.",
+            config.system_prompt
+        ),
+        ResponseLength::Normal => format!(
+            "{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.",
+            config.system_prompt
+        ),
+        ResponseLength::Long => format!(
+            "{}\n\nYou may respond at length — provide thorough detail.",
+            config.system_prompt
+        ),
+        ResponseLength::VeryLong => format!(
+            "{}\n\nRespond as extensively as you like — cover all angles and go deep.",
+            config.system_prompt
+        ),
+    }
+}
+
 /// Build OpenAI-compatible chat completions JSON body.
 /// Includes `reasoning_effort` only when not `None`.
 /// `stream` enables SSE streaming. Optional `narration` is injected as a final user note.
 /// Appends response-length instruction to the system prompt.
+/// Message list is append-ordered (no reshuffle of older messages).
 pub fn build_chat_body(
     config: &AiConfig,
     speaking_agent: &str,
@@ -70,14 +97,7 @@ pub fn build_chat_body(
 ) -> Value {
     let mut api_messages: Vec<Value> = Vec::new();
 
-    // Compose system prompt with response-length instruction
-    let system_content = match config.response_length {
-        ResponseLength::Brief => format!("{}\n\nKeep your response extremely brief — at most one sentence.", config.system_prompt),
-        ResponseLength::Small => format!("{}\n\nKeep your response short — at most 2–3 sentences.", config.system_prompt),
-        ResponseLength::Normal => format!("{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.", config.system_prompt),
-        ResponseLength::Long => format!("{}\n\nYou may respond at length — provide thorough detail.", config.system_prompt),
-        ResponseLength::VeryLong => format!("{}\n\nRespond as extensively as you like — cover all angles and go deep.", config.system_prompt),
-    };
+    let system_content = system_prompt_with_length(config);
 
     api_messages.push(json!({
         "role": "system",
@@ -375,9 +395,13 @@ fn context_window_for(model: &str) -> u32 {
 }
 
 /// Rough token estimate: ~4 chars per token.
-fn estimate_tokens(s: &str) -> u32 {
+pub fn estimate_tokens_pub(s: &str) -> u32 {
     let len = s.len() as u32;
     (len + 3) / 4
+}
+
+fn estimate_tokens(s: &str) -> u32 {
+    estimate_tokens_pub(s)
 }
 
 /// Return a subset of messages that fits within the model's context window.
@@ -717,5 +741,57 @@ mod tests {
             start_action(&AppStatus::Paused, &mode_after_step),
             StartAction::ResumeAuto
         );
+    }
+
+    #[test]
+    fn system_prompt_with_length_stable() {
+        let cfg = sample_config("You are Alice.", ReasoningEffort::None);
+        let a = system_prompt_with_length(&cfg);
+        let b = system_prompt_with_length(&cfg);
+        assert_eq!(a, b);
+        assert!(a.contains("You are Alice."));
+    }
+
+    #[test]
+    fn messages_for_api_append_preserves_prefix_bytes() {
+        let t1 = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "A".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "B".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        let prefix = messages_for_api("ai1", &t1);
+        let mut t2 = t1.clone();
+        t2.push(Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "C".into(),
+            turn: 2,
+            created_at: 3,
+            reasoning: None,
+        });
+        let full = messages_for_api("ai1", &t2);
+        assert_eq!(&full[..2], &prefix[..]);
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        let body1 = build_chat_body(&cfg, "ai1", &t1, true, None);
+        let body2 = build_chat_body(&cfg, "ai1", &t2, true, None);
+        let m1 = body1["messages"].as_array().unwrap();
+        let m2 = body2["messages"].as_array().unwrap();
+        assert_eq!(m1[0], m2[0]);
+        assert_eq!(m1[1], m2[1]);
+        assert_eq!(m1[2], m2[2]);
+        assert_eq!(m2.len(), m1.len() + 1);
     }
 }
