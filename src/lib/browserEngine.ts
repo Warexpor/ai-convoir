@@ -329,7 +329,14 @@ async function runOneTurn(): Promise<boolean> {
       return false;
     }
     emit("stream-abort", { agent: speaking, turn });
-    emit("error", `${speaking} error: ${e instanceof Error ? e.message : e}`);
+    // fetch() rejects with a bare TypeError ("Failed to fetch") when offline.
+    const why =
+      e instanceof TypeError
+        ? "Couldn’t reach the provider. Check your connection, then Retry."
+        : e instanceof Error
+          ? e.message
+          : String(e);
+    emit("error", `${speaking} error: ${why}`);
     state.status = "Paused";
     state.paused = true;
     emitStatus();
