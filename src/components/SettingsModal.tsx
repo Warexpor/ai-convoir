@@ -11,6 +11,8 @@ import {
 } from "../lib/config";
 import { fetchModels } from "../lib/api";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
+import { SHADER_PRESETS, type BackgroundPrefs, type ShaderPreset } from "../lib/background";
+import { presetThumb } from "./StageField";
 import Seg from "./Seg";
 import { SHORTCUTS } from "./ShortcutsModal";
 import {
@@ -45,6 +47,11 @@ interface Props {
   onShowThoughts: (v: boolean) => void;
   fx: FxLevel;
   onFx: (v: FxLevel) => void;
+  bg: BackgroundPrefs;
+  onBg: (v: BackgroundPrefs) => void;
+  bgUrl: string | null;
+  onPickBgImage: (f: File) => Promise<void>;
+  onRemoveBgImage: () => void;
   zoom: number;
   onZoom: (z: number) => void;
 }
@@ -68,6 +75,191 @@ function Row({
       </div>
       <div className="set-row-control">{children}</div>
     </div>
+  );
+}
+
+function thumbStyle(id: ShaderPreset) {
+  const url = presetThumb(id);
+  return url ? { backgroundImage: `url("${url}")` } : undefined;
+}
+
+function BackgroundRows({
+  bg,
+  onBg,
+  url,
+  onPick,
+  onRemove,
+}: {
+  bg: BackgroundPrefs;
+  onBg: (v: BackgroundPrefs) => void;
+  url: string | null;
+  onPick: (f: File) => Promise<void>;
+  onRemove: () => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [over, setOver] = useState(false);
+  // Ranges commit live — the image layer is static, so this is cheap.
+  const set = (p: Partial<BackgroundPrefs>) => onBg({ ...bg, ...p });
+
+  const take = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await onPick(f);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const preset = SHADER_PRESETS.find((p) => p.id === bg.preset);
+  const picker = (
+    <input
+      ref={fileRef}
+      type="file"
+      accept="image/*"
+      hidden
+      onChange={(e) => {
+        void take(e.target.files?.[0]);
+        e.target.value = "";
+      }}
+    />
+  );
+
+  return (
+    <>
+      <Row
+        title="Background"
+        hint={
+          bg.kind === "shader"
+            ? preset?.hint
+            : "Your own picture behind the stage, darkened so text stays legible."
+        }
+        stack
+      >
+        <Seg
+          size="sm"
+          label="Background kind"
+          value={bg.kind}
+          onChange={(kind) => set({ kind })}
+          options={[
+            { value: "shader", label: "Shader" },
+            { value: "image", label: "Image" },
+          ]}
+        />
+        {bg.kind === "shader" ? (
+          <div className="bg-presets" role="radiogroup" aria-label="Shader preset">
+            {SHADER_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={bg.preset === p.id}
+                className={`bg-preset${bg.preset === p.id ? " on" : ""}`}
+                onClick={() => set({ preset: p.id })}
+              >
+                <i className="bg-swatch" style={thumbStyle(p.id)} aria-hidden />
+                <span>{p.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : url ? (
+          <div className="bg-image-row">
+            <i
+              className="bg-thumb"
+              style={{
+                backgroundImage: `url("${url}")`,
+                filter: bg.mono ? "grayscale(1)" : undefined,
+              }}
+              aria-hidden
+            />
+            <div className="bg-image-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={busy}
+                onClick={() => fileRef.current?.click()}
+              >
+                {busy ? "Loading…" : "Replace"}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove}>
+                Remove
+              </button>
+            </div>
+            {picker}
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className={`bg-drop${over ? " is-over" : ""}`}
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setOver(true);
+              }}
+              onDragLeave={() => setOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setOver(false);
+                void take(e.dataTransfer.files?.[0]);
+              }}
+            >
+              {busy ? "Loading…" : "Choose an image"}
+              <small>or drop one here · stays on this device</small>
+            </button>
+            {picker}
+          </>
+        )}
+        {err && <span className="field-error">{err}</span>}
+      </Row>
+
+      {bg.kind === "image" && url && (
+        <>
+          <Row title="Dim" hint={`${Math.round(bg.dim * 100)}% black over the picture.`} stack>
+            <input
+              className="range"
+              type="range"
+              min={0}
+              max={90}
+              step={5}
+              value={Math.round(bg.dim * 100)}
+              style={{ ["--range" as string]: `${(bg.dim / 0.9) * 100}%` }}
+              onChange={(e) => set({ dim: (parseInt(e.target.value, 10) || 0) / 100 })}
+            />
+          </Row>
+          <Row title="Blur" hint={bg.blur ? `${bg.blur}px` : "Sharp"} stack>
+            <input
+              className="range"
+              type="range"
+              min={0}
+              max={32}
+              step={2}
+              value={bg.blur}
+              style={{ ["--range" as string]: `${(bg.blur / 32) * 100}%` }}
+              onChange={(e) => set({ blur: parseInt(e.target.value, 10) || 0 })}
+            />
+          </Row>
+          <Row title="Monochrome" hint="Strip the color to match the rest of the stage.">
+            <Seg
+              size="sm"
+              label="Monochrome"
+              value={bg.mono ? "on" : "off"}
+              onChange={(v) => set({ mono: v === "on" })}
+              options={[
+                { value: "on", label: "On" },
+                { value: "off", label: "Off" },
+              ]}
+            />
+          </Row>
+        </>
+      )}
+    </>
   );
 }
 
@@ -96,6 +288,11 @@ export default function SettingsModal({
   onShowThoughts,
   fx,
   onFx,
+  bg,
+  onBg,
+  bgUrl,
+  onPickBgImage,
+  onRemoveBgImage,
   zoom,
   onZoom,
 }: Props) {
@@ -285,6 +482,13 @@ export default function SettingsModal({
 
             {tab === "appearance" && (
               <>
+                <BackgroundRows
+                  bg={bg}
+                  onBg={onBg}
+                  url={bgUrl}
+                  onPick={onPickBgImage}
+                  onRemove={onRemoveBgImage}
+                />
                 <Row title="Effects" hint={FX_HINT[fx]} stack>
                   <Seg
                     label="Effects"

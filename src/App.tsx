@@ -24,6 +24,15 @@ import {
 } from "./lib/config";
 import { IconRail, IconSliders, IconVoices, SlashMark } from "./components/Marks";
 import StageField from "./components/StageField";
+import StageImage from "./components/StageImage";
+import {
+  clearImage,
+  loadImage,
+  readBackground,
+  saveImage,
+  writeBackground,
+  type BackgroundPrefs,
+} from "./lib/background";
 import CastStrip from "./components/CastStrip";
 import { activeAgentIds, agentAccent, agentLabel, nextAgentId } from "./types";
 
@@ -66,6 +75,34 @@ function App() {
   const [zoom, setZoom] = useState(readZoom);
   const [fx, setFx] = useState<FxLevel>(readFx);
   useEffect(() => writeFx(fx), [fx]);
+  const [bg, setBg] = useState<BackgroundPrefs>(readBackground);
+  useEffect(() => writeBackground(bg), [bg]);
+  const [bgUrl, setBgUrl] = useState<string | null>(null);
+  const showBlob = useCallback((b: Blob | null) => {
+    setBgUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return b ? URL.createObjectURL(b) : null;
+    });
+  }, []);
+  useEffect(() => {
+    let live = true;
+    void loadImage().then((b) => live && b && showBlob(b));
+    return () => {
+      live = false;
+    };
+  }, [showBlob]);
+  const pickBgImage = useCallback(
+    async (file: File) => {
+      showBlob(await saveImage(file));
+      setBg((v) => ({ ...v, kind: "image" }));
+    },
+    [showBlob],
+  );
+  const removeBgImage = useCallback(() => {
+    void clearImage();
+    showBlob(null);
+    setBg((v) => ({ ...v, kind: "shader" }));
+  }, [showBlob]);
   const [zoomMsg, setZoomMsg] = useState("");
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -179,7 +216,17 @@ function App() {
       data-running={stream.status === "Running" ? "" : undefined}
       style={{ zoom }}
     >
-      <StageField colors={stageColors} focus={stageFocus} fx={fx} />
+      {bg.kind === "image" && bgUrl ? (
+        <StageImage url={bgUrl} prefs={bg} />
+      ) : (
+        <StageField
+          key={bg.preset}
+          preset={bg.preset}
+          colors={stageColors}
+          focus={stageFocus}
+          fx={fx}
+        />
+      )}
       <a className="skip-link" href="#main">
         Skip to transcript
       </a>
@@ -384,6 +431,11 @@ function App() {
         onShowThoughts={setShowThoughtsUi}
         fx={fx}
         onFx={setFx}
+        bg={bg}
+        onBg={setBg}
+        bgUrl={bgUrl}
+        onPickBgImage={pickBgImage}
+        onRemoveBgImage={removeBgImage}
         zoom={zoom}
         onZoom={(z) => {
           setZoom(z);
