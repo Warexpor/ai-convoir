@@ -29,7 +29,7 @@ export default defineConfig(async () => ({
           on: (ev: string, fn: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void;
         }) => {
           proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("User-Agent", "ai-conversation/2.0");
+            proxyReq.setHeader("User-Agent", "ai-convoir/2.0");
           });
         },
       },
@@ -41,7 +41,7 @@ export default defineConfig(async () => ({
           on: (ev: string, fn: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void;
         }) => {
           proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("User-Agent", "ai-conversation/2.0");
+            proxyReq.setHeader("User-Agent", "ai-convoir/2.0");
           });
         },
       },

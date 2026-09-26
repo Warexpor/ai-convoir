@@ -380,7 +380,7 @@ export default function SettingsModal({
               <span>{t.label}</span>
             </button>
           ))}
-          <span className="prefs-version">AI Conversation 2.0</span>
+          <span className="prefs-version">AI ConvoIR 2.0</span>
         </nav>
 
         <div className="prefs-main">

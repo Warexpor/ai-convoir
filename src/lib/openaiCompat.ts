@@ -1,5 +1,5 @@
 export const MUSE_SPARK_13_CONTRIBUTOR = "muse-spark-1.3-contributor";
-export const APP_USER_AGENT = "ai-conversation/2.0";
+export const APP_USER_AGENT = "ai-convoir/2.0";
 
 export function usesResponsesApi(model: string): boolean {
   return model.startsWith("muse-spark");

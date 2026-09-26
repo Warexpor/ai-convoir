@@ -32,11 +32,13 @@ export const DEFAULT_BACKGROUND: BackgroundPrefs = {
   mono: true,
 };
 
-const PREF_KEY = "ai-conversation-background";
+const PREF_KEY = "ai-convoir-background";
+const LEGACY_PREF_KEY = "ai-conversation-background";
 
 export function readBackground(): BackgroundPrefs {
   try {
-    const raw = localStorage.getItem(PREF_KEY);
+    const raw =
+      localStorage.getItem(PREF_KEY) ?? localStorage.getItem(LEGACY_PREF_KEY);
     if (!raw) return DEFAULT_BACKGROUND;
     const v = JSON.parse(raw) as Partial<BackgroundPrefs>;
     const preset = SHADER_PRESETS.some((p) => p.id === v.preset)
@@ -68,6 +70,7 @@ function clamp(n: number, lo: number, hi: number) {
 
 // ── image store ──────────────────────────────────────────────
 
+// Pre-rename name kept on purpose: renaming would orphan stored images.
 const DB_NAME = "ai-conversation-bg";
 const STORE = "images";
 const KEY = "current";

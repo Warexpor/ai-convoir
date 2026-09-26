@@ -151,9 +151,61 @@ export async function setNarration(text: string): Promise<void> {
   await invokeCmd("set_narration", { text });
 }
 
-export async function exportChat(content: string): Promise<string> {
+/** How export finished — toast must not claim a filesystem path after Web Share. */
+export type ExportOutcome =
+  | { kind: "shared" }
+  | { kind: "share-dismissed" }
+  | { kind: "downloaded"; name: string }
+  | { kind: "saved"; path: string };
+
+/**
+ * Mobile-first gate for Web Share. Desktop Chrome often exposes `navigator.share`
+ * but Tauri/download is the better primary path there; share first on touch /
+ * coarse pointer / narrow viewport / mobile UA.
+ */
+export function prefersWebShare(): boolean {
+  if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
+    return false;
+  }
+  const coarse =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const touch =
+    typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 0;
+  const narrow =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 900px)").matches;
+  const uaMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+  return coarse || touch || narrow || uaMobile;
+}
+
+export async function exportChat(content: string): Promise<ExportOutcome> {
+  const name = `AI-ConvoIR-${new Date().toISOString().slice(0, 10)}.md`;
+
+  // Mobile / touch: Web Share first. Desktop keeps Tauri / download below.
+  if (prefersWebShare()) {
+    try {
+      const file = new File([content], name, { type: "text/markdown" });
+      const canFiles =
+        typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] });
+      if (canFiles) {
+        await navigator.share({ files: [file], title: "AI ConvoIR chat" });
+        return { kind: "shared" };
+      }
+      await navigator.share({ text: content, title: "AI ConvoIR chat" });
+      return { kind: "shared" };
+    } catch (e) {
+      // User dismissed the sheet — not a filesystem export.
+      if (e instanceof Error && e.name === "AbortError") {
+        return { kind: "share-dismissed" };
+      }
+      // Share failed for another reason; fall through to download / Tauri.
+    }
+  }
+
   if (!isTauri()) {
-    const name = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -161,9 +213,10 @@ export async function exportChat(content: string): Promise<string> {
     a.download = name;
     a.click();
     URL.revokeObjectURL(url);
-    return name;
+    return { kind: "downloaded", name };
   }
-  return invoke<string>("export_chat", { content });
+  const path = await invoke<string>("export_chat", { content });
+  return { kind: "saved", path };
 }
 
 export async function deleteMessage(args: {
@@ -194,8 +247,19 @@ export async function upsertSavedChat(snapshot: unknown): Promise<void> {
   await invokeCmd("upsert_saved_chat", { snapshot });
 }
 
+/** Meta-only (title/config) — does not replace the messages table. */
+export async function upsertSavedChatMeta(snapshot: unknown): Promise<void> {
+  if (!isTauri()) return;
+  await invokeCmd("upsert_saved_chat_meta", { snapshot });
+}
+
 export async function listSavedChats(): Promise<unknown[] | null> {
   return tryInvoke<unknown[]>("list_saved_chats");
+}
+
+/** One chat hydrated from the messages table (SoT). Null outside Tauri / on miss. */
+export async function getSavedChat(chatId: string): Promise<unknown | null> {
+  return tryInvoke<unknown | null>("get_saved_chat", { chatId });
 }
 
 export async function deleteSavedChat(chatId: string): Promise<void> {
