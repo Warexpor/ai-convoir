@@ -11,7 +11,12 @@ import {
   effortsFor,
   getProvider,
 } from "../lib/providers";
-import { getProviderKey, hasProviderKey, onProviderKeysChanged } from "../lib/secrets";
+import {
+  getProviderKey,
+  hasProviderKey,
+  onProviderKeysChanged,
+  signInAvailable,
+} from "../lib/secrets";
 import { IconBack, IconChevron } from "./Marks";
 import { useBackClose } from "../hooks/useBackClose";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
@@ -204,7 +209,9 @@ function ModelPicker({
         ? p.keyOptional
           ? "local"
           : "ready"
-        : undefined,
+        : p.signIn === "tokens" && !signInAvailable()
+          ? "desktop only"
+          : undefined,
   }));
   const modelOptions: DropOption<string>[] = models.map((m) => ({
     value: m,
