@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconChevronDown, IconKey, IconReturn } from "./Marks";
+import { IconChevron, IconChevronDown, IconKey, IconReturn } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
-import type { InnerState, Message } from "../types";
+import type { AiConfig, InnerState, Message } from "../types";
 import type { StreamMode } from "../lib/config";
 import {
   activeAgentIds,
@@ -11,7 +11,7 @@ import {
   agentLabel,
 } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
-import { getProvider } from "../lib/providers";
+import { EFFORT_LABELS } from "../lib/providers";
 
 interface Props {
   messages: Message[];
@@ -27,6 +27,8 @@ interface Props {
   hasSavedChats?: boolean;
   needsKey?: boolean;
   onOpenSettings?: () => void;
+  /** Open the Voices panel on one voice. */
+  onEditVoice?: (id: string) => void;
   streamMode?: StreamMode;
 }
 
@@ -51,17 +53,12 @@ function nearBottom(el: HTMLElement) {
 }
 
 /** "OpenAI · gpt-5 / Anthropic · claude-sonnet-5" for the voices on stage. */
-function lineupModels(cfg: InnerState | null): string {
-  if (!cfg) return "";
-  const voices = [
-    cfg.ai1_config,
-    cfg.ai2_config,
-    ...(cfg.bot_count >= 3 ? [cfg.ai3_config] : []),
-  ];
-  const labels = voices.map(
-    (v) => `${getProvider(v.provider)?.name ?? "Custom"} · ${v.model || "no model"}`,
-  );
-  return [...new Set(labels)].join(" / ");
+function voiceModelLine(v: AiConfig | null | undefined): string {
+  if (!v) return "";
+  const effort = v.reasoning_effort && v.reasoning_effort !== "none"
+    ? ` · ${EFFORT_LABELS[v.reasoning_effort].toLowerCase()}`
+    : "";
+  return `${v.model || "no model"}${effort}`;
 }
 
 function ChatView({
@@ -78,6 +75,7 @@ function ChatView({
   hasSavedChats = false,
   needsKey = false,
   onOpenSettings,
+  onEditVoice,
   streamMode = "live",
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -369,7 +367,6 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-hero">
-          <p className="kicker">{lineupModels(config ?? null)}</p>
           <h1 className="empty-title">
             Set the scene.
             <span>They&rsquo;ll take it from there.</span>
@@ -378,30 +375,35 @@ function ChatView({
           <ul className="lineup" aria-label="Cast">
             {ids.map((id, i) => {
               const name = agentLabel(id, config);
-              const bio = config
-                ? firstSentence(
-                    config[`${id}_config` as "ai1_config"].system_prompt,
-                  )
-                : "";
+              const cfg = agentConfig(id, config);
+              const bio = cfg ? firstSentence(cfg.system_prompt) : "";
               return (
                 <li
                   key={id}
-                  className="lineup-card"
                   style={{
                     ["--voice" as string]: agentAccent(id, config),
                     ["--i" as string]: i,
                   }}
                 >
-                  <VoiceAvatar
-                    className="lineup-avatar"
-                    name={name}
-                    icon={agentConfig(id, config)?.icon}
-                    color={agentAccent(id, config)}
-                  />
-                  <span className="lineup-text">
-                    <strong>{name}</strong>
-                    {bio && <span>{bio}</span>}
-                  </span>
+                  <button
+                    type="button"
+                    className="lineup-card"
+                    onClick={() => onEditVoice?.(id)}
+                    title={`Edit ${name}`}
+                  >
+                    <VoiceAvatar
+                      className="lineup-avatar"
+                      name={name}
+                      icon={cfg?.icon}
+                      color={agentAccent(id, config)}
+                    />
+                    <span className="lineup-text">
+                      <strong>{name}</strong>
+                      {bio && <span>{bio}</span>}
+                      <span className="lineup-model">{voiceModelLine(cfg)}</span>
+                    </span>
+                    <IconChevron />
+                  </button>
                 </li>
               );
             })}

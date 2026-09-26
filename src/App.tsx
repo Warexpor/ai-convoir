@@ -65,6 +65,12 @@ function App() {
   const activeCast = casts.find((c) => c.id === activeCastId) ?? null;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [voiceFocus, setVoiceFocus] = useState<string | null>(null);
+  const editVoice = useCallback((id: string) => {
+    setPrefsOpen(false);
+    setVoiceFocus(id);
+    setSettingsOpen(true);
+  }, []);
   const [helpOpen, setHelpOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [prefsTab, setPrefsTab] = useState<SettingsTab>("conversation");
@@ -326,6 +332,7 @@ function App() {
             status={stream.status}
             upNext={upNextId}
             hasMessages={hasMessages}
+            onEditVoice={editVoice}
           />
 
           {isPhone ? (
@@ -429,6 +436,7 @@ function App() {
           hasSavedChats={chats.length > 0}
           needsKey={needsKey}
           onOpenSettings={() => openPrefs("access")}
+          onEditVoice={editVoice}
         />
 
         {hasMessages && (
@@ -469,7 +477,11 @@ function App() {
         onRenameCast={(name) =>
           activeCast && app.handleRenameCast(activeCast.id, name)
         }
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false);
+          setVoiceFocus(null);
+        }}
+        focusSlot={voiceFocus}
       />
 
       <SettingsModal

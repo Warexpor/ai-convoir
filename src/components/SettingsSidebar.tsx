@@ -1,20 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import type {
-  AiConfig,
-  InnerState,
-  ReasoningEffort,
-  ResponseLength,
-} from "../types";
+import type { AiConfig, InnerState, ResponseLength } from "../types";
 import { SLOT_COLORS, VOICE_PALETTE, agentAccent } from "../types";
 import { defaultConfig } from "../lib/config";
 import { fetchModels } from "../lib/api";
-import { PROVIDERS, baseUrlFor, getProvider } from "../lib/providers";
+import {
+  EFFORT_LABELS,
+  PROVIDERS,
+  baseUrlFor,
+  effortsFor,
+  getProvider,
+} from "../lib/providers";
 import { getProviderKey, hasProviderKey, onProviderKeysChanged } from "../lib/secrets";
 import { IconBack, IconChevron } from "./Marks";
 import { useBackClose } from "../hooks/useBackClose";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
+import Dropdown, { type DropOption } from "./Dropdown";
+import Collapse from "./Collapse";
 
 interface Props {
   open: boolean;
@@ -24,6 +27,8 @@ interface Props {
   /** Active cast (group) name; null when the thread has no cast. */
   castName?: string | null;
   onRenameCast?: (name: string) => void;
+  /** Voice to expand when the panel opens (e.g. picked from the stage). */
+  focusSlot?: string | null;
 }
 
 /** Color + avatar picker for one voice. */
@@ -170,7 +175,7 @@ function useProviderModels(provider: string, base: string): {
     : { models: fallback, live: false };
 }
 
-/** Provider + model for one voice. Keys are set once per provider in Settings. */
+/** Provider, model and thinking for one voice. Keys are set once per provider in Settings. */
 function ModelPicker({
   slot,
   config,
@@ -184,33 +189,52 @@ function ModelPicker({
   const def = getProvider(provider);
   const base = baseUrlFor(provider, config.api_base_url);
   const { models, live } = useProviderModels(provider, base);
-  const listId = `models-${slot}`;
   const needsKey = def && !def.keyOptional && !hasProviderKey(provider);
+  const efforts = effortsFor(provider);
+  const effort = efforts.includes(config.reasoning_effort)
+    ? config.reasoning_effort
+    : "none";
+
+  const providerOptions: DropOption<string>[] = PROVIDERS.map((p) => ({
+    value: p.id,
+    label: p.name,
+    text: p.name,
+    hint:
+      p.keyOptional || hasProviderKey(p.id)
+        ? p.keyOptional
+          ? "local"
+          : "ready"
+        : undefined,
+  }));
+  const modelOptions: DropOption<string>[] = models.map((m) => ({
+    value: m,
+    label: m,
+  }));
 
   return (
     <>
       <div className="field">
         <label htmlFor={`prov-${slot}`}>Provider</label>
-        <select
+        <Dropdown
           id={`prov-${slot}`}
+          label="Provider"
           value={provider}
-          onChange={(e) => {
-            const next = getProvider(e.target.value);
+          options={providerOptions}
+          onChange={(id) => {
+            const next = getProvider(id);
             if (!next) return;
+            const nextEfforts = effortsFor(next.id);
             onChange({
               ...config,
               provider: next.id,
               api_base_url: next.id === "custom" ? config.api_base_url : next.baseUrl,
               model: next.models[0] ?? "",
+              reasoning_effort: nextEfforts.includes(config.reasoning_effort)
+                ? config.reasoning_effort
+                : "none",
             });
           }}
-        >
-          {PROVIDERS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        />
       </div>
       {provider === "custom" && (
         <div className="field">
@@ -226,58 +250,76 @@ function ModelPicker({
       )}
       <div className="field">
         <label htmlFor={`model-${slot}`}>Model</label>
-        <input
+        <Dropdown
           id={`model-${slot}`}
-          list={listId}
+          label="Model"
           value={config.model}
-          spellCheck={false}
-          placeholder={def?.models[0] || "model id"}
-          onChange={(e) => onChange({ ...config, model: e.target.value })}
+          options={modelOptions}
+          onChange={(m) => onChange({ ...config, model: m })}
+          placeholder={def?.models[0] || "Pick a model"}
+          search
+          searchPlaceholder="Search or type a model id"
+          allowCustom
+          emptyText="Type a model id this provider serves"
         />
-        <datalist id={listId}>
-          {models.map((m) => (
-            <option key={m} value={m} />
-          ))}
-        </datalist>
-        <p className="field-hint">
-          {needsKey
-            ? def?.signIn === "tokens"
-              ? `Sign in to ${def.name} in Settings → Providers.`
-              : `Add your ${def?.name} key in Settings → Providers.`
-            : live
-              ? `${models.length} models available. Type to filter.`
-              : "Type any model id this provider serves."}
-        </p>
+        {needsKey ? (
+          <p className="field-hint">
+            {def?.signIn === "tokens"
+              ? `Sign in to ${def.name} in Settings → Providers to see its models.`
+              : `Add your ${def?.name} key in Settings → Providers to see its models.`}
+          </p>
+        ) : (
+          live && <p className="field-hint">{models.length} models available</p>
+        )}
+      </div>
+      <div className="field">
+        <label>Thinking</label>
+        <Seg
+          label="Thinking effort"
+          value={effort}
+          onChange={(r) => onChange({ ...config, reasoning_effort: r })}
+          options={efforts.map((r) => ({ value: r, label: EFFORT_LABELS[r] }))}
+        />
       </div>
     </>
   );
 }
+
+const LENGTHS: DropOption<ResponseLength>[] = [
+  { value: "brief", label: "Brief", hint: "a line or two" },
+  { value: "small", label: "Short", hint: "a paragraph" },
+  { value: "normal", label: "Normal" },
+  { value: "long", label: "Long", hint: "a few paragraphs" },
+  { value: "very_long", label: "Very long" },
+];
 
 function CharCard({
   slot,
   accent,
   config,
   onChange,
-  defaultOpen,
+  open,
+  onToggle,
 }: {
   slot: string;
   accent: string;
   config: AiConfig;
   onChange: (c: AiConfig) => void;
-  defaultOpen?: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  const [more, setMore] = useState(false);
+  const [look, setLook] = useState(false);
 
   return (
     <div
       className={`char-card${open ? " is-open" : ""}`}
       style={{ ["--voice" as string]: accent }}
+      data-slot={slot}
     >
       <button
         type="button"
         className="char-head"
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         aria-expanded={open}
       >
         <VoiceAvatar
@@ -289,30 +331,29 @@ function CharCard({
         <span className="char-id">
           <span className="char-name">{config.name || "Voice"}</span>
           <span className="char-bio">
-            {config.system_prompt || "No direction yet"}
+            {config.model || "No model"}
+            {config.reasoning_effort && config.reasoning_effort !== "none"
+              ? ` · ${EFFORT_LABELS[config.reasoning_effort].toLowerCase()} thinking`
+              : ""}
           </span>
         </span>
         <IconChevron />
       </button>
-      {open && (
+      <Collapse open={open}>
         <div className="char-body">
-          <LookEditor
-            slot={slot}
-            accent={accent}
-            config={config}
-            onChange={onChange}
-          />
           <div className="field">
-            <label>Name</label>
+            <label htmlFor={`name-${slot}`}>Name</label>
             <input
+              id={`name-${slot}`}
               value={config.name}
               onChange={(e) => onChange({ ...config, name: e.target.value })}
               placeholder="What they’re called"
             />
           </div>
           <div className="field">
-            <label>How they talk</label>
+            <label htmlFor={`sys-${slot}`}>How they talk</label>
             <textarea
+              id={`sys-${slot}`}
               rows={4}
               value={config.system_prompt}
               onChange={(e) =>
@@ -322,45 +363,35 @@ function CharCard({
             />
           </div>
           <ModelPicker slot={slot} config={config} onChange={onChange} />
+          <div className="field">
+            <label htmlFor={`len-${slot}`}>Reply length</label>
+            <Dropdown
+              id={`len-${slot}`}
+              label="Reply length"
+              value={config.response_length || "normal"}
+              options={LENGTHS}
+              onChange={(r) => onChange({ ...config, response_length: r })}
+            />
+          </div>
           <button
             type="button"
-            className="link-btn"
-            onClick={() => setMore((v) => !v)}
-            aria-expanded={more}
+            className={`disclose${look ? " is-open" : ""}`}
+            onClick={() => setLook((v) => !v)}
+            aria-expanded={look}
           >
-            {more ? "Fewer options" : "Reply length & thinking →"}
+            <IconChevron />
+            Color &amp; avatar
           </button>
-          {more && (
-            <>
-              <div className="field">
-                <label>Thinking</label>
-                <Seg
-                  label="Thinking effort"
-                  value={config.reasoning_effort || "none"}
-                  onChange={(r) => onChange({ ...config, reasoning_effort: r })}
-                  options={(
-                    ["none", "low", "medium", "high"] as ReasoningEffort[]
-                  ).map((r) => ({ value: r, label: r === "none" ? "off" : r }))}
-                />
-              </div>
-              <div className="field">
-                <label>Reply length</label>
-                <Seg
-                  label="Reply length"
-                  value={config.response_length || "normal"}
-                  onChange={(r) => onChange({ ...config, response_length: r })}
-                  options={(
-                    ["brief", "small", "normal", "long", "very_long"] as ResponseLength[]
-                  ).map((r) => ({
-                    value: r,
-                    label: r === "very_long" ? "very long" : r,
-                  }))}
-                />
-              </div>
-            </>
-          )}
+          <Collapse open={look}>
+            <LookEditor
+              slot={slot}
+              accent={accent}
+              config={config}
+              onChange={onChange}
+            />
+          </Collapse>
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }
@@ -372,7 +403,14 @@ export default function SettingsSidebar({
   onClose,
   castName = null,
   onRenameCast,
+  focusSlot = null,
 }: Props) {
+  const [openSlot, setOpenSlot] = useState<string | null>("ai1");
+  useEffect(() => {
+    if (open && focusSlot) setOpenSlot(focusSlot);
+  }, [open, focusSlot]);
+  const toggleSlot = (slot: string) =>
+    setOpenSlot((cur) => (cur === slot ? null : slot));
   const [castDraft, setCastDraft] = useState(castName ?? "");
   useEffect(() => setCastDraft(castName ?? ""), [castName]);
   const ready = !!config;
@@ -498,8 +536,7 @@ export default function SettingsSidebar({
               }}
             />
             <p className="field-hint">
-              Edits here become the cast&rsquo;s look. New threads in this cast
-              inherit them; older threads keep theirs.
+              New threads in this cast start with these voices.
             </p>
           </div>
         ) : (
@@ -513,13 +550,16 @@ export default function SettingsSidebar({
             accent={agentAccent("ai1", local)}
             config={local.ai1_config}
             onChange={(c) => setLocal({ ...local, ai1_config: c })}
-            defaultOpen
+            open={openSlot === "ai1"}
+            onToggle={() => toggleSlot("ai1")}
           />
           <CharCard
             slot="ai2"
             accent={agentAccent("ai2", local)}
             config={local.ai2_config}
             onChange={(c) => setLocal({ ...local, ai2_config: c })}
+            open={openSlot === "ai2"}
+            onToggle={() => toggleSlot("ai2")}
           />
           {botCount === 3 && (
             <CharCard
@@ -527,6 +567,8 @@ export default function SettingsSidebar({
               accent={agentAccent("ai3", local)}
               config={local.ai3_config}
               onChange={(c) => setLocal({ ...local, ai3_config: c })}
+              open={openSlot === "ai3"}
+              onToggle={() => toggleSlot("ai3")}
             />
           )}
         </div>

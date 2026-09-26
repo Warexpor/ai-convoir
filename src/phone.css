@@ -167,9 +167,6 @@
 .is-phone .empty {
   padding: calc(var(--top-h) + 20px) 16px 20px;
 }
-.is-phone .empty-hero .kicker {
-  display: none;
-}
 .is-phone .empty-title {
   font-size: 40px;
 }
@@ -428,4 +425,46 @@
 .sheet-item .icon {
   width: 20px;
   height: 20px;
+}
+
+/* dropdowns become bottom sheets */
+.dd-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 72vh;
+}
+.dd-sheet .dd-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.dd-sheet .dd-opt {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font-size: 15.5px;
+}
+.dd-sheet .dd-opt.is-active {
+  background: none;
+}
+.dd-sheet .dd-opt:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dd-sheet .dd-opt.is-on {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dd-sheet .dd-search {
+  height: 44px;
+  margin: 0 8px 6px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.dd-sheet .dd-search input {
+  font-size: 16px;
+}
+.is-phone .dd-trigger {
+  height: 48px;
+  font-size: 16px;
 }

@@ -7,9 +7,11 @@ use std::sync::Mutex;
 pub enum ReasoningEffort {
     #[default]
     None,
+    Minimal,
     Low,
     Medium,
     High,
+    XHigh,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -27,9 +29,11 @@ impl ReasoningEffort {
     pub fn as_api_str(&self) -> &'static str {
         match self {
             ReasoningEffort::None => "none",
+            ReasoningEffort::Minimal => "minimal",
             ReasoningEffort::Low => "low",
             ReasoningEffort::Medium => "medium",
             ReasoningEffort::High => "high",
+            ReasoningEffort::XHigh => "xhigh",
         }
     }
 }
