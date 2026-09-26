@@ -1329,7 +1329,6 @@ body,
   right: 0;
   top: 50%;
   padding-left: 6px;
-  background: var(--bg);
   opacity: 0;
   transform: translateY(-50%);
   transition: opacity var(--dur-fast);
@@ -2727,6 +2726,9 @@ body,
   font-family: var(--mono);
   font-size: 0.84em;
   padding: 1px 6px;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
   border-radius: 6px;
   border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.05);
