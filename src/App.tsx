@@ -44,6 +44,7 @@ import {
   type BackgroundPrefs,
 } from "./lib/background";
 import CastStrip from "./components/CastStrip";
+import { titleFromMessages } from "./lib/storage";
 import { activeAgentIds, agentAccent, agentLabel, nextAgentId } from "./types";
 
 function App() {
@@ -223,9 +224,12 @@ function App() {
     upNextId && (hasMessages || stream.status === "Running")
       ? voiceIds.indexOf(upNextId)
       : -1;
-  const activeTitle =
-    (hasMessages && chats.find((c) => c.id === activeChatId)?.title) ||
-    (hasMessages ? "Untitled thread" : "New thread");
+  // Before the first autosave the thread has no saved title yet; name it
+  // from its opening line the way the save will.
+  const activeTitle = hasMessages
+    ? chats.find((c) => c.id === activeChatId)?.title ||
+      titleFromMessages(stream.messages, "")
+    : "New thread";
 
   return (
     <div

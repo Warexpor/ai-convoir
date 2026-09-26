@@ -113,7 +113,7 @@ export async function loadChat(id: string): Promise<SavedChat | undefined> {
   return getChat(id);
 }
 
-function titleFromMessages(messages: Message[], seed: string): string {
+export function titleFromMessages(messages: Message[], seed: string): string {
   const first =
     messages.find((m) => m.agent === "seed")?.content ||
     seed ||
