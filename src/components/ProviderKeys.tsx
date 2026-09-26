@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { InnerState } from "../types";
 import { fetchModels, isTauri } from "../lib/api";
 import { PROVIDERS, type ProviderDef } from "../lib/providers";
+import Collapse from "./Collapse";
 import {
   cancelSignIn,
   getProviderKey,
@@ -160,13 +161,14 @@ function ProviderRow({
         {inUse && <span className="prov-tag">in use</span>}
         <span className={`prov-state${saved || who !== null ? " is-set" : ""}`}>{status}</span>
       </button>
-      {open && tokens && (
+      <Collapse open={open}>
+      {tokens && (
         <div className="prov-body">
           {p.note && <p className="field-hint">{p.note}</p>}
           <SignIn p={p} />
         </div>
       )}
-      {open && !tokens && (
+      {!tokens && (
         <div className="prov-body">
           {p.signIn === "key" && (
             <SignIn p={p} onDone={() => setDraft(getProviderKey(p.id))} />
@@ -224,13 +226,13 @@ function ProviderRow({
           </div>
         </div>
       )}
+      </Collapse>
     </div>
   );
 }
 
 /** Settings → Providers: one key per provider, shared by every voice using it. */
 export default function ProviderKeys({ config }: { config: InnerState | null }) {
-  const [openId, setOpenId] = useState<string | null>(null);
   const [, setTick] = useState(0);
   useEffect(() => onProviderKeysChanged(() => setTick((n) => n + 1)), []);
 
@@ -242,6 +244,16 @@ export default function ProviderKeys({ config }: { config: InnerState | null }) 
   // Providers the cast uses float to the top.
   const list = [...PROVIDERS].sort(
     (a, b) => Number(used.has(b.id)) - Number(used.has(a.id)),
+  );
+  // Arriving here for a missing key: open that provider's key field.
+  const [openId, setOpenId] = useState<string | null>(
+    () =>
+      list.find(
+        (p) =>
+          used.has(p.id) &&
+          !p.keyOptional &&
+          (p.signIn === "tokens" ? signedInAs(p.id) === null : !getProviderKey(p.id)),
+      )?.id ?? null,
   );
 
   return (
