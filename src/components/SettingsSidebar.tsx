@@ -9,11 +9,15 @@ import type {
 import {
   MUSE_SPARK_13_CONTRIBUTOR,
   OPENCODE_GO_BASE,
+  SLOT_COLORS,
+  VOICE_PALETTE,
   agentAccent,
 } from "../types";
 import { fetchModels } from "../lib/api";
 import { defaultConfig } from "../lib/config";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
+import { IconChevron } from "./Marks";
+import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 
 interface Props {
   open: boolean;
@@ -22,6 +26,115 @@ interface Props {
   onClose: () => void;
   showThoughtsUi: boolean;
   onShowThoughtsUiChange: (v: boolean) => void;
+  /** Active cast (group) name; null when the thread has no cast. */
+  castName?: string | null;
+  onRenameCast?: (name: string) => void;
+}
+
+/** Color + avatar picker for one voice. */
+function LookEditor({
+  slot,
+  accent,
+  config,
+  onChange,
+}: {
+  slot: string;
+  accent: string;
+  config: AiConfig;
+  onChange: (c: AiConfig) => void;
+}) {
+  const icon = config.icon || "";
+  const isText = !!icon && !icon.startsWith("g:");
+  const [text, setText] = useState(isText ? icon : "");
+  const current = accent.toLowerCase();
+  const customColor = !VOICE_PALETTE.includes(current);
+
+  return (
+    <div className="look">
+      <div className="field">
+        <label>Color</label>
+        <div className="swatches" role="radiogroup" aria-label="Voice color">
+          {VOICE_PALETTE.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              role="radio"
+              aria-checked={current === hex}
+              aria-label={hex}
+              className={`swatch${current === hex ? " on" : ""}${
+                SLOT_COLORS[slot] === hex ? " is-default" : ""
+              }`}
+              style={{ ["--sw" as string]: hex }}
+              title={SLOT_COLORS[slot] === hex ? `${hex} (default)` : hex}
+              onClick={() => onChange({ ...config, color: hex })}
+            />
+          ))}
+          <label
+            className={`swatch swatch-custom${customColor ? " on" : ""}`}
+            style={customColor ? { ["--sw" as string]: accent } : undefined}
+            title="Custom color"
+          >
+            <input
+              type="color"
+              value={accent}
+              aria-label="Custom color"
+              onChange={(e) => onChange({ ...config, color: e.target.value })}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="field">
+        <label>Avatar</label>
+        <div className="glyphs" role="radiogroup" aria-label="Voice avatar">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!icon}
+            className={`glyph-opt${!icon ? " on" : ""}`}
+            title="Initials"
+            onClick={() => {
+              setText("");
+              onChange({ ...config, icon: "" });
+            }}
+          >
+            Aa
+          </button>
+          {GLYPH_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={icon === `g:${id}`}
+              aria-label={id}
+              title={id}
+              className={`glyph-opt${icon === `g:${id}` ? " on" : ""}`}
+              onClick={() => {
+                setText("");
+                onChange({ ...config, icon: `g:${id}` });
+              }}
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor">
+                {GLYPHS[id]}
+              </svg>
+            </button>
+          ))}
+          <input
+            className={`glyph-text${isText ? " on" : ""}`}
+            value={text}
+            placeholder="✎"
+            maxLength={4}
+            aria-label="Custom avatar characters"
+            title="Type 1–2 characters or an emoji"
+            onChange={(e) => {
+              const v = [...e.target.value].slice(0, 2).join("");
+              setText(v);
+              onChange({ ...config, icon: v.trim() });
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function withSharedKey(cfg: InnerState, key: string): InnerState {
@@ -40,11 +153,13 @@ function withSharedKey(cfg: InnerState, key: string): InnerState {
 }
 
 function CharCard({
+  slot,
   accent,
   config,
   onChange,
   defaultOpen,
 }: {
+  slot: string;
   accent: string;
   config: AiConfig;
   onChange: (c: AiConfig) => void;
@@ -54,24 +169,38 @@ function CharCard({
   const [more, setMore] = useState(false);
 
   return (
-    <div className="char-card glass-card">
+    <div
+      className={`char-card${open ? " is-open" : ""}`}
+      style={{ ["--voice" as string]: accent }}
+    >
       <button
         type="button"
         className="char-head"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span
+        <VoiceAvatar
           className="char-avatar"
-          style={{ color: accent, borderColor: accent }}
-        >
-          {(config.name || "?").slice(0, 2).toUpperCase()}
+          name={config.name || "?"}
+          icon={config.icon}
+          color={accent}
+        />
+        <span className="char-id">
+          <span className="char-name">{config.name || "Voice"}</span>
+          <span className="char-bio">
+            {config.system_prompt || "No direction yet"}
+          </span>
         </span>
-        <span className="char-name">{config.name || "Voice"}</span>
-        <span className="mono-cap">{open ? "Hide" : "Edit"}</span>
+        <IconChevron />
       </button>
       {open && (
         <div className="char-body">
+          <LookEditor
+            slot={slot}
+            accent={accent}
+            config={config}
+            onChange={onChange}
+          />
           <div className="field">
             <label>Name</label>
             <input
@@ -93,11 +222,11 @@ function CharCard({
           </div>
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="link-btn"
             onClick={() => setMore((v) => !v)}
             aria-expanded={more}
           >
-            {more ? "Fewer options" : "Length & thinking"}
+            {more ? "Fewer options" : "Reply length & thinking →"}
           </button>
           {more && (
             <>
@@ -168,12 +297,15 @@ export default function SettingsSidebar({
   onClose,
   showThoughtsUi,
   onShowThoughtsUiChange,
+  castName = null,
+  onRenameCast,
 }: Props) {
+  const [castDraft, setCastDraft] = useState(castName ?? "");
+  useEffect(() => setCastDraft(castName ?? ""), [castName]);
   const ready = !!config;
   const [local, setLocal] = useState<InnerState>(() => config ?? defaultConfig());
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
   const [saved, setSaved] = useState(false);
-  const [sessionMore, setSessionMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [okMsg, setOkMsg] = useState<string | null>(null);
@@ -270,9 +402,9 @@ export default function SettingsSidebar({
       <div className="settings-head">
         <div className="settings-brand">
           <span className="settings-title" id="settings-title">
-            Settings
+            Voices &amp; settings
           </span>
-          <span className="settings-sub">One key · two or three voices</span>
+          <span className="settings-sub">Changes apply when you close</span>
         </div>
         <button
           type="button"
@@ -300,16 +432,18 @@ export default function SettingsSidebar({
         </button>
       </div>
       <div className="settings-body">
-        {!ready && (
-          <p className="mono-cap settings-kicker" style={{ marginBottom: 12 }}>
-            Loading settings…
-          </p>
-        )}
-        <div className="key-card glass-card" aria-disabled={!ready}>
-          <p className="mono-cap settings-kicker">OpenCode Go</p>
+        {!ready && <p className="set-loading">Loading settings…</p>}
+        <section className="set-section">
+        <h3 className="set-h">
+          <span>01</span>Access
+        </h3>
+        <div
+          className={`key-card${sharedKey.trim() ? "" : " is-missing"}`}
+          aria-disabled={!ready}
+        >
           <p className="key-card-lead">
-            Paste your API key once. Every voice uses it. The model is Muse
-            Spark 1.3 contributor.
+            One OpenCode Go key powers every voice. Model is locked to{" "}
+            <code>muse-spark-1.3-contributor</code>.
           </p>
           <div className="field">
             <label htmlFor="go-api-key">API key</label>
@@ -338,18 +472,17 @@ export default function SettingsSidebar({
               {loading ? "Checking…" : "Check key"}
             </button>
             {okMsg && (
-              <span className="mono-cap" style={{ color: "var(--ok)" }}>
-                {okMsg}
-              </span>
+              <span className="ok-tag">{okMsg}</span>
             )}
           </div>
           {err && <p className="field-error">{err}</p>}
         </div>
+        </section>
 
-        <p className="mono-cap settings-kicker">Voices</p>
-        <div className="field">
-          <label>How many</label>
-          <div className="seg" role="group" aria-label="How many voices">
+        <section className="set-section">
+        <h3 className="set-h">
+          <span>02</span>Cast
+          <div className="seg seg-sm" role="group" aria-label="How many voices">
             <button
               type="button"
               className={botCount === 2 ? "on" : ""}
@@ -367,37 +500,59 @@ export default function SettingsSidebar({
               3
             </button>
           </div>
-        </div>
+        </h3>
+        {castName !== null ? (
+          <div className="field cast-name-field">
+            <label htmlFor="cast-name">Cast name</label>
+            <input
+              id="cast-name"
+              value={castDraft}
+              onChange={(e) => setCastDraft(e.target.value)}
+              onBlur={() => castDraft.trim() && onRenameCast?.(castDraft)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+            />
+            <p className="field-hint">
+              Edits here become the cast&rsquo;s look. New threads in this cast
+              inherit them; older threads keep theirs.
+            </p>
+          </div>
+        ) : (
+          <p className="field-hint cast-name-field">
+            This thread isn&rsquo;t in a cast, so edits only affect it.
+          </p>
+        )}
         <div className="voice-stack">
           <CharCard
-            accent={agentAccent("ai1")}
+            slot="ai1"
+            accent={agentAccent("ai1", local)}
             config={local.ai1_config}
             onChange={(c) => setLocal({ ...local, ai1_config: c })}
             defaultOpen
           />
           <CharCard
-            accent={agentAccent("ai2")}
+            slot="ai2"
+            accent={agentAccent("ai2", local)}
             config={local.ai2_config}
             onChange={(c) => setLocal({ ...local, ai2_config: c })}
           />
           {botCount === 3 && (
             <CharCard
-              accent={agentAccent("ai3")}
+              slot="ai3"
+              accent={agentAccent("ai3", local)}
               config={local.ai3_config}
               onChange={(c) => setLocal({ ...local, ai3_config: c })}
             />
           )}
         </div>
 
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={() => setSessionMore((v) => !v)}
-          aria-expanded={sessionMore}
-        >
-          {sessionMore ? "Hide extras" : "Extras"}
-        </button>
-        {sessionMore && (
+        </section>
+
+        <section className="set-section">
+        <h3 className="set-h">
+          <span>03</span>Pacing &amp; display
+        </h3>
           <div className="session-more">
             <div className="field">
               <label>Default first line</label>
@@ -474,13 +629,10 @@ export default function SettingsSidebar({
               </div>
             )}
           </div>
-        )}
 
         {apis.length > 0 && (
           <div className="field">
-            <p className="mono-cap settings-kicker" style={{ marginBottom: 8 }}>
-              Saved keys
-            </p>
+            <label>Saved keys</label>
             {apis.map((a) => (
               <div key={a.id} className="api-row">
                 <span>{a.name}</span>
@@ -498,12 +650,12 @@ export default function SettingsSidebar({
             ))}
           </div>
         )}
+        </section>
       </div>
       <div className="settings-foot">
         <button
           type="button"
-          className="btn btn-primary"
-          style={{ width: "100%" }}
+          className="btn btn-go btn-block"
           disabled={!dirty && !saved}
           onClick={() => {
             onSave(
@@ -520,13 +672,10 @@ export default function SettingsSidebar({
             window.setTimeout(() => setSaved(false), 1400);
           }}
         >
-          {saved ? "Saved" : "Save"}
+          {saved ? "Saved" : dirty ? "Save changes" : "All saved"}
         </button>
         <p className="about-line">
-          AI Conversation <span>v2.0</span>
-        </p>
-        <p className="field-hint settings-save-hint">
-          Close keeps your changes. Save stays on this panel.
+          AI ConvoIR <span>v2.0</span> · <kbd>S</kbd> toggles this panel
         </p>
       </div>
       </div>

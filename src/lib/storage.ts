@@ -1,9 +1,12 @@
 import type { AiConfig, ConversationMode, InnerState, Message } from "../types";
 import * as api from "./api";
 
-const CHATS_KEY = "ai-conversation-chats-v1";
-const APIS_KEY = "ai-conversation-apis-v1";
-const ACTIVE_CHAT_KEY = "ai-conversation-active-chat";
+const CHATS_KEY = "ai-convoir-chats-v1";
+const APIS_KEY = "ai-convoir-apis-v1";
+const ACTIVE_CHAT_KEY = "ai-convoir-active-chat";
+const LEGACY_CHATS_KEY = "ai-conversation-chats-v1";
+const LEGACY_APIS_KEY = "ai-conversation-apis-v1";
+const LEGACY_ACTIVE_CHAT_KEY = "ai-conversation-active-chat";
 
 export interface SavedApi {
   id: string;
@@ -29,15 +32,17 @@ export interface SavedChat {
   ai3_config: AiConfig;
   messages: Message[];
   turn_count: number;
+  /** Cast (group) this thread was started in. Missing/unknown → Unsorted. */
+  cast_id?: string | null;
 }
 
 function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function readJson<T>(key: string, fallback: T): T {
+function readJson<T>(key: string, fallback: T, legacyKey?: string): T {
   try {
-    const s = localStorage.getItem(key);
+    const s = localStorage.getItem(key) || (legacyKey ? localStorage.getItem(legacyKey) : null);
     if (!s) return fallback;
     return JSON.parse(s) as T;
   } catch {
@@ -60,7 +65,7 @@ function isSavedChat(v: unknown): v is SavedChat {
 }
 
 export function listChats(): SavedChat[] {
-  return readJson<SavedChat[]>(CHATS_KEY, []).sort(
+  return readJson<SavedChat[]>(CHATS_KEY, [], LEGACY_CHATS_KEY).sort(
     (a, b) => b.updated_at - a.updated_at,
   );
 }
@@ -76,16 +81,36 @@ export async function hydrateChats(): Promise<SavedChat[]> {
 }
 
 export function getActiveChatId(): string | null {
-  return localStorage.getItem(ACTIVE_CHAT_KEY);
+  return (
+    localStorage.getItem(ACTIVE_CHAT_KEY) ||
+    localStorage.getItem(LEGACY_ACTIVE_CHAT_KEY)
+  );
 }
 
 export function setActiveChatId(id: string | null) {
   if (id) localStorage.setItem(ACTIVE_CHAT_KEY, id);
-  else localStorage.removeItem(ACTIVE_CHAT_KEY);
+  else {
+    localStorage.removeItem(ACTIVE_CHAT_KEY);
+    localStorage.removeItem(LEGACY_ACTIVE_CHAT_KEY);
+  }
 }
 
 export function getChat(id: string): SavedChat | undefined {
   return listChats().find((c) => c.id === id);
+}
+
+/** Prefer a freshly hydrated SQLite snapshot; fall back to localStorage cache. */
+export async function loadChat(id: string): Promise<SavedChat | undefined> {
+  const remote = await api.getSavedChat(id);
+  if (remote && isSavedChat(remote)) {
+    const chats = listChats();
+    const idx = chats.findIndex((c) => c.id === id);
+    if (idx >= 0) chats[idx] = remote;
+    else chats.unshift(remote);
+    writeJson(CHATS_KEY, chats.slice(0, 80));
+    return remote;
+  }
+  return getChat(id);
 }
 
 function titleFromMessages(messages: Message[], seed: string): string {
@@ -103,6 +128,7 @@ export function saveChatSnapshot(
   config: InnerState,
   messages: Message[],
   turnCount: number,
+  castId?: string | null,
 ): SavedChat {
   const chats = listChats();
   const now = Date.now();
@@ -124,6 +150,7 @@ export function saveChatSnapshot(
     ai3_config: config.ai3_config,
     messages: cleanMsgs,
     turn_count: turnCount,
+    cast_id: castId !== undefined ? castId : (prev?.cast_id ?? null),
   };
   const next = [chat, ...chats.filter((c) => c.id !== id)];
   writeJson(CHATS_KEY, next.slice(0, 80));
@@ -149,11 +176,28 @@ export function renameChat(id: string, title: string) {
   );
   writeJson(CHATS_KEY, chats);
   const updated = chats.find((c) => c.id === id);
-  if (updated) void api.upsertSavedChat(updated);
+  // Meta-only: a full upsert with lagging LS messages can wipe DB turns that
+  // save_message already wrote (updated_at bump would beat the stale guard).
+  if (updated) void api.upsertSavedChatMeta(updated);
+}
+
+/** Move threads out of a deleted cast (Unsorted). Meta-only so SoT turns stay. */
+export function clearCastIdFromChats(castId: string) {
+  const prev = listChats();
+  const cleared: SavedChat[] = [];
+  const next = prev.map((c) => {
+    if (c.cast_id !== castId) return c;
+    const u: SavedChat = { ...c, cast_id: null, updated_at: Date.now() };
+    cleared.push(u);
+    return u;
+  });
+  if (cleared.length === 0) return;
+  writeJson(CHATS_KEY, next);
+  for (const c of cleared) void api.upsertSavedChatMeta(c);
 }
 
 export function listApis(): SavedApi[] {
-  return readJson<SavedApi[]>(APIS_KEY, []).sort(
+  return readJson<SavedApi[]>(APIS_KEY, [], LEGACY_APIS_KEY).sort(
     (a, b) => b.updated_at - a.updated_at,
   );
 }

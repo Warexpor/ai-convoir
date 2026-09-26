@@ -242,3 +242,34 @@ export function IconHint() {
     </Icon>
   );
 }
+
+export function IconTrash() {
+  return (
+    <Icon size={14}>
+      <path d="M3 4.6h10M6.4 4.6V3.1h3.2v1.5M4.4 4.6l.6 8.2c.05.6.55 1.1 1.15 1.1h3.7c.6 0 1.1-.5 1.15-1.1l.6-8.2" {...stroke} />
+    </Icon>
+  );
+}
+
+/** Rail toggle: panel outline with a brand bar inside. */
+export function IconRail() {
+  return (
+    <Icon>
+      <rect x="1.9" y="2.6" width="12.2" height="10.8" rx="2.4" {...stroke} />
+      <rect x="4.1" y="4.8" width="1.9" height="6.4" rx=".95" fill="currentColor" />
+    </Icon>
+  );
+}
+
+/** Spark — a starter / suggestion. */
+export function IconSpark() {
+  return (
+    <Icon size={14}>
+      <path
+        d="M8 2.2c.3 2.6 1.2 3.5 3.8 3.8-2.6.3-3.5 1.2-3.8 3.8-.3-2.6-1.2-3.5-3.8-3.8 2.6-.3 3.5-1.2 3.8-3.8Z"
+        fill="currentColor"
+      />
+      <path d="M12.3 10.2c.15 1.15.55 1.55 1.7 1.7-1.15.15-1.55.55-1.7 1.7-.15-1.15-.55-1.55-1.7-1.7 1.15-.15 1.55-.55 1.7-1.7Z" fill="currentColor" />
+    </Icon>
+  );
+}

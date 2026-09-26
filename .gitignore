@@ -34,3 +34,4 @@ src-tauri/WixTools/
 
 # test / smoke leftovers
 *.pdb
+*.apk

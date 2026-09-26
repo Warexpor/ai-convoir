@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-$exe = "C:\Users\amicu\ai-conversation\src-tauri\target\release\ai-conversation.exe"
+$exe = "C:\Users\amicu\ai-convoir\src-tauri\target\release\ai-convoir.exe"
 if (-not (Test-Path $exe)) {
   Write-Output "MISSING_EXE"
   exit 1

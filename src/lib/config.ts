@@ -1,14 +1,24 @@
 import type { AiConfig, InnerState } from "../types";
 import { MUSE_SPARK_13_CONTRIBUTOR, OPENCODE_GO_BASE } from "../types";
 
-const CONFIG_KEY = "ai-conversation-config-v2";
-const LEGACY_KEY = "ai-conversation-config-v1";
+const CONFIG_KEY = "ai-convoir-config-v2";
+/** Pre-rename keys — still read so browser prefs survive the brand change. */
+const LEGACY_CONFIG_KEYS = [
+  "ai-conversation-config-v2",
+  "ai-conversation-config-v1",
+] as const;
 
 export const PREF_KEYS = {
+  railOpen: "ai-convoir-rail-open",
+  showThoughts: "ai-convoir-show-thoughts",
+  zoom: "ai-convoir-zoom",
+} as const;
+
+const LEGACY_PREF_KEYS: Record<keyof typeof PREF_KEYS, string> = {
   railOpen: "ai-conversation-rail-open",
   showThoughts: "ai-conversation-show-thoughts",
   zoom: "ai-conversation-zoom",
-} as const;
+};
 
 function defaultAgent(
   name: string,
@@ -93,8 +103,13 @@ export function normalizeConfig(raw: InnerState): InnerState {
 
 export function loadPersistedConfig(): Partial<InnerState> | null {
   try {
-    const s =
-      localStorage.getItem(CONFIG_KEY) || localStorage.getItem(LEGACY_KEY);
+    let s = localStorage.getItem(CONFIG_KEY);
+    if (!s) {
+      for (const k of LEGACY_CONFIG_KEYS) {
+        s = localStorage.getItem(k);
+        if (s) break;
+      }
+    }
     return s ? (JSON.parse(s) as Partial<InnerState>) : null;
   } catch {
     return null;
@@ -130,9 +145,20 @@ export function mergePersisted(
   } as InnerState);
 }
 
+function prefLegacy(key: string): string | undefined {
+  for (const [k, legacy] of Object.entries(LEGACY_PREF_KEYS)) {
+    if (PREF_KEYS[k as keyof typeof PREF_KEYS] === key) return legacy;
+  }
+  return undefined;
+}
+
 export function readBoolPref(key: string, fallback: boolean): boolean {
   try {
-    const v = localStorage.getItem(key);
+    let v = localStorage.getItem(key);
+    if (v === null) {
+      const legacy = prefLegacy(key);
+      if (legacy) v = localStorage.getItem(legacy);
+    }
     if (v === null) return fallback;
     return v === "1";
   } catch {
@@ -150,7 +176,9 @@ export function writeBoolPref(key: string, value: boolean): void {
 
 export function readZoom(): number {
   try {
-    const v = localStorage.getItem(PREF_KEYS.zoom);
+    const v =
+      localStorage.getItem(PREF_KEYS.zoom) ||
+      localStorage.getItem(LEGACY_PREF_KEYS.zoom);
     if (!v) return 1;
     return Math.min(2, Math.max(0.5, Number(v)));
   } catch {

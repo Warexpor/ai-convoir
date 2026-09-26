@@ -57,10 +57,37 @@ pub fn format_narration_note(narration: &str) -> String {
     )
 }
 
+/// Compose system prompt with response-length instruction (byte-stable for a given config).
+pub fn system_prompt_with_length(config: &AiConfig) -> String {
+    match config.response_length {
+        ResponseLength::Brief => format!(
+            "{}\n\nKeep your response extremely brief — at most one sentence.",
+            config.system_prompt
+        ),
+        ResponseLength::Small => format!(
+            "{}\n\nKeep your response short — at most 2–3 sentences.",
+            config.system_prompt
+        ),
+        ResponseLength::Normal => format!(
+            "{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.",
+            config.system_prompt
+        ),
+        ResponseLength::Long => format!(
+            "{}\n\nYou may respond at length — provide thorough detail.",
+            config.system_prompt
+        ),
+        ResponseLength::VeryLong => format!(
+            "{}\n\nRespond as extensively as you like — cover all angles and go deep.",
+            config.system_prompt
+        ),
+    }
+}
+
 /// Build OpenAI-compatible chat completions JSON body.
 /// Includes `reasoning_effort` only when not `None`.
-/// `stream` enables SSE streaming. Optional `narration` is injected as a final user note.
+/// `stream` enables SSE streaming. Optional `narration` is injected as a final system note.
 /// Appends response-length instruction to the system prompt.
+/// Message list is append-ordered (no reshuffle of older messages).
 pub fn build_chat_body(
     config: &AiConfig,
     speaking_agent: &str,
@@ -70,14 +97,7 @@ pub fn build_chat_body(
 ) -> Value {
     let mut api_messages: Vec<Value> = Vec::new();
 
-    // Compose system prompt with response-length instruction
-    let system_content = match config.response_length {
-        ResponseLength::Brief => format!("{}\n\nKeep your response extremely brief — at most one sentence.", config.system_prompt),
-        ResponseLength::Small => format!("{}\n\nKeep your response short — at most 2–3 sentences.", config.system_prompt),
-        ResponseLength::Normal => format!("{}\n\nRespond at a natural length — thorough enough to cover the point, concise enough to stay on topic.", config.system_prompt),
-        ResponseLength::Long => format!("{}\n\nYou may respond at length — provide thorough detail.", config.system_prompt),
-        ResponseLength::VeryLong => format!("{}\n\nRespond as extensively as you like — cover all angles and go deep.", config.system_prompt),
-    };
+    let system_content = system_prompt_with_length(config);
 
     api_messages.push(json!({
         "role": "system",
@@ -105,9 +125,12 @@ pub fn build_chat_body(
         "model": config.model,
         "messages": api_messages,
         "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
         "stream": stream,
     });
+    // Some providers reject max_tokens: 0; omit so the server default applies.
+    if config.max_tokens > 0 {
+        body["max_tokens"] = json!(config.max_tokens);
+    }
 
     if config.reasoning_effort != ReasoningEffort::None {
         body["reasoning_effort"] = json!(config.reasoning_effort.as_api_str());
@@ -375,9 +398,13 @@ fn context_window_for(model: &str) -> u32 {
 }
 
 /// Rough token estimate: ~4 chars per token.
-fn estimate_tokens(s: &str) -> u32 {
+pub fn estimate_tokens_pub(s: &str) -> u32 {
     let len = s.len() as u32;
     (len + 3) / 4
+}
+
+fn estimate_tokens(s: &str) -> u32 {
+    estimate_tokens_pub(s)
 }
 
 /// Return a subset of messages that fits within the model's context window.
@@ -389,15 +416,21 @@ pub fn trim_messages_for_context(
     active_configs: &[&crate::state::AiConfig],
     seed_prompt: &str,
     all_messages: &[crate::state::Message],
+    speaking_model: &str,
 ) -> Vec<crate::state::Message> {
     if all_messages.is_empty() {
         return vec![];
     }
 
-    let model = active_configs
-        .first()
-        .map(|c| c.model.as_str())
-        .unwrap_or("gpt-4o-mini");
+    // Use the *speaking* agent's model window — agents may differ (e.g. muse vs gemini).
+    let model = if speaking_model.trim().is_empty() {
+        active_configs
+            .first()
+            .map(|c| c.model.as_str())
+            .unwrap_or("gpt-4o-mini")
+    } else {
+        speaking_model
+    };
     let ctx = context_window_for(model);
 
     // System prompts from all active agents + seed prompt consume budget
@@ -416,6 +449,11 @@ pub fn trim_messages_for_context(
         let msg_tokens =
             estimate_tokens(&m.content) + m.reasoning.as_deref().map_or(0, estimate_tokens);
         if used + msg_tokens > budget {
+            // Never send an empty transcript: keep at least the newest message
+            // even when it alone exceeds the remaining budget.
+            if kept.is_empty() {
+                kept.push(m.clone());
+            }
             break;
         }
         used += msg_tokens;
@@ -442,6 +480,8 @@ mod tests {
             max_tokens: 256,
             reasoning_effort: effort,
             response_length: ResponseLength::Normal,
+            color: String::new(),
+            icon: String::new(),
         }
     }
 
@@ -716,4 +756,192 @@ mod tests {
             StartAction::ResumeAuto
         );
     }
+
+    #[test]
+    fn system_prompt_with_length_stable() {
+        let cfg = sample_config("You are Alice.", ReasoningEffort::None);
+        let a = system_prompt_with_length(&cfg);
+        let b = system_prompt_with_length(&cfg);
+        assert_eq!(a, b);
+        assert!(a.contains("You are Alice."));
+    }
+
+    #[test]
+    fn messages_for_api_append_preserves_prefix_bytes() {
+        let t1 = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "A".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "B".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        let prefix = messages_for_api("ai1", &t1);
+        let mut t2 = t1.clone();
+        t2.push(Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "C".into(),
+            turn: 2,
+            created_at: 3,
+            reasoning: None,
+        });
+        let full = messages_for_api("ai1", &t2);
+        assert_eq!(&full[..2], &prefix[..]);
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        let body1 = build_chat_body(&cfg, "ai1", &t1, true, None);
+        let body2 = build_chat_body(&cfg, "ai1", &t2, true, None);
+        let m1 = body1["messages"].as_array().unwrap();
+        let m2 = body2["messages"].as_array().unwrap();
+        assert_eq!(m1[0], m2[0]);
+        assert_eq!(m1[1], m2[1]);
+        assert_eq!(m1[2], m2[2]);
+        assert_eq!(m2.len(), m1.len() + 1);
+    }
+
+    #[test]
+    fn trim_keeps_at_least_newest_when_over_budget() {
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        // Tiny context via absurdly long system prompt forcing budget ~0
+        let mut fat = cfg.clone();
+        fat.system_prompt = "x".repeat(600_000);
+        let refs: Vec<&AiConfig> = vec![&fat];
+        let msgs = vec![
+            Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: "old".into(),
+                turn: 0,
+                created_at: 1,
+                reasoning: None,
+            },
+            Message {
+                agent: "ai2".into(),
+                role: "assistant".into(),
+                content: "newest-should-survive".into(),
+                turn: 1,
+                created_at: 2,
+                reasoning: None,
+            },
+        ];
+        let kept = trim_messages_for_context(&refs, "", &msgs, &fat.model);
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].content, "newest-should-survive");
+    }
+
+    #[test]
+    fn trim_preserves_order_and_can_drop_oldest() {
+        let cfg = sample_config("sys", ReasoningEffort::None);
+        let refs: Vec<&AiConfig> = vec![&cfg];
+        // Default 128k window — small messages all fit
+        let msgs: Vec<Message> = (0..5)
+            .map(|i| Message {
+                agent: if i % 2 == 0 { "ai1" } else { "ai2" }.into(),
+                role: "assistant".into(),
+                content: format!("msg-{i}"),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        let kept = trim_messages_for_context(&refs, "", &msgs, &cfg.model);
+        assert_eq!(kept.len(), 5);
+        assert_eq!(kept[0].content, "msg-0");
+        assert_eq!(kept[4].content, "msg-4");
+    }
+
+    #[test]
+    fn build_body_omits_max_tokens_when_zero() {
+        let mut cfg = sample_config("sys", ReasoningEffort::None);
+        cfg.max_tokens = 0;
+        let body = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(
+            body.get("max_tokens").is_none(),
+            "max_tokens==0 must be omitted, got {:?}",
+            body.get("max_tokens")
+        );
+        cfg.max_tokens = 128;
+        let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert_eq!(body2["max_tokens"], 128);
+    }
+
+    #[test]
+    fn trim_uses_speaking_model_context_window() {
+        // ai1 (first in list) has a tiny forced budget via huge system prompt;
+        // speaking model is gemini with 1M window — must NOT over-trim using ai1's budget alone.
+        let mut tiny = sample_config("sys", ReasoningEffort::None);
+        tiny.model = "gpt-4o-mini".into();
+        tiny.system_prompt = "x".repeat(600_000);
+        let mut gem = sample_config("sys", ReasoningEffort::None);
+        gem.model = "gemini-2.0-flash".into();
+        // Only speaking agent's system is large for budget calc of system_tokens (sum of all).
+        // Put the fat prompt only on ai1; speaking is gemini with normal prompt so budget is large.
+        let refs: Vec<&AiConfig> = vec![&tiny, &gem];
+        let msgs: Vec<Message> = (0..4)
+            .map(|i| Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: format!("m{i}"),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        // Speaking gemini: context_window 1M, but system_tokens still sum both (tiny dominates)
+        // so this still trims — instead compare model selection via context_window_for path:
+        // empty speaking_model falls back to first config; explicit gemini model is accepted.
+        let kept_fallback = trim_messages_for_context(&refs, "", &msgs, "");
+        let kept_gemini = trim_messages_for_context(&refs, "", &msgs, "gemini-2.0-flash");
+        // With fat system on ai1, both may trim heavily; ensure the API accepts speaking_model
+        // by checking a fat-free pair where windows differ in practice.
+        assert!(!kept_fallback.is_empty());
+        assert!(!kept_gemini.is_empty());
+
+        let normal = sample_config("short", ReasoningEffort::None);
+        let mut muse = normal.clone();
+        muse.model = "muse-spark-1.3-contributor".into(); // default 128k
+        let mut gem2 = normal.clone();
+        gem2.model = "gemini-2.0-flash".into(); // 1M
+        let refs2: Vec<&AiConfig> = vec![&muse, &gem2];
+        // Build messages that fit in 1M but force trim under a tiny synthetic window by
+        // using the speaking model string directly — verify muse vs gemini selection differs
+        // when system prompts are small and history is huge.
+        let big = "w".repeat(200_000); // ~50k tokens each
+        let many: Vec<Message> = (0..4)
+            .map(|i| Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: big.clone(),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        let kept_m = trim_messages_for_context(&refs2, "", &many, "muse-spark-1.3-contributor");
+        let kept_g = trim_messages_for_context(&refs2, "", &many, "gemini-2.0-flash");
+        // 4 * 50k = 200k tokens of history + buffer → muse 128k must drop more than gemini 1M.
+        assert!(
+            kept_g.len() >= kept_m.len(),
+            "gemini should keep at least as many msgs as muse (g={}, m={})",
+            kept_g.len(),
+            kept_m.len()
+        );
+        assert!(
+            kept_g.len() > kept_m.len(),
+            "gemini 1M window must keep more history than muse 128k (g={}, m={})",
+            kept_g.len(),
+            kept_m.len()
+        );
+    }
+
 }
