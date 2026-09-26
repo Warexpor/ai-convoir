@@ -17,6 +17,7 @@ export default {
       },
       fontFamily: {
         sans: ["Geist Variable", "system-ui", "sans-serif"],
+        serif: ["Source Serif 4 Variable", "Georgia", "serif"],
         mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
       },
       borderRadius: {

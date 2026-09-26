@@ -12,8 +12,8 @@
    ───────────────────────────────────────────────────────────── */
 
 :root {
-  --bg: #0b0b0c;
-  --bg-2: #101012;
+  --bg: #050505;
+  --bg-2: #0c0c0d;
   --surface: rgba(18, 18, 20, 0.78);
   --surface-2: rgba(26, 26, 29, 0.72);
   --surface-solid: #141416;
@@ -26,14 +26,18 @@
   --text-2: #bdbdc0;
   --mute: #88888d;
   --faint: #5c5c61;
-  /* Monochrome. The only chroma on screen belongs to the voices (muted)
-     and to danger. "Spark" is now just the brightest white. */
+  /* Black and white, carried by wide gradients. Voices are values on a
+     grey ladder; the only hue left on screen is danger. */
   --spark: #f4f4f5;
   --spark-soft: rgba(255, 255, 255, 0.07);
   --danger: #e5484d;
   --ok: #d4d4d8;
   --warn: #a1a1aa;
   --voice: #8a8a8a;
+  /* wide gradients */
+  --grad-ink: linear-gradient(180deg, #fff 0%, #d9d9dc 45%, #7c7c83 100%);
+  --grad-pearl: linear-gradient(180deg, #fff 0%, #e4e4e7 38%, #a1a1a8 100%);
+  --grad-hair: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55) 50%, transparent);
 
   --r-xs: 8px;
   --r-sm: 10px;
@@ -42,7 +46,9 @@
   --r-xl: 28px;
 
   --font: "Geist Variable", "Geist", system-ui, sans-serif;
-  --serif: var(--font);
+  /* Reading face: a sturdy text serif for everything the voices say,
+     sans for the machinery around it. */
+  --serif: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style", Georgia, serif;
   --mono: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
 
   --blur: blur(28px) saturate(175%);
@@ -416,8 +422,7 @@ body,
   height: 38px;
   padding: 0 17px 0 14px;
   border-radius: 999px;
-  background:
-    radial-gradient(130% 150% at 50% -30%, #fff 0%, #f3f3f5 40%, #d4d4da 100%);
+  background: var(--grad-pearl);
   color: #0b0b0c;
   font-weight: 600;
   box-shadow:
@@ -445,8 +450,7 @@ body,
   transition: transform 0.75s var(--ease-out);
 }
 .btn-go:hover:not(:disabled) {
-  background:
-    radial-gradient(130% 150% at 50% -30%, #fff 0%, #fafafa 45%, #dedee3 100%);
+  background: linear-gradient(180deg, #fff 0%, #f0f0f2 45%, #b4b4ba 100%);
   color: #000;
   transform: translateY(-1px);
 }
@@ -1786,11 +1790,23 @@ body,
 }
 .empty-title {
   margin: 0 0 30px;
-  font-weight: 500;
-  font-size: clamp(44px, 6.4vw, 72px);
-  line-height: 0.98;
-  letter-spacing: -0.055em;
+  font-family: var(--serif);
+  font-weight: 380;
+  font-size: clamp(46px, 6.6vw, 76px);
+  line-height: 1;
+  letter-spacing: -0.035em;
   color: #fff;
+}
+@supports (-webkit-background-clip: text) {
+  .empty-title {
+    background: var(--grad-ink);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .empty-title span {
+    -webkit-text-fill-color: var(--mute);
+  }
 }
 .empty-title span {
   display: block;
@@ -2369,14 +2385,21 @@ body,
 }
 .voice-avatar.is-solid {
   color: var(--voice-ink);
-  background:
-    radial-gradient(120% 120% at 30% 0%, rgba(255, 255, 255, 0.35), transparent 55%),
-    var(--voice);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--voice) 55%, #fff) 0%,
+    var(--voice) 42%,
+    color-mix(in srgb, var(--voice) 40%, #000) 100%
+  );
   box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.25);
 }
 .voice-avatar.is-tint {
   color: var(--voice);
-  background: color-mix(in srgb, var(--voice) 11%, #0e0e10);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--voice) 18%, #0e0e10),
+    color-mix(in srgb, var(--voice) 4%, #070707)
+  );
   border: 1px solid color-mix(in srgb, var(--voice) 38%, transparent);
 }
 .voice-avatar svg {
@@ -2437,7 +2460,7 @@ body,
 }
 .swatch-custom {
   cursor: pointer;
-  background: conic-gradient(#c89a86, #cbb591, #9fb49c, #9cb8d4, #aba3cc, #c79aa8, #c89a86);
+  background: conic-gradient(from 200deg, #fafafa, #52525b, #d4d4d8, #18181b, #a1a1aa, #fafafa);
   overflow: hidden;
 }
 .swatch-custom.on {
@@ -2694,8 +2717,11 @@ body,
 .md-body,
 .md-plain {
   color: var(--text);
-  font-size: 15.5px;
-  line-height: 1.7;
+  font-family: var(--serif);
+  font-optical-sizing: auto;
+  font-size: 16.5px;
+  line-height: 1.62;
+  letter-spacing: -0.003em;
   word-break: break-word;
 }
 .md-plain {
@@ -2712,6 +2738,7 @@ body,
   color: #fff;
 }
 .md-body em {
+  font-style: italic;
   color: var(--text-2);
 }
 .md-body a {
@@ -2814,8 +2841,8 @@ body,
 .md-body h2,
 .md-body h3 {
   margin: 0.9em 0 0.35em;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-weight: 560;
+  letter-spacing: -0.02em;
   color: #fff;
 }
 .md-body h1 {
@@ -3395,9 +3422,10 @@ body,
 }
 .prefs-head h2 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 440;
+  letter-spacing: -0.02em;
 }
 .prefs-body {
   flex: 1;
