@@ -51,8 +51,40 @@ function pickResumeChat(): SavedChat | undefined {
   return listChats().find((c) => c.messages.length > 0);
 }
 
+/** Overlay SavedChat fields onto a config base (boot resume / hydrate re-seed). */
+function configFromSavedChat(base: InnerState, chat: SavedChat): InnerState {
+  return {
+    ...base,
+    ai1_config: chat.ai1_config,
+    ai2_config: chat.ai2_config,
+    ai3_config: chat.ai3_config,
+    bot_count: chat.bot_count,
+    messages: chat.messages,
+    turn_count: chat.turn_count,
+    max_turns: chat.max_turns,
+    delay_ms: chat.delay_ms,
+    mode: chat.mode,
+    seed_prompt: chat.seed_prompt,
+  };
+}
+
+/**
+ * Prefer bootResume.current when it is a newer snapshot of the same chat id
+ * as `captured` (hydrate re-seed replaces the ref after pickResumeChat).
+ */
+function freshestResume(
+  captured: SavedChat | undefined,
+  current: SavedChat | undefined,
+): SavedChat | undefined {
+  if (!captured) return undefined;
+  if (current && current.id === captured.id && current !== captured) return current;
+  return captured;
+}
+
 export function useConversationApp() {
   const bootResume = useRef(pickResumeChat());
+  /** Chat id whose SoT re-seed already ran; boot must not loadTranscript over it. */
+  const hydrateSeededChatId = useRef<string | null>(null);
   const toast = useToast();
   const turnRef = useRef(0);
   const [narration, setNarration] = useState("");
@@ -96,6 +128,13 @@ export function useConversationApp() {
   configRef.current = config;
   chatIdRef.current = activeChatId;
 
+  const pushConfig = useCallback(async (cfg: InnerState) => {
+    const n = normalizeConfig(cfg);
+    await api.updateConfig(n);
+    setConfig(n);
+    persistConfig(n);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -134,6 +173,8 @@ export function useConversationApp() {
       if (chat.messages.length > 0 && live.length > chat.messages.length) return;
 
       skipAutosaveUntil.current = Date.now() + 2500;
+      // Mark before awaits so boot's post-pushConfig check sees SoT applied.
+      hydrateSeededChatId.current = chat.id;
       setActiveChatId(chat.id);
       setActiveChatIdState(chat.id);
       chatIdRef.current = chat.id;
@@ -141,6 +182,15 @@ export function useConversationApp() {
       stream.setTurnCount(chat.turn_count);
       setFirstDraft(chat.seed_prompt || "");
       setChats(listChats());
+      // Refresh engine config from SoT (mirror select-chat) so a stale boot
+      // pushConfig that already ran — or still will — does not leave LS merge.
+      const base = configRef.current ?? defaultConfig();
+      try {
+        await pushConfig(configFromSavedChat({ ...base, status: "Idle" }, chat));
+      } catch {
+        /* web / no tauri */
+      }
+      if (cancelled) return;
       try {
         await api.loadTranscript({
           messages: chat.messages,
@@ -154,15 +204,8 @@ export function useConversationApp() {
     return () => {
       cancelled = true;
     };
-    // Boot-time hydrate once; stream setters are stable for this remaster pass.
+    // Boot-time hydrate once; stream setters / pushConfig are stable here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const pushConfig = useCallback(async (cfg: InnerState) => {
-    const n = normalizeConfig(cfg);
-    await api.updateConfig(n);
-    setConfig(n);
-    persistConfig(n);
   }, []);
 
   const refreshChats = useCallback(() => setChats(listChats()), []);
@@ -217,7 +260,8 @@ export function useConversationApp() {
         ]);
         if (cancelled) return;
 
-        const resume = msgs.length > 0 ? undefined : bootResume.current;
+        // Capture after first await; hydrate may already have swapped SoT in.
+        let resume = msgs.length > 0 ? undefined : bootResume.current;
         if (msgs.length > 0) {
           stream.setMessages(msgs);
           stream.setTurnCount(statusData[1]);
@@ -232,22 +276,14 @@ export function useConversationApp() {
         }
         stream.setStatus(statusData[0]);
 
+        // Re-read before merge/pushConfig: hydrate re-seed may have replaced
+        // bootResume during the getMessages window with a fresher SoT snap.
+        resume = freshestResume(resume, bootResume.current);
+
         let merged = normalizeConfig(cfg ?? defaultConfig());
         merged = mergePersisted(merged, loadPersistedConfig());
         if (resume) {
-          merged = {
-            ...merged,
-            ai1_config: resume.ai1_config,
-            ai2_config: resume.ai2_config,
-            ai3_config: resume.ai3_config,
-            bot_count: resume.bot_count,
-            messages: resume.messages,
-            turn_count: resume.turn_count,
-            max_turns: resume.max_turns,
-            delay_ms: resume.delay_ms,
-            mode: resume.mode,
-            seed_prompt: resume.seed_prompt,
-          };
+          merged = configFromSavedChat(merged, resume);
         }
         const fallbackCast = ensureDefaultCast(merged);
         const resumeCast = resume ? getCast(resume.cast_id) : undefined;
@@ -262,19 +298,45 @@ export function useConversationApp() {
           await api.updateConfig(merged);
         }
         if (cancelled) return;
+
+        // After pushConfig await: hydrate may have re-seeded SoT. Never
+        // loadTranscript a resume older than bootResume.current for same id;
+        // if hydrate already seeded that id, skip boot transcript load entirely.
+        resume = freshestResume(resume, bootResume.current);
         if (!resume) {
           const skipped =
             typeof localStorage !== "undefined" &&
             !!(localStorage.getItem(SKIP_RESUME_KEY) || localStorage.getItem(LEGACY_SKIP_RESUME_KEY));
           setFirstDraft(skipped ? "" : merged.seed_prompt || "");
-        }
-
-        if (resume) {
-          await api.loadTranscript({
-            messages: resume.messages,
-            turnCount: resume.turn_count,
-            chatId: resume.id,
-          });
+        } else if (hydrateSeededChatId.current === resume.id) {
+          // Re-seed won: UI+engine already on SoT. If our pushConfig used a
+          // stale capture, refresh config from the freshest snapshot.
+          const seeded = bootResume.current;
+          if (seeded && seeded.id === resume.id) {
+            try {
+              await pushConfig(
+                configFromSavedChat({ ...merged, status: "Idle" }, seeded),
+              );
+            } catch {
+              /* web / no tauri */
+            }
+          }
+        } else {
+          if (messagesRef.current.some((m) => m.streaming)) return;
+          const live = messagesRef.current.filter((m) => !m.streaming);
+          // Mirror hydrate ahead-guard: don't clobber a longer live transcript.
+          if (resume.messages.length > 0 && live.length > resume.messages.length) {
+            return;
+          }
+          try {
+            await api.loadTranscript({
+              messages: resume.messages,
+              turnCount: resume.turn_count,
+              chatId: resume.id,
+            });
+          } catch {
+            /* web / no tauri */
+          }
         }
       } catch {
         if (cancelled) return;
