@@ -125,9 +125,12 @@ pub fn build_chat_body(
         "model": config.model,
         "messages": api_messages,
         "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
         "stream": stream,
     });
+    // Some providers reject max_tokens: 0; omit so the server default applies.
+    if config.max_tokens > 0 {
+        body["max_tokens"] = json!(config.max_tokens);
+    }
 
     if config.reasoning_effort != ReasoningEffort::None {
         body["reasoning_effort"] = json!(config.reasoning_effort.as_api_str());
@@ -413,15 +416,21 @@ pub fn trim_messages_for_context(
     active_configs: &[&crate::state::AiConfig],
     seed_prompt: &str,
     all_messages: &[crate::state::Message],
+    speaking_model: &str,
 ) -> Vec<crate::state::Message> {
     if all_messages.is_empty() {
         return vec![];
     }
 
-    let model = active_configs
-        .first()
-        .map(|c| c.model.as_str())
-        .unwrap_or("gpt-4o-mini");
+    // Use the *speaking* agent's model window — agents may differ (e.g. muse vs gemini).
+    let model = if speaking_model.trim().is_empty() {
+        active_configs
+            .first()
+            .map(|c| c.model.as_str())
+            .unwrap_or("gpt-4o-mini")
+    } else {
+        speaking_model
+    };
     let ctx = context_window_for(model);
 
     // System prompts from all active agents + seed prompt consume budget
@@ -825,7 +834,7 @@ mod tests {
                 reasoning: None,
             },
         ];
-        let kept = trim_messages_for_context(&refs, "", &msgs);
+        let kept = trim_messages_for_context(&refs, "", &msgs, &fat.model);
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].content, "newest-should-survive");
     }
@@ -845,9 +854,94 @@ mod tests {
                 reasoning: None,
             })
             .collect();
-        let kept = trim_messages_for_context(&refs, "", &msgs);
+        let kept = trim_messages_for_context(&refs, "", &msgs, &cfg.model);
         assert_eq!(kept.len(), 5);
         assert_eq!(kept[0].content, "msg-0");
         assert_eq!(kept[4].content, "msg-4");
     }
+
+    #[test]
+    fn build_body_omits_max_tokens_when_zero() {
+        let mut cfg = sample_config("sys", ReasoningEffort::None);
+        cfg.max_tokens = 0;
+        let body = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert!(
+            body.get("max_tokens").is_none(),
+            "max_tokens==0 must be omitted, got {:?}",
+            body.get("max_tokens")
+        );
+        cfg.max_tokens = 128;
+        let body2 = build_chat_body(&cfg, "ai1", &[], false, None);
+        assert_eq!(body2["max_tokens"], 128);
+    }
+
+    #[test]
+    fn trim_uses_speaking_model_context_window() {
+        // ai1 (first in list) has a tiny forced budget via huge system prompt;
+        // speaking model is gemini with 1M window — must NOT over-trim using ai1's budget alone.
+        let mut tiny = sample_config("sys", ReasoningEffort::None);
+        tiny.model = "gpt-4o-mini".into();
+        tiny.system_prompt = "x".repeat(600_000);
+        let mut gem = sample_config("sys", ReasoningEffort::None);
+        gem.model = "gemini-2.0-flash".into();
+        // Only speaking agent's system is large for budget calc of system_tokens (sum of all).
+        // Put the fat prompt only on ai1; speaking is gemini with normal prompt so budget is large.
+        let refs: Vec<&AiConfig> = vec![&tiny, &gem];
+        let msgs: Vec<Message> = (0..4)
+            .map(|i| Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: format!("m{i}"),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        // Speaking gemini: context_window 1M, but system_tokens still sum both (tiny dominates)
+        // so this still trims — instead compare model selection via context_window_for path:
+        // empty speaking_model falls back to first config; explicit gemini model is accepted.
+        let kept_fallback = trim_messages_for_context(&refs, "", &msgs, "");
+        let kept_gemini = trim_messages_for_context(&refs, "", &msgs, "gemini-2.0-flash");
+        // With fat system on ai1, both may trim heavily; ensure the API accepts speaking_model
+        // by checking a fat-free pair where windows differ in practice.
+        assert!(!kept_fallback.is_empty());
+        assert!(!kept_gemini.is_empty());
+
+        let normal = sample_config("short", ReasoningEffort::None);
+        let mut muse = normal.clone();
+        muse.model = "muse-spark-1.3-contributor".into(); // default 128k
+        let mut gem2 = normal.clone();
+        gem2.model = "gemini-2.0-flash".into(); // 1M
+        let refs2: Vec<&AiConfig> = vec![&muse, &gem2];
+        // Build messages that fit in 1M but force trim under a tiny synthetic window by
+        // using the speaking model string directly — verify muse vs gemini selection differs
+        // when system prompts are small and history is huge.
+        let big = "w".repeat(200_000); // ~50k tokens each
+        let many: Vec<Message> = (0..4)
+            .map(|i| Message {
+                agent: "ai1".into(),
+                role: "assistant".into(),
+                content: big.clone(),
+                turn: i,
+                created_at: i as u64,
+                reasoning: None,
+            })
+            .collect();
+        let kept_m = trim_messages_for_context(&refs2, "", &many, "muse-spark-1.3-contributor");
+        let kept_g = trim_messages_for_context(&refs2, "", &many, "gemini-2.0-flash");
+        // 4 * 50k = 200k tokens of history + buffer → muse 128k must drop more than gemini 1M.
+        assert!(
+            kept_g.len() >= kept_m.len(),
+            "gemini should keep at least as many msgs as muse (g={}, m={})",
+            kept_g.len(),
+            kept_m.len()
+        );
+        assert!(
+            kept_g.len() > kept_m.len(),
+            "gemini 1M window must keep more history than muse 128k (g={}, m={})",
+            kept_g.len(),
+            kept_m.len()
+        );
+    }
+
 }

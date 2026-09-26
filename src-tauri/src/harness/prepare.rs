@@ -68,8 +68,12 @@ pub fn prepare_turn(
         3 => vec![&inner.ai1_config, &inner.ai2_config, &inner.ai3_config],
         _ => vec![&inner.ai1_config, &inner.ai2_config],
     };
-    let context_messages =
-        trim_messages_for_context(&active_configs, &inner.seed_prompt, all_msgs);
+    let context_messages = trim_messages_for_context(
+        &active_configs,
+        &inner.seed_prompt,
+        all_msgs,
+        &config.model,
+    );
     let trimmed = context_messages.len() < all_msgs.len();
 
     let narr_ref = narration.as_deref();
