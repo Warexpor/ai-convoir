@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-/** Brand mark plus a small family of chrome icons — two-bar / slash geometry, not generic placeholders. */
+/** Brand mark plus the chrome icon family: duotone — a crisp line over a
+ *  translucent body (`.t`), so icons read at 14px and glow up on hover. */
 
 export function SlashMark({
   className,
@@ -46,29 +47,29 @@ function Icon({
 
 const stroke = {
   stroke: "currentColor",
-  strokeWidth: 1.45,
+  strokeWidth: 1.5,
   strokeLinecap: "round" as const,
   strokeLinejoin: "round" as const,
 };
 
-/** Saved threads: spine + transcript ticks. Filled so 16px still reads. */
+const T = { className: "t", fill: "currentColor" } as const;
+
+/** Saved threads: spine + transcript ticks. */
 export function IconThreads() {
   return (
     <Icon>
-      <rect x="3.1" y="2.6" width="2.15" height="10.8" rx="1.05" fill="currentColor" />
-      <rect x="6.5" y="2.85" width="7.2" height="2.15" rx="1.05" fill="currentColor" />
-      <rect x="6.5" y="6.95" width="5.35" height="2.15" rx="1.05" fill="currentColor" />
-      <rect x="6.5" y="11.05" width="6.35" height="2.15" rx="1.05" fill="currentColor" />
+      <rect x="2.5" y="2.5" width="11" height="11" rx="3" {...T} />
+      <path d="M5.4 5.6h5.2M5.4 8h3.6M5.4 10.4h4.4" {...stroke} />
     </Icon>
   );
 }
 
-/** Settings is two voices, not a gear. */
+/** Settings is two voices talking, not a gear. */
 export function IconVoices() {
   return (
     <Icon>
-      <circle cx="5.15" cy="8" r="3.2" {...stroke} />
-      <circle cx="10.85" cy="8" r="3.2" {...stroke} />
+      <path d="M9.6 3.2h2.2a2.4 2.4 0 0 1 2.4 2.4v2.1a2.4 2.4 0 0 1-2.4 2.4h-.3v1.8L9.4 10.1" {...T} />
+      <path d="M4.2 2.6h3.9a2.5 2.5 0 0 1 2.5 2.5v2.3a2.5 2.5 0 0 1-2.5 2.5H6.2l-2.6 2.2V9.9h.6A2.5 2.5 0 0 1 1.7 7.4V5.1a2.5 2.5 0 0 1 2.5-2.5Z" {...stroke} />
     </Icon>
   );
 }
@@ -76,13 +77,10 @@ export function IconVoices() {
 export function IconKey() {
   return (
     <Icon>
-      <circle cx="5.1" cy="8" r="3.05" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M8.15 8H14M11.45 8v2.45M13.7 8v3.25"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
+      <circle cx="5.2" cy="8" r="3.3" {...T} />
+      <circle cx="5.2" cy="8" r="3.3" {...stroke} />
+      <circle cx="5.2" cy="8" r=".9" fill="currentColor" />
+      <path d="M8.5 8h5.3M11.3 8v2.2M13.5 8v2.8" {...stroke} />
     </Icon>
   );
 }
@@ -91,18 +89,19 @@ export function IconKey() {
 export function IconReturn() {
   return (
     <Icon>
-      <path d="M3.1 9.15h7.45a2.75 2.75 0 0 0 0-5.5H8.4" {...stroke} />
-      <path d="M5.75 6.55 3.1 9.15l2.65 2.6" {...stroke} />
+      <path d="M3.1 9.15h7.45a2.75 2.75 0 0 0 0-5.5H8.4" {...stroke} strokeWidth={1.6} />
+      <path d="M5.75 6.55 3.1 9.15l2.65 2.6" {...stroke} strokeWidth={1.6} />
     </Icon>
   );
 }
 
-/** Next speaker in the rotation. */
+/** Next speaker in the rotation: a voice dot handing off. */
 export function IconNextVoice() {
   return (
     <Icon>
-      <circle cx="4.2" cy="8" r="2.35" {...stroke} />
-      <path d="M9 4.55 13.55 8 9 11.45" {...stroke} strokeWidth={1.6} />
+      <circle cx="4.6" cy="8" r="3" {...T} />
+      <circle cx="4.6" cy="8" r="1.35" fill="currentColor" />
+      <path d="M9.4 4.4 13.1 8l-3.7 3.6" {...stroke} strokeWidth={1.7} />
     </Icon>
   );
 }
@@ -110,8 +109,8 @@ export function IconNextVoice() {
 export function IconPause() {
   return (
     <Icon>
-      <rect x="3.85" y="3.15" width="2.55" height="9.7" rx="1.2" fill="currentColor" />
-      <rect x="9.6" y="3.15" width="2.55" height="9.7" rx="1.2" fill="currentColor" />
+      <rect x="3.7" y="2.9" width="3" height="10.2" rx="1.4" fill="currentColor" />
+      <rect x="9.3" y="2.9" width="3" height="10.2" rx="1.4" fill="currentColor" />
     </Icon>
   );
 }
@@ -120,8 +119,9 @@ export function IconPlay() {
   return (
     <Icon>
       <path
-        d="M5.05 3.05c0-.74.8-1.18 1.4-.72l6.5 4.22c.56.36.56 1.18 0 1.54l-6.5 4.22c-.6.44-1.4 0-1.4-.72V3.05Z"
+        d="M4.9 3.3c0-.95 1.03-1.54 1.85-1.06l6.75 3.95c.82.48.82 1.67 0 2.14l-6.75 3.95c-.82.48-1.85-.11-1.85-1.06V3.3Z"
         fill="currentColor"
+        transform="translate(0 1)"
       />
     </Icon>
   );
@@ -130,7 +130,7 @@ export function IconPlay() {
 export function IconStop() {
   return (
     <Icon size={14}>
-      <rect x="3" y="3" width="10" height="10" rx="2.3" fill="currentColor" />
+      <rect x="3" y="3" width="10" height="10" rx="3" fill="currentColor" />
     </Icon>
   );
 }
@@ -138,28 +138,30 @@ export function IconStop() {
 export function IconSearch() {
   return (
     <Icon size={14}>
-      <circle cx="6.7" cy="6.7" r="4.15" {...stroke} />
-      <path d="M9.9 10.15 13.7 14" {...stroke} />
+      <circle cx="7" cy="7" r="4.3" {...T} />
+      <circle cx="7" cy="7" r="4.3" {...stroke} />
+      <path d="M10.3 10.3 13.6 13.6" {...stroke} strokeWidth={1.8} />
     </Icon>
   );
 }
 
-/** New thread — rounded plus, same bar language as pause. */
+/** New thread — a fresh page with a plus. */
 export function IconNew() {
   return (
     <Icon>
-      <rect x="6.9" y="2.7" width="2.2" height="10.6" rx="1.1" fill="currentColor" />
-      <rect x="2.7" y="6.9" width="10.6" height="2.2" rx="1.1" fill="currentColor" />
+      <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="3.6" {...T} />
+      <path d="M8 5.1v5.8M5.1 8h5.8" {...stroke} strokeWidth={1.7} />
     </Icon>
   );
 }
 
-/** Collapse the rail: brand bar + chevron. */
+/** Collapse the rail. */
 export function IconRailHide() {
   return (
     <Icon>
-      <rect x="2.4" y="3.05" width="2.3" height="9.9" rx="1.1" fill="currentColor" />
-      <path d="M13.9 4.7 9.15 8l4.75 3.3" {...stroke} strokeWidth={1.6} />
+      <rect x="1.9" y="2.6" width="4.4" height="10.8" rx="2" {...T} />
+      <rect x="1.9" y="2.6" width="12.2" height="10.8" rx="2.6" {...stroke} />
+      <path d="M11.2 6.1 9.3 8l1.9 1.9" {...stroke} />
     </Icon>
   );
 }
@@ -167,7 +169,8 @@ export function IconRailHide() {
 export function IconSave() {
   return (
     <Icon>
-      <path d="M4.05 2.4h7.9v11.3L8 10.85 4.05 13.7V2.4Z" {...stroke} />
+      <path d="M4.3 2.4h7.4c.5 0 .9.4.9.9v10.3L8 10.8l-4.6 2.8V3.3c0-.5.4-.9.9-.9Z" {...T} />
+      <path d="M4.3 2.4h7.4c.5 0 .9.4.9.9v10.3L8 10.8l-4.6 2.8V3.3c0-.5.4-.9.9-.9Z" {...stroke} />
     </Icon>
   );
 }
@@ -175,8 +178,9 @@ export function IconSave() {
 export function IconExport() {
   return (
     <Icon>
-      <path d="M3.2 9.4v3.15A1.2 1.2 0 0 0 4.4 13.75h7.2A1.2 1.2 0 0 0 12.8 12.55V9.4" {...stroke} />
-      <path d="M8 10.55V2.55M4.95 5.5 8 2.55 11.05 5.5" {...stroke} />
+      <path d="M2.8 9.2h10.4v2.6a2 2 0 0 1-2 2H4.8a2 2 0 0 1-2-2V9.2Z" {...T} />
+      <path d="M8 10.2V2.6M5 5.5 8 2.6l3 2.9" {...stroke} />
+      <path d="M2.8 9.2v2.6a2 2 0 0 0 2 2h6.4a2 2 0 0 0 2-2V9.2" {...stroke} />
     </Icon>
   );
 }
@@ -184,8 +188,8 @@ export function IconExport() {
 export function IconRetry() {
   return (
     <Icon>
-      <path d="M13 8.1A5 5 0 1 1 11.25 4.2" {...stroke} />
-      <path d="M13 2.3v3.7H9.3" {...stroke} />
+      <path d="M13 8.1A5 5 0 1 1 11.25 4.2" {...stroke} strokeWidth={1.6} />
+      <path d="M13.1 2.4v3.6H9.5" {...stroke} strokeWidth={1.6} />
     </Icon>
   );
 }
@@ -193,8 +197,8 @@ export function IconRetry() {
 export function IconCopy() {
   return (
     <Icon size={14}>
-      <rect x="5.3" y="5.1" width="7.5" height="7.6" rx="1.5" {...stroke} />
-      <path d="M3.3 10.4V4.55A1.5 1.5 0 0 1 4.8 3.05h5.7" {...stroke} />
+      <rect x="2.4" y="2.4" width="7.6" height="7.6" rx="2" {...T} />
+      <rect x="5.6" y="5.6" width="8" height="8" rx="2" {...stroke} />
     </Icon>
   );
 }
@@ -202,7 +206,7 @@ export function IconCopy() {
 export function IconCheck() {
   return (
     <Icon size={14}>
-      <path d="M3 8.2 6.45 11.55 13.05 4.4" {...stroke} strokeWidth={1.6} />
+      <path d="M3 8.3 6.4 11.6 13.1 4.4" {...stroke} strokeWidth={1.8} />
     </Icon>
   );
 }
@@ -210,7 +214,7 @@ export function IconCheck() {
 export function IconChevron() {
   return (
     <Icon size={12}>
-      <path d="M5.55 3.2 10.55 8 5.55 12.8" {...stroke} />
+      <path d="M5.8 3.2 10.6 8l-4.8 4.8" {...stroke} strokeWidth={1.7} />
     </Icon>
   );
 }
@@ -218,27 +222,28 @@ export function IconChevron() {
 export function IconChevronDown() {
   return (
     <Icon size={12}>
-      <path d="M3.2 5.55 8 10.55 12.8 5.55" {...stroke} />
+      <path d="M3.2 5.8 8 10.6l4.8-4.8" {...stroke} strokeWidth={1.7} />
     </Icon>
   );
 }
 
-/** Overflow — three brand bars, not three dots. */
+/** Overflow — three voices in a row. */
 export function IconMore() {
   return (
     <Icon>
-      <rect x="2.55" y="5.05" width="2.3" height="5.9" rx="1.1" fill="currentColor" />
-      <rect x="6.85" y="3.2" width="2.3" height="9.6" rx="1.1" fill="currentColor" />
-      <rect x="11.15" y="5.05" width="2.3" height="5.9" rx="1.1" fill="currentColor" />
+      <circle cx="3.4" cy="8" r="1.6" fill="currentColor" />
+      <circle cx="8" cy="8" r="1.6" fill="currentColor" />
+      <circle cx="12.6" cy="8" r="1.6" fill="currentColor" />
     </Icon>
   );
 }
 
-/** Whisper / hint — quote ticks. */
+/** Whisper — a small bubble with a hush tick. */
 export function IconHint() {
   return (
     <Icon size={14}>
-      <path d="M4.2 4.45 6.15 11.5M9.85 4.45 11.8 11.5" {...stroke} strokeWidth={1.8} />
+      <path d="M3.4 3h9.2A1.9 1.9 0 0 1 14.5 4.9v4.6a1.9 1.9 0 0 1-1.9 1.9H8.4L5.3 14v-2.6H3.4A1.9 1.9 0 0 1 1.5 9.5V4.9A1.9 1.9 0 0 1 3.4 3Z" {...T} />
+      <path d="M5.4 6.3h5.2M5.4 8.4h3.2" {...stroke} />
     </Icon>
   );
 }
@@ -246,17 +251,20 @@ export function IconHint() {
 export function IconTrash() {
   return (
     <Icon size={14}>
-      <path d="M3 4.6h10M6.4 4.6V3.1h3.2v1.5M4.4 4.6l.6 8.2c.05.6.55 1.1 1.15 1.1h3.7c.6 0 1.1-.5 1.15-1.1l.6-8.2" {...stroke} />
+      <path d="M4.2 5h7.6l-.6 7.7a1.3 1.3 0 0 1-1.3 1.2H6.1a1.3 1.3 0 0 1-1.3-1.2L4.2 5Z" {...T} />
+      <path d="M2.8 4.6h10.4M6.3 4.4V3.2c0-.4.3-.7.7-.7h2c.4 0 .7.3.7.7v1.2" {...stroke} />
+      <path d="M4.2 5l.6 7.7a1.3 1.3 0 0 0 1.3 1.2h3.8a1.3 1.3 0 0 0 1.3-1.2l.6-7.7" {...stroke} />
     </Icon>
   );
 }
 
-/** Rail toggle: panel outline with a brand bar inside. */
+/** Rail toggle: panel with a lit sidebar. */
 export function IconRail() {
   return (
     <Icon>
-      <rect x="1.9" y="2.6" width="12.2" height="10.8" rx="2.4" {...stroke} />
-      <rect x="4.1" y="4.8" width="1.9" height="6.4" rx=".95" fill="currentColor" />
+      <rect x="1.9" y="2.6" width="4.4" height="10.8" rx="2" {...T} />
+      <rect x="1.9" y="2.6" width="12.2" height="10.8" rx="2.6" {...stroke} />
+      <path d="M9.3 6.1 11.2 8l-1.9 1.9" {...stroke} />
     </Icon>
   );
 }
@@ -266,10 +274,10 @@ export function IconSpark() {
   return (
     <Icon size={14}>
       <path
-        d="M8 2.2c.3 2.6 1.2 3.5 3.8 3.8-2.6.3-3.5 1.2-3.8 3.8-.3-2.6-1.2-3.5-3.8-3.8 2.6-.3 3.5-1.2 3.8-3.8Z"
+        d="M7.4 1.8c.35 3 1.6 4.25 4.6 4.6-3 .35-4.25 1.6-4.6 4.6-.35-3-1.6-4.25-4.6-4.6 3-.35 4.25-1.6 4.6-4.6Z"
         fill="currentColor"
       />
-      <path d="M12.3 10.2c.15 1.15.55 1.55 1.7 1.7-1.15.15-1.55.55-1.7 1.7-.15-1.15-.55-1.55-1.7-1.7 1.15-.15 1.55-.55 1.7-1.7Z" fill="currentColor" />
+      <path d="M12.3 9.8c.17 1.3.63 1.76 1.9 1.9-1.27.17-1.73.63-1.9 1.9-.17-1.27-.63-1.73-1.9-1.9 1.27-.14 1.73-.6 1.9-1.9Z" {...T} />
     </Icon>
   );
 }

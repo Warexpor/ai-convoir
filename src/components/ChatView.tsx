@@ -97,6 +97,21 @@ function ChatView({
   const [heightTick, setHeightTick] = useState(0);
 
   const virtualize = messages.length >= VIRTUALIZE_AFTER;
+
+  // A "scene" is one thread. Messages already present when a scene opens
+  // cascade in together; only lines that arrive afterwards get the
+  // per-message entrance.
+  const sceneKey = messages[0] ? msgKey(messages[0], 0) : "";
+  const sceneRef = useRef<{ key: string; seen: Set<string> }>({
+    key: "",
+    seen: new Set(),
+  });
+  if (sceneRef.current.key !== sceneKey) {
+    sceneRef.current = {
+      key: sceneKey,
+      seen: new Set(messages.map((m, i) => msgKey(m, i))),
+    };
+  }
   const streamingTail = messages[messages.length - 1];
   const streamSig = streamingTail?.streaming
     ? streamingTail.content.length + (streamingTail.reasoning?.length ?? 0)
@@ -277,6 +292,37 @@ function ChatView({
     });
   }, [virtualize, messages.length, streamingTail?.streaming]);
 
+  // Once a new line has finished entering, treat it as seen so it does not
+  // replay when the virtual list remounts it after a scroll.
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      messages.forEach((m, i) => sceneRef.current.seen.add(msgKey(m, i)));
+    }, 900);
+    return () => window.clearTimeout(id);
+  }, [messages.length]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !sceneKey || sceneRef.current.seen.size < 2) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const rows = Array.from(list.children).slice(-7) as HTMLElement[];
+    const anims = rows.map((el, i) =>
+      el.animate(
+        [
+          { opacity: 0, transform: "translate3d(0, 18px, 0) scale(0.985)" },
+          { opacity: 1, transform: "none" },
+        ],
+        {
+          duration: 560,
+          delay: i * 45,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+          fill: "backwards",
+        },
+      ),
+    );
+    return () => anims.forEach((a) => a.cancel());
+  }, [sceneKey]);
+
   const jumpLatest = useCallback(() => {
     applyAutoScroll(true);
     requestAnimationFrame(() => stickToBottom(true));
@@ -401,10 +447,11 @@ function ChatView({
           </div>
 
           <div className="starters" aria-label="Starter scenes">
-            {STARTERS.map((st) => (
+            {STARTERS.map((st, i) => (
               <button
                 key={st.label}
                 type="button"
+                style={{ ["--i" as string]: i }}
                 className={`starter${firstDraft === st.text ? " on" : ""}`}
                 onClick={() => onFirstDraftChange?.(st.text)}
                 title={st.text}
@@ -459,9 +506,7 @@ function ChatView({
                     config={config}
                     showThoughtsUi={showThoughtsUi}
                     onDelete={onDeleteMessage}
-                    enter={
-                      !virtualize || idx >= messages.length - 1
-                    }
+                    enter={!sceneRef.current.seen.has(key)}
                   />
                 </div>
               );
