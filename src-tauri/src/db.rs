@@ -263,6 +263,9 @@ pub fn delete_chat(conn: &Connection, chat_id: &str) -> Result<(), String> {
 
 /// Write a full saved-chat snapshot (JSON) and replace its message rows
 /// in one transaction (meta + messages stay consistent on failure).
+///
+/// Monotonic on `updated_at`: a stale FE snapshot (older timestamp) is a no-op
+/// so concurrent `void upsertSavedChat` calls cannot wipe newer turns.
 pub fn upsert_saved_chat(
     conn: &Connection,
     chat_id: &str,
@@ -272,6 +275,21 @@ pub fn upsert_saved_chat(
 ) -> Result<(), String> {
     let messages = dedupe_messages_by_identity(messages);
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let existing: Option<u64> = match tx.query_row(
+        "SELECT updated_at FROM chat_meta WHERE chat_id = ?1",
+        params![chat_id],
+        |row| row.get(0),
+    ) {
+        Ok(v) => Some(v),
+        Err(rusqlite::Error::QueryReturnedNoRows) => None,
+        Err(e) => return Err(format!("DB upsert_saved_chat read: {}", e)),
+    };
+    if let Some(prev) = existing {
+        if updated_at < prev {
+            // Leave the newer snapshot intact; do not DELETE messages.
+            return Ok(());
+        }
+    }
     tx.execute(
         "INSERT OR REPLACE INTO chat_meta (chat_id, updated_at, config_json)
          VALUES (?1, ?2, ?3)",
@@ -477,6 +495,67 @@ mod tests {
         let ai1 = loaded.iter().find(|m| m.agent == "ai1").unwrap();
         assert_eq!(ai1.content, "new");
         assert_eq!(ai1.reasoning.as_deref(), Some("r2"));
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn upsert_saved_chat_skips_stale_updated_at() {
+        let path = tmp_db_path("upsert-stale");
+        let conn = open(&path).unwrap();
+        let newer = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "turn-2".into(),
+            turn: 2,
+            created_at: 200,
+            reasoning: None,
+        }];
+        upsert_saved_chat(&conn, "c1", 200, r#"{"id":"c1","n":2}"#, &newer).unwrap();
+
+        let older = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "turn-1-stale".into(),
+            turn: 1,
+            created_at: 100,
+            reasoning: None,
+        }];
+        // Stale FE snapshot must not wipe the newer turn.
+        upsert_saved_chat(&conn, "c1", 100, r#"{"id":"c1","n":1}"#, &older).unwrap();
+
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].content, "turn-2");
+        let (_u, json) = get_chat_meta(&conn, "c1").unwrap().unwrap();
+        assert!(json.contains(r#""n":2"#), "meta json={json}");
+
+        // Equal updated_at still replaces (same-ms last write wins).
+        let same_ts = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "same-ts".into(),
+            turn: 2,
+            created_at: 200,
+            reasoning: None,
+        }];
+        upsert_saved_chat(&conn, "c1", 200, r#"{"id":"c1","n":2b}"#, &same_ts).unwrap();
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded[0].content, "same-ts");
+
+        // Newer timestamp still applies.
+        let newest = vec![Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "turn-3".into(),
+            turn: 3,
+            created_at: 300,
+            reasoning: None,
+        }];
+        upsert_saved_chat(&conn, "c1", 300, r#"{"id":"c1","n":3}"#, &newest).unwrap();
+        let loaded = load_messages(&conn, "c1").unwrap();
+        assert_eq!(loaded[0].content, "turn-3");
+
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }
