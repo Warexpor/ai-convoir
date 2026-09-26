@@ -247,6 +247,16 @@ impl AppState {
             .unwrap_or_else(|e| e.into_inner());
         map.get(chat_id).copied().unwrap_or(0)
     }
+
+    /// Drop the per-chat counter (e.g. on delete_saved_chat) so the map does not
+    /// grow without bound and a stale detached save sees current=0 and skips.
+    pub fn clear_transcript_save_epoch(&self, chat_id: &str) {
+        let mut map = self
+            .transcript_save_epochs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        map.remove(chat_id);
+    }
 }
 
 #[cfg(test)]
@@ -280,6 +290,9 @@ mod tests {
         assert_eq!(s.current_transcript_save_epoch("b"), 0);
         assert_eq!(s.bump_transcript_save_epoch("b"), 1);
         assert_eq!(s.current_transcript_save_epoch("a"), 2);
+        assert_eq!(s.current_transcript_save_epoch("b"), 1);
+        s.clear_transcript_save_epoch("a");
+        assert_eq!(s.current_transcript_save_epoch("a"), 0);
         assert_eq!(s.current_transcript_save_epoch("b"), 1);
     }
 }

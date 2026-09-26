@@ -181,6 +181,21 @@ export function renameChat(id: string, title: string) {
   if (updated) void api.upsertSavedChatMeta(updated);
 }
 
+/** Move threads out of a deleted cast (Unsorted). Meta-only so SoT turns stay. */
+export function clearCastIdFromChats(castId: string) {
+  const prev = listChats();
+  const cleared: SavedChat[] = [];
+  const next = prev.map((c) => {
+    if (c.cast_id !== castId) return c;
+    const u: SavedChat = { ...c, cast_id: null, updated_at: Date.now() };
+    cleared.push(u);
+    return u;
+  });
+  if (cleared.length === 0) return;
+  writeJson(CHATS_KEY, next);
+  for (const c of cleared) void api.upsertSavedChatMeta(c);
+}
+
 export function listApis(): SavedApi[] {
   return readJson<SavedApi[]>(APIS_KEY, [], LEGACY_APIS_KEY).sort(
     (a, b) => b.updated_at - a.updated_at,

@@ -76,7 +76,22 @@ pub fn open(path: &str) -> Result<Connection, String> {
 }
 
 /// Save one message (upsert-by-identity) so races with snapshot upserts do not dupe rows.
+///
+/// No-ops when `chat_meta` is missing so a detached commit after `delete_saved_chat`
+/// cannot resurrect orphan message rows for a deleted id. New chats create meta via
+/// `upsert_saved_chat` before later turns call this (stream latency ≫ upsert).
 pub fn save_message(conn: &Connection, chat_id: &str, msg: &Message) -> Result<(), String> {
+    let meta_exists: bool = matches!(
+        conn.query_row(
+            "SELECT 1 FROM chat_meta WHERE chat_id = ?1",
+            params![chat_id],
+            |_| Ok(()),
+        ),
+        Ok(())
+    );
+    if !meta_exists {
+        return Ok(());
+    }
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     tx.execute(
         "DELETE FROM messages WHERE chat_id = ?1 AND agent = ?2 AND turn = ?3 AND created_at = ?4",
@@ -450,6 +465,7 @@ mod tests {
     fn save_message_upserts_by_identity() {
         let path = tmp_db_path("upsert-msg");
         let conn = open(&path).unwrap();
+        upsert_chat_meta(&conn, "c1", 1, r#"{"id":"c1"}"#).unwrap();
         let msg = Message {
             agent: "ai1".into(),
             role: "assistant".into(),
@@ -470,9 +486,29 @@ mod tests {
     }
 
     #[test]
+    fn save_message_skips_when_chat_meta_missing() {
+        let path = tmp_db_path("save-orphan");
+        let conn = open(&path).unwrap();
+        let msg = Message {
+            agent: "ai1".into(),
+            role: "assistant".into(),
+            content: "orphan".into(),
+            turn: 0,
+            created_at: 1,
+            reasoning: None,
+        };
+        // Deleted chat (or never upserted): must not resurrect rows.
+        save_message(&conn, "gone", &msg).unwrap();
+        assert!(load_messages(&conn, "gone").unwrap().is_empty());
+        drop(conn);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn with_locked_serializes_writes() {
         let path = tmp_db_path("locked");
         with_locked(&path, |conn| {
+            upsert_chat_meta(conn, "c1", 1, r#"{"id":"c1"}"#)?;
             let msg = Message {
                 agent: "ai1".into(),
                 role: "assistant".into(),
@@ -888,6 +924,10 @@ mod tests {
         let (u, json) = get_chat_meta(&conn, "c1").unwrap().unwrap();
         assert_eq!(u, 200);
         assert!(json.contains("Renamed"), "json={json}");
+        // Hydrate must still prefer messages table over lagging blob messages[].
+        let hydrated = hydrate_chat_from_meta(&conn, "c1", &json).unwrap().unwrap();
+        assert_eq!(hydrated["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(hydrated["messages"][0]["content"], "keep-me");
 
         // Stale meta timestamp is a no-op.
         upsert_chat_meta(

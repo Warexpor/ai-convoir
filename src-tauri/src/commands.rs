@@ -230,6 +230,8 @@ pub async fn reset_conversation(
     inner.messages.clear();
     inner.turn_count = 0;
     inner.pending_narration.clear();
+    // New blank session — do not keep a deleted/stale chat id for prepare→save_message.
+    inner.active_chat_id.clear();
     inner.status = AppStatus::Idle;
     let _ = app_handle.emit(
         "status-update",
@@ -496,13 +498,21 @@ pub async fn upsert_saved_chat(
     })
 }
 
+/// Drop lagging `messages` from a meta-only snapshot before persisting config_json.
+fn strip_messages_from_meta_snapshot(snapshot: &mut serde_json::Value) {
+    if let Some(obj) = snapshot.as_object_mut() {
+        obj.remove("messages");
+    }
+}
+
 /// Meta-only persist (title / cast / config fields) — does **not** replace the
 /// messages table. Use for rename and other sidebar edits so a lagging LS
 /// snapshot cannot wipe turns already written by `save_message`.
+/// Omits `messages` from the stored config_json (hydrate is SoT).
 #[tauri::command]
 pub async fn upsert_saved_chat_meta(
     state: tauri::State<'_, Arc<AppState>>,
-    snapshot: serde_json::Value,
+    mut snapshot: serde_json::Value,
 ) -> Result<(), String> {
     let chat_id = snapshot
         .get("id")
@@ -513,6 +523,7 @@ pub async fn upsert_saved_chat_meta(
         .get("updated_at")
         .and_then(|v| v.as_u64())
         .unwrap_or_else(now_ms);
+    strip_messages_from_meta_snapshot(&mut snapshot);
     let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
     let arc: &Arc<AppState> = &state;
     with_db(arc, |conn| db::upsert_chat_meta(conn, &chat_id, updated_at, &json))
@@ -555,7 +566,17 @@ pub async fn delete_saved_chat(
     chat_id: String,
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
-    with_db(arc, |conn| db::delete_chat(conn, &chat_id))
+    // Prune before delete so an in-flight load_transcript save sees current=0 and
+    // skips (scheduled epoch != 0). Also keeps the map from growing forever.
+    arc.clear_transcript_save_epoch(&chat_id);
+    with_db(arc, |conn| db::delete_chat(conn, &chat_id))?;
+    // Stop prepare→save_message from resurrecting the deleted id.
+    if let Ok(mut inner) = arc.inner.lock() {
+        if inner.active_chat_id == chat_id {
+            inner.active_chat_id.clear();
+        }
+    }
+    Ok(())
 }
 
 /// Delete a single message from the current chat by agent + turn + created_at.
@@ -1083,7 +1104,7 @@ mod export_tests {
 
 #[cfg(test)]
 mod seed_tests {
-    use super::inject_seed_if_any;
+    use super::{inject_seed_if_any, strip_messages_from_meta_snapshot};
     use crate::state::InnerState;
 
     #[test]
@@ -1109,6 +1130,21 @@ mod seed_tests {
         inject_seed_if_any(&mut inner);
         assert!(inner.messages.is_empty());
     }
+    #[test]
+    fn strip_messages_from_meta_snapshot_omits_lagging_transcript() {
+        let mut v = serde_json::json!({
+            "id": "c1",
+            "title": "Renamed",
+            "updated_at": 200,
+            "messages": [{"agent": "ai1", "content": "stale"}],
+            "turn_count": 9,
+        });
+        strip_messages_from_meta_snapshot(&mut v);
+        assert!(v.get("messages").is_none(), "{v}");
+        assert_eq!(v["title"], "Renamed");
+        assert_eq!(v["turn_count"], 9);
+    }
+
 }
 
 #[cfg(test)]
@@ -1236,6 +1272,7 @@ mod epoch_tests {
         assert_eq!(turn_count, 1);
         assert!(turn_count <= prev);
     }
+
 }
 
 #[cfg(test)]
