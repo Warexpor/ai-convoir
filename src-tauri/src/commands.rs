@@ -498,17 +498,21 @@ pub async fn upsert_saved_chat(
     })
 }
 
-/// Drop lagging `messages` from a meta-only snapshot before persisting config_json.
+/// Drop lagging transcript fields from a meta-only snapshot before persisting
+/// config_json. Hydrate re-derives `messages` + `turn_count` from the messages
+/// table (SoT); keeping FE/localStorage values here would leave the blob stale
+/// after incremental `save_message` / tip deletes.
 fn strip_messages_from_meta_snapshot(snapshot: &mut serde_json::Value) {
     if let Some(obj) = snapshot.as_object_mut() {
         obj.remove("messages");
+        obj.remove("turn_count");
     }
 }
 
 /// Meta-only persist (title / cast / config fields) — does **not** replace the
 /// messages table. Use for rename and other sidebar edits so a lagging LS
 /// snapshot cannot wipe turns already written by `save_message`.
-/// Omits `messages` from the stored config_json (hydrate is SoT).
+/// Omits `messages` and `turn_count` from the stored config_json (hydrate is SoT).
 #[tauri::command]
 pub async fn upsert_saved_chat_meta(
     state: tauri::State<'_, Arc<AppState>>,
@@ -1141,8 +1145,8 @@ mod seed_tests {
         });
         strip_messages_from_meta_snapshot(&mut v);
         assert!(v.get("messages").is_none(), "{v}");
+        assert!(v.get("turn_count").is_none(), "{v}");
         assert_eq!(v["title"], "Renamed");
-        assert_eq!(v["turn_count"], 9);
     }
 
 }
