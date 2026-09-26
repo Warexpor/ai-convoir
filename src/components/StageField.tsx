@@ -68,7 +68,7 @@ void main() {
   );
   float smoke = fbm(p * 1.1 + r * 1.6);
 
-  vec3 col = vec3(0.036, 0.036, 0.042);
+  vec3 col = vec3(0.034, 0.034, 0.037);
 
   float e = 0.5 * asp;
   vec2 a1 = vec2(-e + 0.08, 0.36) + 0.05 * vec2(sin(t * 2.1), cos(t * 1.7));
@@ -80,11 +80,11 @@ void main() {
 
   float veil = 0.35 + 0.95 * smoke * smoke;
   vec3 light = u_c1 * g1 * u_w.x + u_c2 * g2 * u_w.y + u_c3 * g3 * u_w.z;
-  col += light * veil * 0.3;
-  col += vec3(0.9, 0.92, 1.0) * pow(smoke, 3.0) * 0.05;
+  col += light * veil * 0.42;
+  col += vec3(0.9, 0.92, 1.0) * pow(smoke, 3.0) * 0.085;
 
-  // Ember: the live spark's low warm glow.
-  col += vec3(1.0, 0.36, 0.08) * pool(p, vec2(e * 0.5, -0.66), vec2(1.0, 2.2), 2.4) * 0.035;
+  // A cold horizon: faint white lift along the floor of the stage.
+  col += vec3(0.8, 0.84, 0.9) * pool(p, vec2(0.0, -0.78), vec2(0.6, 2.6), 2.0) * 0.03;
 
   float vig = smoothstep(1.3, 0.2, length(p * vec2(0.85, 1.0)));
   col *= 0.7 + 0.3 * vig;

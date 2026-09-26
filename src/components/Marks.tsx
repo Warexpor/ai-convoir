@@ -281,3 +281,27 @@ export function IconSpark() {
     </Icon>
   );
 }
+
+/** On air — a static level meter; the live state lives in the label. */
+export function IconLive() {
+  return (
+    <Icon size={12}>
+      <rect x="2" y="7" width="2.4" height="6" rx="1.2" fill="currentColor" />
+      <rect x="6.8" y="3" width="2.4" height="10" rx="1.2" fill="currentColor" />
+      <rect x="11.6" y="5.5" width="2.4" height="7.5" rx="1.2" {...T} />
+    </Icon>
+  );
+}
+
+/** Settings — two sliders, a line with a knob each. */
+export function IconSliders() {
+  return (
+    <Icon>
+      <path d="M2.5 5h11M2.5 11h11" {...stroke} />
+      <circle cx="10.2" cy="5" r="2.1" {...T} />
+      <circle cx="10.2" cy="5" r="2.1" {...stroke} />
+      <circle cx="5.8" cy="11" r="2.1" {...T} />
+      <circle cx="5.8" cy="11" r="2.1" {...stroke} />
+    </Icon>
+  );
+}

@@ -3,6 +3,7 @@ import { IconChevronDown, IconKey, IconReturn, IconSpark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
 import type { InnerState, Message } from "../types";
+import type { StreamMode } from "../lib/config";
 import {
   activeAgentIds,
   agentAccent,
@@ -25,6 +26,7 @@ interface Props {
   hasSavedChats?: boolean;
   needsKey?: boolean;
   onOpenSettings?: () => void;
+  streamMode?: StreamMode;
 }
 
 const STARTERS: { label: string; text: string }[] = [
@@ -84,6 +86,7 @@ function ChatView({
   hasSavedChats = false,
   needsKey = false,
   onOpenSettings,
+  streamMode = "live",
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const heightsRef = useRef(new Map<string, number>());
@@ -323,6 +326,19 @@ function ChatView({
     return () => anims.forEach((a) => a.cancel());
   }, [sceneKey]);
 
+  // Content can grow without a new message (fonts landing, thoughts
+  // expanding, markdown settling). Stay pinned while following.
+  useEffect(() => {
+    const el = scrollRef.current;
+    const inner = el?.firstElementChild;
+    if (!el || !inner) return;
+    const ro = new ResizeObserver(() => {
+      if (autoScrollRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(inner);
+    return () => ro.disconnect();
+  }, [messages.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const jumpLatest = useCallback(() => {
     applyAutoScroll(true);
     requestAnimationFrame(() => stickToBottom(true));
@@ -362,7 +378,6 @@ function ChatView({
       <div className="empty">
         <div className="empty-hero">
           <p className="kicker">
-            <span className="kicker-dot" />
             OpenCode Go · Muse Spark 1.3
           </p>
           <h1 className="empty-title">
@@ -507,6 +522,7 @@ function ChatView({
                     showThoughtsUi={showThoughtsUi}
                     onDelete={onDeleteMessage}
                     enter={!sceneRef.current.seen.has(key)}
+                    streamMode={streamMode}
                   />
                 </div>
               );
@@ -521,7 +537,8 @@ function ChatView({
                     : undefined
                 }
               >
-                <span className="thinking-bars" aria-hidden>
+                <span className="eq" aria-hidden>
+                  <i />
                   <i />
                   <i />
                   <i />
@@ -539,9 +556,6 @@ function ChatView({
               style={{ height: bottomPad }}
               aria-hidden
             />
-          )}
-          {!autoScroll && (
-            <div className="jump-latest-space" aria-hidden />
           )}
         </div>
       </div>

@@ -2,13 +2,14 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { usePresence } from "../hooks/usePresence";
 import { useRef } from "react";
 
-const ROWS: { keys: string; action: string }[] = [
+export const SHORTCUTS: { keys: string; action: string }[] = [
   { keys: "Space", action: "Start / pause, or next turn in Step" },
   { keys: "N", action: "Next voice speaks" },
-  { keys: "S", action: "Settings" },
+  { keys: "S", action: "Voices" },
+  { keys: ",", action: "Settings" },
   { keys: "B", action: "Saved chats" },
   { keys: "?", action: "This help" },
-  { keys: "Esc", action: "Stop run → close help → close settings → hide chats" },
+  { keys: "Esc", action: "Stop run → close panels → hide chats" },
   { keys: "Ctrl+Shift+R", action: "New chat" },
   { keys: "Ctrl+E", action: "Export transcript" },
   { keys: "Ctrl+S", action: "Save chat" },
@@ -54,7 +55,7 @@ export default function ShortcutsModal({
           </button>
         </div>
         <div className="modal-body">
-          {ROWS.map((r) => (
+          {SHORTCUTS.map((r) => (
             <div key={r.keys} className="shortcut-row">
               <kbd className="kbd">{r.keys}</kbd>
               <span>{r.action}</span>

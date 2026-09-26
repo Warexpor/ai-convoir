@@ -13,9 +13,7 @@ import {
   VOICE_PALETTE,
   agentAccent,
 } from "../types";
-import { fetchModels } from "../lib/api";
-import { defaultConfig, type FxLevel } from "../lib/config";
-import { deleteApi, listApis, type SavedApi } from "../lib/storage";
+import { defaultConfig } from "../lib/config";
 import { IconChevron } from "./Marks";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
@@ -25,13 +23,9 @@ interface Props {
   config: InnerState | null;
   onSave: (config: InnerState) => void;
   onClose: () => void;
-  showThoughtsUi: boolean;
-  onShowThoughtsUiChange: (v: boolean) => void;
   /** Active cast (group) name; null when the thread has no cast. */
   castName?: string | null;
   onRenameCast?: (name: string) => void;
-  fx: FxLevel;
-  onFxChange: (v: FxLevel) => void;
 }
 
 /** Color + avatar picker for one voice. */
@@ -271,22 +265,14 @@ export default function SettingsSidebar({
   config,
   onSave,
   onClose,
-  showThoughtsUi,
-  onShowThoughtsUiChange,
   castName = null,
   onRenameCast,
-  fx,
-  onFxChange,
 }: Props) {
   const [castDraft, setCastDraft] = useState(castName ?? "");
   useEffect(() => setCastDraft(castName ?? ""), [castName]);
   const ready = !!config;
   const [local, setLocal] = useState<InnerState>(() => config ?? defaultConfig());
-  const [apis, setApis] = useState<SavedApi[]>(() => listApis());
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const localRef = useRef(local);
   localRef.current = local;
@@ -313,11 +299,6 @@ export default function SettingsSidebar({
       );
     };
   }, [open, onSave, ready]);
-  useEffect(() => {
-    const r = () => setApis(listApis());
-    window.addEventListener("apis-changed", r);
-    return () => window.removeEventListener("apis-changed", r);
-  }, []);
 
   const botCount = local.bot_count >= 3 ? 3 : 2;
   const sharedKey =
@@ -348,22 +329,7 @@ export default function SettingsSidebar({
         a3: config.bot_count >= 3 ? config.ai3_config : null,
       });
 
-  const verifyKey = async () => {
-    setLoading(true);
-    setErr(null);
-    setOkMsg(null);
-    try {
-      await fetchModels({
-        baseUrl: OPENCODE_GO_BASE,
-        apiKey: sharedKey,
-      });
-      setOkMsg("Key works");
-    } catch (e) {
-      setErr(String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   return (
     <aside
@@ -380,9 +346,9 @@ export default function SettingsSidebar({
       <div className="settings-head">
         <div className="settings-brand">
           <span className="settings-title" id="settings-title">
-            Voices &amp; settings
+            Voices
           </span>
-          <span className="settings-sub">Changes apply when you close</span>
+          <span className="settings-sub">Who is on stage, and how they look</span>
         </div>
         <button
           type="button"
@@ -411,55 +377,10 @@ export default function SettingsSidebar({
       </div>
       <div className="settings-body">
         {!ready && <p className="set-loading">Loading settings…</p>}
-        <section className="set-section">
-        <h3 className="set-h">
-          <span>01</span>Access
-        </h3>
-        <div
-          className={`key-card${sharedKey.trim() ? "" : " is-missing"}`}
-          aria-disabled={!ready}
-        >
-          <p className="key-card-lead">
-            One OpenCode Go key powers every voice. Model is locked to{" "}
-            <code>muse-spark-1.3-contributor</code>.
-          </p>
-          <div className="field">
-            <label htmlFor="go-api-key">API key</label>
-            <input
-              id="go-api-key"
-              type="password"
-              name="opencode-go-key"
-              autoComplete="new-password"
-              data-1p-ignore="true"
-              data-lpignore="true"
-              data-form-type="other"
-              spellCheck={false}
-              value={sharedKey}
-              disabled={!ready}
-              onChange={(e) => setLocal(withSharedKey(local, e.target.value))}
-              placeholder="sk-…"
-            />
-          </div>
-          <div className="key-card-actions">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={verifyKey}
-              disabled={!ready || loading || !sharedKey.trim()}
-            >
-              {loading ? "Checking…" : "Check key"}
-            </button>
-            {okMsg && (
-              <span className="ok-tag">{okMsg}</span>
-            )}
-          </div>
-          {err && <p className="field-error">{err}</p>}
-        </div>
-        </section>
 
         <section className="set-section">
         <h3 className="set-h">
-          <span>02</span>Cast
+          Cast
           <Seg
             size="sm"
             label="How many voices"
@@ -519,119 +440,6 @@ export default function SettingsSidebar({
 
         </section>
 
-        <section className="set-section">
-        <h3 className="set-h">
-          <span>03</span>Pacing &amp; display
-        </h3>
-          <div className="session-more">
-            <div className="field">
-              <label>Default first line</label>
-              <textarea
-                value={local.seed_prompt || ""}
-                onChange={(e) =>
-                  setLocal({ ...local, seed_prompt: e.target.value })
-                }
-                placeholder="Used only if you begin without typing"
-              />
-              <p className="field-hint">
-                New still starts blank. This is a fallback opening, not a
-                required prompt.
-              </p>
-            </div>
-            <div className="field">
-              <label>Show thinking</label>
-              <Seg
-                label="Show thinking"
-                value={showThoughtsUi ? "show" : "hide"}
-                onChange={(v) => onShowThoughtsUiChange(v === "show")}
-                options={[
-                  { value: "show", label: "Show" },
-                  { value: "hide", label: "Hide" },
-                ]}
-              />
-            </div>
-            <div className="field">
-              <label>Effects</label>
-              <Seg
-                label="Visual effects"
-                value={fx}
-                onChange={onFxChange}
-                options={[
-                  { value: "full", label: "Full", title: "Living background, glass everywhere" },
-                  { value: "balanced", label: "Balanced", title: "Background moves when the speaker changes" },
-                  { value: "lite", label: "Lite", title: "Still background, no blur — fastest" },
-                ]}
-              />
-              <p className="field-hint">
-                {fx === "full"
-                  ? "The background drifts constantly. Prettiest, hungriest."
-                  : fx === "balanced"
-                    ? "The background breathes when the speaker changes, then rests."
-                    : "No blur, no motion behind the text. Pick this if scrolling stutters."}
-              </p>
-            </div>
-            <div className="field">
-              <label>Pause between turns · {local.delay_ms}ms</label>
-              <input
-                type="range"
-                min={0}
-                max={4000}
-                step={100}
-                value={local.delay_ms}
-                aria-valuemin={0}
-                aria-valuemax={4000}
-                aria-valuenow={local.delay_ms}
-                style={{
-                  ["--range" as string]: `${(local.delay_ms / 4000) * 100}%`,
-                }}
-                onChange={(e) =>
-                  setLocal({
-                    ...local,
-                    delay_ms: parseInt(e.target.value, 10) || 0,
-                  })
-                }
-              />
-            </div>
-            {local.mode !== "step" && (
-              <div className="field">
-                <label>Stop after this many turns</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={999}
-                  value={local.max_turns}
-                  onChange={(e) =>
-                    setLocal({
-                      ...local,
-                      max_turns: parseInt(e.target.value, 10) || 40,
-                    })
-                  }
-                />
-              </div>
-            )}
-          </div>
-
-        {apis.length > 0 && (
-          <div className="field">
-            <label>Saved keys</label>
-            {apis.map((a) => (
-              <div key={a.id} className="api-row">
-                <span>{a.name}</span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => {
-                    deleteApi(a.id);
-                    setApis(listApis());
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        </section>
       </div>
       <div className="settings-foot">
         <button
@@ -656,7 +464,7 @@ export default function SettingsSidebar({
           {saved ? "Saved" : dirty ? "Save changes" : "All saved"}
         </button>
         <p className="about-line">
-          AI Conversation <span>v2.0</span> · <kbd>S</kbd> toggles this panel
+          <kbd>S</kbd> toggles this panel · <kbd>,</kbd> opens settings
         </p>
       </div>
       </div>

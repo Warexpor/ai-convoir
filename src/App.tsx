@@ -4,6 +4,7 @@ import ControlBar from "./components/ControlBar";
 import SettingsSidebar from "./components/SettingsSidebar";
 import ChatRail from "./components/ChatRail";
 import ShortcutsModal from "./components/ShortcutsModal";
+import SettingsModal, { type SettingsTab } from "./components/SettingsModal";
 import { useAppKeyboard } from "./hooks/useAppKeyboard";
 import { useConversationApp } from "./hooks/useConversationApp";
 import { useTokenUsage } from "./hooks/useTokenUsage";
@@ -12,13 +13,16 @@ import {
   missingApiKeys,
   readBoolPref,
   readFx,
+  readStreamMode,
   readZoom,
   writeBoolPref,
   writeFx,
+  writeStreamMode,
   writeZoom,
   type FxLevel,
+  type StreamMode,
 } from "./lib/config";
-import { IconRail, IconVoices, SlashMark } from "./components/Marks";
+import { IconRail, IconSliders, IconVoices, SlashMark } from "./components/Marks";
 import StageField from "./components/StageField";
 import CastStrip from "./components/CastStrip";
 import { activeAgentIds, agentAccent, agentLabel, nextAgentId } from "./types";
@@ -43,6 +47,16 @@ function App() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [prefsTab, setPrefsTab] = useState<SettingsTab>("conversation");
+  const [streamMode, setStreamMode] = useState<StreamMode>(readStreamMode);
+  useEffect(() => writeStreamMode(streamMode), [streamMode]);
+  const openPrefs = useCallback((tab?: SettingsTab) => {
+    // The voices sheet keeps a draft; close it first so it commits.
+    setSettingsOpen(false);
+    if (tab) setPrefsTab(tab);
+    setPrefsOpen(true);
+  }, []);
   const [railOpen, setRailOpen] = useState(() =>
     readBoolPref(PREF_KEYS.railOpen, false),
   );
@@ -77,9 +91,9 @@ function App() {
   const handleStartFirst = useCallback(
     async (text: string) => {
       const result = await app.handleStartFirst(text);
-      if (result?.needSettings) setSettingsOpen(true);
+      if (result?.needSettings) openPrefs("access");
     },
-    [app.handleStartFirst],
+    [app.handleStartFirst, openPrefs],
   );
 
   useAppKeyboard({
@@ -87,8 +101,14 @@ function App() {
     status: stream.status,
     settingsOpen,
     helpOpen,
+    prefsOpen,
     railOpen,
-    onToggleSettings: () => setSettingsOpen((p) => !p),
+    onToggleSettings: () => {
+      setPrefsOpen(false);
+      setSettingsOpen((p) => !p);
+    },
+    onTogglePrefs: () => (prefsOpen ? setPrefsOpen(false) : openPrefs()),
+    onClosePrefs: () => setPrefsOpen(false),
     onToggleRail: () => setRailOpen((p) => !p),
     onToggleHelp: () => setHelpOpen((p) => !p),
     onExport: app.handleExport,
@@ -244,9 +264,22 @@ function App() {
             </button>
             <button
               type="button"
-              className={`btn btn-chrome${needsKey ? " needs-key" : ""}`}
-              onClick={() => setSettingsOpen((p) => !p)}
-              title="Voices & settings (S)"
+              className={`btn btn-icon${needsKey ? " needs-key" : ""}`}
+              onClick={() => (prefsOpen ? setPrefsOpen(false) : openPrefs(needsKey ? "access" : undefined))}
+              title="Settings (,)"
+              aria-label="Settings"
+              aria-pressed={prefsOpen}
+            >
+              <IconSliders />
+            </button>
+            <button
+              type="button"
+              className="btn btn-chrome"
+              onClick={() => {
+                setPrefsOpen(false);
+                setSettingsOpen((p) => !p);
+              }}
+              title="Voices (S)"
               aria-pressed={settingsOpen}
             >
               <IconVoices />
@@ -288,13 +321,14 @@ function App() {
           thinkingAgentId={upNextId}
           config={config}
           showThoughtsUi={showThoughtsUi}
+          streamMode={streamMode}
           firstDraft={firstDraft}
           onFirstDraftChange={setFirstDraft}
           onStartFirst={handleStartFirst}
           onDeleteMessage={app.handleDeleteMessage}
           hasSavedChats={chats.length > 0}
           needsKey={needsKey}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => openPrefs("access")}
         />
 
         {hasMessages && (
@@ -318,7 +352,7 @@ function App() {
             nextName={nextName}
             nextAccent={upNextId ? agentAccent(upNextId, config) : undefined}
             needsKey={needsKey}
-            onOpenSettings={() => setSettingsOpen(true)}
+            onOpenSettings={() => openPrefs("access")}
             hint={narration}
             onHintChange={setNarration}
             onHintCommit={app.handleNarrationCommit}
@@ -335,10 +369,26 @@ function App() {
           activeCast && app.handleRenameCast(activeCast.id, name)
         }
         onClose={() => setSettingsOpen(false)}
-        showThoughtsUi={showThoughtsUi}
-        onShowThoughtsUiChange={setShowThoughtsUi}
+      />
+
+      <SettingsModal
+        open={prefsOpen}
+        tab={prefsTab}
+        onTab={setPrefsTab}
+        onClose={() => setPrefsOpen(false)}
+        config={config}
+        onSaveConfig={app.handleSaveSettings}
+        streamMode={streamMode}
+        onStreamMode={setStreamMode}
+        showThoughts={showThoughtsUi}
+        onShowThoughts={setShowThoughtsUi}
         fx={fx}
-        onFxChange={setFx}
+        onFx={setFx}
+        zoom={zoom}
+        onZoom={(z) => {
+          setZoom(z);
+          showZoomMsg(z);
+        }}
       />
 
       <ShortcutsModal open={helpOpen} onClose={() => setHelpOpen(false)} />

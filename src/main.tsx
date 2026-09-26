@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { getLogPath, log } from "./lib/log";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "./index.css";
 
 // StrictMode double-mounts effects in dev; with async Tauri `listen()` that

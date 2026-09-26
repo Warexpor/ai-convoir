@@ -9,7 +9,34 @@ export const PREF_KEYS = {
   showThoughts: "ai-conversation-show-thoughts",
   zoom: "ai-conversation-zoom",
   fx: "ai-conversation-fx",
+  streamMode: "ai-conversation-stream-mode",
 } as const;
+
+/**
+ * How replies appear while they are being written.
+ * - live: token by token, finished paragraphs render as markdown
+ * - paragraph: whole paragraphs drop in as they complete
+ * - whole: nothing until the reply is done, then all of it at once
+ */
+export type StreamMode = "live" | "paragraph" | "whole";
+
+export function readStreamMode(): StreamMode {
+  try {
+    const v = localStorage.getItem(PREF_KEYS.streamMode);
+    if (v === "live" || v === "paragraph" || v === "whole") return v;
+  } catch {
+    /* */
+  }
+  return "live";
+}
+
+export function writeStreamMode(v: StreamMode): void {
+  try {
+    localStorage.setItem(PREF_KEYS.streamMode, v);
+  } catch {
+    /* */
+  }
+}
 
 /**
  * Visual effects budget.
@@ -197,4 +224,26 @@ export function missingApiKeys(cfg: InnerState): boolean {
   if (!cfg.ai1_config.api_key || !cfg.ai2_config.api_key) return true;
   if (cfg.bot_count >= 3 && !cfg.ai3_config?.api_key) return true;
   return false;
+}
+
+/** One OpenCode Go key (and the locked model) powers every voice. */
+export function withSharedKey(cfg: InnerState, key: string): InnerState {
+  const apply = (c: AiConfig): AiConfig => ({
+    ...c,
+    api_key: key,
+    api_base_url: OPENCODE_GO_BASE,
+    model: MUSE_SPARK_13_CONTRIBUTOR,
+  });
+  return {
+    ...cfg,
+    ai1_config: apply(cfg.ai1_config),
+    ai2_config: apply(cfg.ai2_config),
+    ai3_config: apply(cfg.ai3_config),
+  };
+}
+
+export function sharedKeyOf(cfg: InnerState): string {
+  return (
+    cfg.ai1_config.api_key || cfg.ai2_config.api_key || cfg.ai3_config.api_key || ""
+  );
 }

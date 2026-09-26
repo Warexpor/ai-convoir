@@ -99,24 +99,38 @@ export function agentLabel(agent: string, config?: InnerState | null): string {
 
 /** Default signature hues per slot. Chrome stays monochrome; color is signal. */
 export const SLOT_COLORS: Record<string, string> = {
-  ai1: "#ff7a3d",
-  ai2: "#6cc4ff",
-  ai3: "#c49bff",
+  ai1: "#c89a86",
+  ai2: "#9cb8d4",
+  ai3: "#aba3cc",
 };
 
-/** Presets tuned to read on the black stage. */
+/** Presets: muted, low-chroma tones so voices tint the stage rather than
+ *  paint it. */
 export const VOICE_PALETTE = [
-  "#ff7a3d",
-  "#6cc4ff",
-  "#c49bff",
-  "#4fe3a5",
-  "#ff6b9a",
-  "#ffc84a",
-  "#2fd4d4",
-  "#b6f05a",
-  "#ff8f6b",
-  "#d4d4d8",
+  "#c89a86",
+  "#9cb8d4",
+  "#aba3cc",
+  "#9fb49c",
+  "#cbb591",
+  "#c79aa8",
+  "#8e949c",
+  "#e4ded4",
 ];
+
+/** Old saturated presets → their muted counterparts, so existing casts
+ *  follow the new palette without a data migration. */
+const LEGACY_COLORS: Record<string, string> = {
+  "#ff7a3d": "#c89a86",
+  "#6cc4ff": "#9cb8d4",
+  "#c49bff": "#aba3cc",
+  "#4fe3a5": "#9fb49c",
+  "#ff6b9a": "#c79aa8",
+  "#ffc84a": "#cbb591",
+  "#2fd4d4": "#9cb8d4",
+  "#b6f05a": "#9fb49c",
+  "#ff8f6b": "#c89a86",
+  "#d4d4d8": "#8e949c",
+};
 
 /** Anything carrying voice configs: live state, a saved chat, a cast. */
 export type VoiceSource = Pick<InnerState, "ai1_config" | "ai2_config" | "ai3_config">;
@@ -135,7 +149,9 @@ export function agentConfig(
 /** Hex color for a voice: the user's pick, else the slot default. */
 export function agentAccent(agent: string, config?: VoiceSource | null): string {
   const custom = agentConfig(agent, config)?.color;
-  if (custom && /^#[0-9a-f]{6}$/i.test(custom)) return custom;
+  if (custom && /^#[0-9a-f]{6}$/i.test(custom)) {
+    return LEGACY_COLORS[custom.toLowerCase()] ?? custom;
+  }
   if (agent === "seed") return "#ededed";
   return SLOT_COLORS[agent] ?? "#8a8a8a";
 }
