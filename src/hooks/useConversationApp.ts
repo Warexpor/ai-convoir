@@ -520,6 +520,7 @@ export function useConversationApp() {
       stream.setMessages([]);
       stream.setTurnCount(0);
       stream.setStatus("Idle");
+      stream.clearFailed();
       setNarration("");
       setFirstDraft(configRef.current?.seed_prompt || "");
       setActiveChatId(null);
@@ -594,8 +595,13 @@ export function useConversationApp() {
     async (mode: ConversationMode) => {
       if (!config) return;
       await pushConfig({ ...config, mode });
+      // Step parks the engine in Paused between lines. Carried into Auto that
+      // reads as a paused run ("Paused", Resume, Stop) nobody paused.
+      if (mode === "auto" && config.mode === "step" && stream.status === "Paused") {
+        await api.stopConversation().catch(() => undefined);
+      }
     },
-    [config, pushConfig],
+    [config, pushConfig, stream.status],
   );
 
   const handleNarrationCommit = useCallback(async (text: string) => {
@@ -721,6 +727,7 @@ export function useConversationApp() {
         setActiveChatIdState(chat.id);
         chatIdRef.current = chat.id;
         stream.setStatus("Idle");
+        stream.clearFailed();
         setNarration("");
       } catch (e) {
         toast.show(String(e));
@@ -753,6 +760,7 @@ export function useConversationApp() {
         stream.setMessages([]);
         stream.setTurnCount(0);
         stream.setStatus("Idle");
+        stream.clearFailed();
         setNarration("");
         setFirstDraft(configRef.current?.seed_prompt || "");
         // reset also clears BE active_chat_id; setActiveChat("") covers the
