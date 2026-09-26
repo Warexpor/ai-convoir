@@ -212,38 +212,19 @@ mod tests {
     }
 
     #[test]
-    fn prepare_binds_brief_length_into_chat_body() {
-        let mut inner = InnerState::default();
-        inner.ai1_config.model = "gpt-4o-mini".into();
-        inner.ai1_config.api_base_url = "https://example.com/v1".into();
-        // Default max_tokens is 2048; Brief must tighten the request body.
-        inner.ai1_config.response_length = crate::state::ResponseLength::Brief;
-        inner.ai1_config.reasoning_effort = crate::state::ReasoningEffort::None;
-        let prep = prepare_turn(&inner, None, 1, true).unwrap();
-        assert_eq!(prep.chat_body["max_tokens"], 128);
-    }
-
-    #[test]
-    fn prepare_binds_all_length_ceilings_into_chat_body() {
+    fn prepare_omits_max_tokens_when_zero_regardless_of_length() {
         let mut inner = InnerState::default();
         inner.ai1_config.model = "gpt-4o-mini".into();
         inner.ai1_config.api_base_url = "https://example.com/v1".into();
         inner.ai1_config.max_tokens = 0;
+        inner.ai1_config.response_length = crate::state::ResponseLength::Brief;
         inner.ai1_config.reasoning_effort = crate::state::ReasoningEffort::None;
-        let cases = [
-            (crate::state::ResponseLength::Brief, 128),
-            (crate::state::ResponseLength::Small, 384),
-            (crate::state::ResponseLength::Normal, 2048),
-            (crate::state::ResponseLength::Long, 4096),
-            (crate::state::ResponseLength::VeryLong, 8192),
-        ];
-        for (len, expect) in cases {
-            inner.ai1_config.response_length = len.clone();
-            let prep = prepare_turn(&inner, None, 1, true).unwrap();
-            assert_eq!(
-                prep.chat_body["max_tokens"], expect,
-                "ceiling mismatch for {len:?}"
-            );
-        }
+        let prep = prepare_turn(&inner, None, 1, true).unwrap();
+        assert!(
+            prep.chat_body.get("max_tokens").is_none(),
+            "response_length must not dock max_tokens when max_tokens==0"
+        );
+        let sys = prep.chat_body["messages"][0]["content"].as_str().unwrap_or("");
+        assert!(!sys.contains("extremely brief"));
     }
 }
