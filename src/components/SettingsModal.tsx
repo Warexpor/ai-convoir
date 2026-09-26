@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
@@ -315,12 +315,59 @@ function SettingsModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Commit the slider after the hand stops moving.
+  // Commit the slider after the hand stops moving. Only a moved slider
+  // commits: the draft is stale whenever the modal is shut, and comparing it
+  // to the config reset a saved delay to 0.8s on every launch.
+  const delayMoved = useRef(false);
+  const configRef = useRef(config);
+  configRef.current = config;
+  // Several drafts can flush in one close; each builds on the one before.
+  const save = useCallback(
+    (next: InnerState) => {
+      configRef.current = next;
+      onSaveConfig(next);
+    },
+    [onSaveConfig],
+  );
+  const commitDelay = useCallback(() => {
+    const cfg = configRef.current;
+    if (!delayMoved.current || !cfg) return;
+    delayMoved.current = false;
+    if (delay !== cfg.delay_ms) save({ ...cfg, delay_ms: delay });
+  }, [delay, save]);
   useEffect(() => {
-    if (!config || delay === config.delay_ms) return;
-    const t = window.setTimeout(() => onSaveConfig({ ...config, delay_ms: delay }), 300);
+    if (!delayMoved.current) return;
+    if (!open) {
+      commitDelay();
+      return;
+    }
+    const t = window.setTimeout(commitDelay, 300);
     return () => window.clearTimeout(t);
-  }, [delay, config, onSaveConfig]);
+  }, [open, commitDelay]);
+
+  // Turn limit and fallback line commit on blur; Esc, Back and the backdrop
+  // close without one, so flush whatever was typed when the modal shuts.
+  const typed = useRef({ turns: false, seed: false });
+  const commitTurns = () => {
+    typed.current.turns = false;
+    const cfg = configRef.current;
+    const n = Math.max(1, Math.min(999, parseInt(turns, 10) || 40));
+    setTurns(String(n));
+    if (cfg && n !== cfg.max_turns) save({ ...cfg, max_turns: n });
+  };
+  const commitSeed = () => {
+    typed.current.seed = false;
+    const cfg = configRef.current;
+    if (cfg && seed !== (cfg.seed_prompt || "")) save({ ...cfg, seed_prompt: seed });
+  };
+  const commitTypedRef = useRef(() => {});
+  commitTypedRef.current = () => {
+    if (typed.current.turns) commitTurns();
+    if (typed.current.seed) commitSeed();
+  };
+  useEffect(() => {
+    if (!open) commitTypedRef.current();
+  }, [open]);
 
   if (!shown) return null;
 
@@ -433,7 +480,10 @@ function SettingsModal({
                     value={delay}
                     disabled={!config}
                     style={{ ["--range" as string]: `${(delay / 4000) * 100}%` }}
-                    onChange={(e) => setDelay(parseInt(e.target.value, 10) || 0)}
+                    onChange={(e) => {
+                      delayMoved.current = true;
+                      setDelay(parseInt(e.target.value, 10) || 0);
+                    }}
                   />
                 </Row>
                 <Row title="Turn limit" hint="Auto mode stops after this many turns.">
@@ -444,12 +494,11 @@ function SettingsModal({
                     max={999}
                     value={turns}
                     disabled={!config}
-                    onChange={(e) => setTurns(e.target.value)}
-                    onBlur={() => {
-                      const n = Math.max(1, Math.min(999, parseInt(turns, 10) || 40));
-                      setTurns(String(n));
-                      if (config && n !== config.max_turns) patch({ max_turns: n });
+                    onChange={(e) => {
+                      typed.current.turns = true;
+                      setTurns(e.target.value);
                     }}
+                    onBlur={commitTurns}
                   />
                 </Row>
                 <Row title="Fallback first line" hint="Used only if you begin without typing." stack>
@@ -459,8 +508,11 @@ function SettingsModal({
                     value={seed}
                     disabled={!config}
                     placeholder="Two strangers share a window on a night train…"
-                    onChange={(e) => setSeed(e.target.value)}
-                    onBlur={() => config && seed !== (config.seed_prompt || "") && patch({ seed_prompt: seed })}
+                    onChange={(e) => {
+                      typed.current.seed = true;
+                      setSeed(e.target.value);
+                    }}
+                    onBlur={commitSeed}
                   />
                 </Row>
               </>
