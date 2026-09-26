@@ -56,6 +56,12 @@ pub struct AiConfig {
     pub reasoning_effort: ReasoningEffort,
     #[serde(default)]
     pub response_length: ResponseLength,
+    /// UI-only: signature color (hex). Empty = slot default.
+    #[serde(default)]
+    pub color: String,
+    /// UI-only: avatar icon ("" = initials, "g:<glyph>", or literal chars).
+    #[serde(default)]
+    pub icon: String,
 }
 
 fn default_agent_name() -> String {
@@ -73,6 +79,8 @@ fn default_agent(name: &str, system_prompt: &str) -> AiConfig {
         max_tokens: 2048,
         reasoning_effort: ReasoningEffort::None,
         response_length: ResponseLength::Normal,
+        color: String::new(),
+        icon: String::new(),
     }
 }
 

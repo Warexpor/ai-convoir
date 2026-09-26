@@ -446,10 +446,6 @@ body,
   display: grid;
   place-items: center;
   font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: #0b0b0c;
-  background: var(--voice);
   opacity: 0.55;
   transition: opacity var(--dur-med);
 }
@@ -850,12 +846,12 @@ body,
   display: grid;
   place-items: center;
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--voice);
-  background: color-mix(in srgb, var(--voice) 11%, #0e0e10);
-  border: 1px solid color-mix(in srgb, var(--voice) 38%, transparent);
   box-shadow: 0 0 24px -8px color-mix(in srgb, var(--voice) 60%, transparent);
+}
+.msg-avatar-you {
+  display: grid;
+  place-items: center;
+  font-weight: 700;
 }
 .msg-spine {
   flex: 1;
@@ -966,7 +962,7 @@ body,
 .msg-seed {
   --voice: #ededed;
 }
-.msg-seed .msg-avatar {
+.msg-seed .msg-avatar-you {
   font-size: 9.5px;
   color: #0b0b0c;
   background: var(--text);
@@ -1538,9 +1534,6 @@ body,
   display: grid;
   place-items: center;
   font-size: 10.5px;
-  font-weight: 700;
-  color: #0b0b0c;
-  background: var(--voice);
 }
 .lineup-text {
   display: flex;
@@ -1929,9 +1922,6 @@ body,
   display: grid;
   place-items: center;
   font-size: 10.5px;
-  font-weight: 700;
-  color: #0b0b0c;
-  background: var(--voice);
 }
 .char-id {
   flex: 1;
@@ -1981,6 +1971,346 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── voice avatars ──────────────────────────────────────────── */
+
+.voice-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  user-select: none;
+}
+.voice-avatar.is-solid {
+  color: var(--voice-ink);
+  background: var(--voice);
+}
+.voice-avatar.is-tint {
+  color: var(--voice);
+  background: color-mix(in srgb, var(--voice) 11%, #0e0e10);
+  border: 1px solid color-mix(in srgb, var(--voice) 38%, transparent);
+}
+.voice-avatar svg {
+  width: 58%;
+  height: 58%;
+}
+.voice-avatar.kind-text {
+  font-size: 1.25em;
+  letter-spacing: 0;
+}
+
+/* ── look editor (Settings → voice card) ────────────────────── */
+
+.look {
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+}
+.look .field {
+  margin-bottom: 12px;
+}
+.look .field:last-child {
+  margin-bottom: 0;
+}
+.swatches,
+.glyphs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.swatch {
+  position: relative;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border-radius: 50%;
+  border: none;
+  background: var(--sw);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  transition: transform var(--dur-fast) var(--ease-spring);
+}
+.swatch:hover {
+  transform: scale(1.12);
+}
+.swatch.on {
+  box-shadow:
+    0 0 0 2px #0e0e10,
+    0 0 0 3.5px var(--sw),
+    0 0 14px var(--sw);
+}
+.swatch.is-default::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.swatch-custom {
+  cursor: pointer;
+  background: conic-gradient(#ff6b6b, #ffc84a, #b6f05a, #2fd4d4, #6cc4ff, #c49bff, #ff6b9a, #ff6b6b);
+  overflow: hidden;
+}
+.swatch-custom.on {
+  background: var(--sw);
+}
+.swatch-custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.glyph-opt,
+.glyph-text {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 600;
+  transition:
+    color var(--dur-fast),
+    border-color var(--dur-fast),
+    background var(--dur-fast);
+}
+.glyph-opt svg {
+  width: 15px;
+  height: 15px;
+}
+.glyph-opt:hover {
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.glyph-opt.on,
+.glyph-text.on {
+  color: var(--voice);
+  border-color: color-mix(in srgb, var(--voice) 60%, transparent);
+  background: color-mix(in srgb, var(--voice) 14%, transparent);
+}
+.look .glyph-text {
+  width: 32px;
+  padding: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+}
+.glyph-text::placeholder {
+  color: var(--faint);
+}
+.look .glyph-text:focus {
+  border-color: var(--line-3);
+}
+.cast-name-field {
+  margin-bottom: 14px;
+}
+
+/* ── casts in the rail ──────────────────────────────────────── */
+
+.rail-new-in {
+  margin-left: auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--faint);
+}
+.voice-dots {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.voice-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: -2px;
+  box-shadow: 0 0 0 1.5px #0b0b0c;
+}
+.voice-dots i:last-child {
+  margin-right: 0;
+}
+.cast-group {
+  margin-top: 6px;
+}
+.cast-group + .cast-group {
+  margin-top: 10px;
+}
+.cast-group-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+  padding-right: 4px;
+}
+.cast-group-head > .chat-rename-input {
+  margin: 0 4px;
+}
+.cast-group-toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  text-align: left;
+  color: var(--faint);
+  transition: background var(--dur-fast);
+}
+.cast-group-toggle:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.cast-group-toggle .icon {
+  transition: transform var(--dur-med) var(--ease-out);
+}
+.cast-group-toggle[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+.cast-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-2);
+}
+.cast-group.is-active .cast-group-name {
+  color: var(--text);
+}
+.cast-group.is-active .cast-group-toggle::after {
+  content: "";
+  order: 3;
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--spark);
+  box-shadow: 0 0 8px var(--spark);
+}
+.cast-group-count {
+  order: 4;
+}
+.cast-group.is-unsorted .cast-group-name {
+  font-weight: 500;
+  color: var(--mute);
+}
+.cast-group-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+.cast-group-actions {
+  display: flex;
+  gap: 2px;
+}
+.cast-group-btn {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--faint);
+  transition:
+    color var(--dur-fast),
+    background var(--dur-fast),
+    opacity var(--dur-fast);
+}
+.cast-group-btn:hover {
+  color: var(--text);
+  background: var(--raise-2);
+}
+.cast-group-btn.is-danger {
+  opacity: 0;
+}
+.cast-group-head:hover .cast-group-btn.is-danger,
+.cast-group-btn.is-danger:focus-visible {
+  opacity: 1;
+}
+.cast-group-btn.is-danger:hover {
+  color: var(--danger);
+}
+.cast-group-list {
+  position: relative;
+  margin-left: 13px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+.cast-group-list .chat-row.active::before {
+  left: -9.5px;
+}
+.cast-group-empty {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  color: var(--faint);
+  transition: color var(--dur-fast);
+}
+.cast-group-empty:hover {
+  color: var(--text);
+}
+.cast-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border: 1px dashed var(--line-2);
+  border-radius: 11px;
+  background: none;
+  font-size: 12.5px;
+  color: var(--mute);
+  transition:
+    color var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.cast-add:hover {
+  color: var(--text);
+  border-color: var(--line-3);
+}
+.cast-create {
+  margin-top: 14px;
+  padding: 0 2px;
+}
+.cast-create p {
+  margin: 6px 4px 0;
+  font-size: 11px;
+  color: var(--faint);
+}
+.topbar-cast {
+  color: var(--text-2);
+}
+.topbar-cast::after {
+  content: " · ";
+  color: var(--faint);
 }
 
 /* ── markdown ───────────────────────────────────────────────── */

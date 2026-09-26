@@ -442,6 +442,8 @@ mod tests {
             max_tokens: 256,
             reasoning_effort: effort,
             response_length: ResponseLength::Normal,
+            color: String::new(),
+            icon: String::new(),
         }
     }
 

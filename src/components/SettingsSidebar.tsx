@@ -9,12 +9,15 @@ import type {
 import {
   MUSE_SPARK_13_CONTRIBUTOR,
   OPENCODE_GO_BASE,
+  SLOT_COLORS,
+  VOICE_PALETTE,
   agentAccent,
 } from "../types";
 import { fetchModels } from "../lib/api";
 import { defaultConfig } from "../lib/config";
 import { deleteApi, listApis, type SavedApi } from "../lib/storage";
 import { IconChevron } from "./Marks";
+import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 
 interface Props {
   open: boolean;
@@ -23,6 +26,115 @@ interface Props {
   onClose: () => void;
   showThoughtsUi: boolean;
   onShowThoughtsUiChange: (v: boolean) => void;
+  /** Active cast (group) name; null when the thread has no cast. */
+  castName?: string | null;
+  onRenameCast?: (name: string) => void;
+}
+
+/** Color + avatar picker for one voice. */
+function LookEditor({
+  slot,
+  accent,
+  config,
+  onChange,
+}: {
+  slot: string;
+  accent: string;
+  config: AiConfig;
+  onChange: (c: AiConfig) => void;
+}) {
+  const icon = config.icon || "";
+  const isText = !!icon && !icon.startsWith("g:");
+  const [text, setText] = useState(isText ? icon : "");
+  const current = accent.toLowerCase();
+  const customColor = !VOICE_PALETTE.includes(current);
+
+  return (
+    <div className="look">
+      <div className="field">
+        <label>Color</label>
+        <div className="swatches" role="radiogroup" aria-label="Voice color">
+          {VOICE_PALETTE.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              role="radio"
+              aria-checked={current === hex}
+              aria-label={hex}
+              className={`swatch${current === hex ? " on" : ""}${
+                SLOT_COLORS[slot] === hex ? " is-default" : ""
+              }`}
+              style={{ ["--sw" as string]: hex }}
+              title={SLOT_COLORS[slot] === hex ? `${hex} (default)` : hex}
+              onClick={() => onChange({ ...config, color: hex })}
+            />
+          ))}
+          <label
+            className={`swatch swatch-custom${customColor ? " on" : ""}`}
+            style={customColor ? { ["--sw" as string]: accent } : undefined}
+            title="Custom color"
+          >
+            <input
+              type="color"
+              value={accent}
+              aria-label="Custom color"
+              onChange={(e) => onChange({ ...config, color: e.target.value })}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="field">
+        <label>Avatar</label>
+        <div className="glyphs" role="radiogroup" aria-label="Voice avatar">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!icon}
+            className={`glyph-opt${!icon ? " on" : ""}`}
+            title="Initials"
+            onClick={() => {
+              setText("");
+              onChange({ ...config, icon: "" });
+            }}
+          >
+            Aa
+          </button>
+          {GLYPH_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={icon === `g:${id}`}
+              aria-label={id}
+              title={id}
+              className={`glyph-opt${icon === `g:${id}` ? " on" : ""}`}
+              onClick={() => {
+                setText("");
+                onChange({ ...config, icon: `g:${id}` });
+              }}
+            >
+              <svg viewBox="0 0 16 16" fill="currentColor">
+                {GLYPHS[id]}
+              </svg>
+            </button>
+          ))}
+          <input
+            className={`glyph-text${isText ? " on" : ""}`}
+            value={text}
+            placeholder="✎"
+            maxLength={4}
+            aria-label="Custom avatar characters"
+            title="Type 1–2 characters or an emoji"
+            onChange={(e) => {
+              const v = [...e.target.value].slice(0, 2).join("");
+              setText(v);
+              onChange({ ...config, icon: v.trim() });
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function withSharedKey(cfg: InnerState, key: string): InnerState {
@@ -41,11 +153,13 @@ function withSharedKey(cfg: InnerState, key: string): InnerState {
 }
 
 function CharCard({
+  slot,
   accent,
   config,
   onChange,
   defaultOpen,
 }: {
+  slot: string;
   accent: string;
   config: AiConfig;
   onChange: (c: AiConfig) => void;
@@ -65,9 +179,12 @@ function CharCard({
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span className="char-avatar">
-          {(config.name || "?").slice(0, 2).toUpperCase()}
-        </span>
+        <VoiceAvatar
+          className="char-avatar"
+          name={config.name || "?"}
+          icon={config.icon}
+          color={accent}
+        />
         <span className="char-id">
           <span className="char-name">{config.name || "Voice"}</span>
           <span className="char-bio">
@@ -78,6 +195,12 @@ function CharCard({
       </button>
       {open && (
         <div className="char-body">
+          <LookEditor
+            slot={slot}
+            accent={accent}
+            config={config}
+            onChange={onChange}
+          />
           <div className="field">
             <label>Name</label>
             <input
@@ -174,7 +297,11 @@ export default function SettingsSidebar({
   onClose,
   showThoughtsUi,
   onShowThoughtsUiChange,
+  castName = null,
+  onRenameCast,
 }: Props) {
+  const [castDraft, setCastDraft] = useState(castName ?? "");
+  useEffect(() => setCastDraft(castName ?? ""), [castName]);
   const ready = !!config;
   const [local, setLocal] = useState<InnerState>(() => config ?? defaultConfig());
   const [apis, setApis] = useState<SavedApi[]>(() => listApis());
@@ -374,21 +501,46 @@ export default function SettingsSidebar({
             </button>
           </div>
         </h3>
+        {castName !== null ? (
+          <div className="field cast-name-field">
+            <label htmlFor="cast-name">Cast name</label>
+            <input
+              id="cast-name"
+              value={castDraft}
+              onChange={(e) => setCastDraft(e.target.value)}
+              onBlur={() => castDraft.trim() && onRenameCast?.(castDraft)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+            />
+            <p className="field-hint">
+              Edits here become the cast&rsquo;s look. New threads in this cast
+              inherit them; older threads keep theirs.
+            </p>
+          </div>
+        ) : (
+          <p className="field-hint cast-name-field">
+            This thread isn&rsquo;t in a cast, so edits only affect it.
+          </p>
+        )}
         <div className="voice-stack">
           <CharCard
-            accent={agentAccent("ai1")}
+            slot="ai1"
+            accent={agentAccent("ai1", local)}
             config={local.ai1_config}
             onChange={(c) => setLocal({ ...local, ai1_config: c })}
             defaultOpen
           />
           <CharCard
-            accent={agentAccent("ai2")}
+            slot="ai2"
+            accent={agentAccent("ai2", local)}
             config={local.ai2_config}
             onChange={(c) => setLocal({ ...local, ai2_config: c })}
           />
           {botCount === 3 && (
             <CharCard
-              accent={agentAccent("ai3")}
+              slot="ai3"
+              accent={agentAccent("ai3", local)}
               config={local.ai3_config}
               onChange={(c) => setLocal({ ...local, ai3_config: c })}
             />
