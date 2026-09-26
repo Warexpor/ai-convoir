@@ -83,10 +83,11 @@ pub async fn start_conversation(
         }
     }
 
-    // Fresh start
-    state_arc.pause_flag.store(false, Ordering::Relaxed);
+    // Fresh start — bump epoch so any lingering in-flight stream cannot commit.
+    state_arc.bump_stream_epoch();
+    state_arc.pause_flag.store(false, Ordering::Release);
     state_arc.clear_reset_if_idle();
-    state_arc.step_once.store(false, Ordering::Relaxed);
+    state_arc.step_once.store(false, Ordering::Release);
 
     {
         let mut inner = state_arc.inner.lock().map_err(|e| e.to_string())?;
@@ -175,9 +176,14 @@ pub async fn step_conversation(
     state_arc.pause_flag.store(false, Ordering::Relaxed);
 
     tracing::info!(target: "commands", "step_conversation");
+    let turn = state_arc
+        .inner
+        .lock()
+        .map(|g| g.turn_count)
+        .unwrap_or(0);
     let _ = app_handle.emit(
         "status-update",
-        serde_json::json!({ "status": "Running", "turn": state_arc.inner.lock().unwrap().turn_count }),
+        serde_json::json!({ "status": "Running", "turn": turn }),
     );
 
     // Always spawn — loop exits when idle; multiple loops are ok if they exit on idle
@@ -209,7 +215,7 @@ pub async fn reset_conversation(
 ) -> Result<(), String> {
     let arc: &Arc<AppState> = &state;
     arc.bump_stream_epoch();
-    arc.reset_flag.store(true, Ordering::Relaxed);
+    arc.reset_flag.store(true, Ordering::Release);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
 
@@ -271,7 +277,7 @@ pub async fn load_transcript(
     let arc: &Arc<AppState> = &state;
     let state_arc = Arc::clone(arc);
     arc.bump_stream_epoch();
-    arc.reset_flag.store(true, Ordering::Relaxed);
+    arc.reset_flag.store(true, Ordering::Release);
     arc.pause_flag.store(true, Ordering::Relaxed);
     arc.step_once.store(false, Ordering::Relaxed);
 
@@ -607,9 +613,24 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
+
+fn restore_narration_if_idle(state: &Arc<AppState>, narration: &Option<String>) {
+    let Some(n) = narration.as_ref() else {
+        return;
+    };
+    if n.is_empty() {
+        return;
+    }
+    if let Ok(mut inner) = state.inner.lock() {
+        if inner.pending_narration.is_empty() {
+            inner.pending_narration = n.clone();
+        }
+    }
+}
+
 async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
     // Returns false if should stop loop entirely
-    if state.reset_flag.load(Ordering::Relaxed) {
+    if state.reset_flag.load(Ordering::Acquire) {
         return false;
     }
 
@@ -619,7 +640,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         return false;
     }
 
-    let epoch_at_start = state.stream_epoch.load(Ordering::Relaxed);
+    let epoch_at_start = state.stream_epoch.load(Ordering::Acquire);
     let created_at = now_ms();
 
     let prepared = {
@@ -636,9 +657,15 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
                 Some(n)
             }
         };
-        match prepare_turn(&inner, narration, created_at, true) {
+        match prepare_turn(&inner, narration.clone(), created_at, true) {
             Ok(p) => p,
             Err(e) => {
+                // Prepare rejected (e.g. max turns) — put the one-shot note back.
+                if let Some(n) = narration {
+                    if inner.pending_narration.is_empty() {
+                        inner.pending_narration = n;
+                    }
+                }
                 tracing::info!(target: "harness", error = %e, "prepare stopped");
                 machine.stop();
                 return false;
@@ -662,16 +689,27 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         phase_end: String::new(),
     };
 
-    if let Err(e) = machine.begin_stream() {
-        tracing::warn!(target: "harness", error = %e, "begin_stream");
-        return false;
-    }
-
     let cancel = llm::StreamCancel {
         reset: &state.reset_flag,
         epoch: &state.stream_epoch,
         epoch_at_start,
     };
+
+    // Epoch may have bumped while we held the prepare lock (stop/reset/load).
+    if cancel.is_cancelled() {
+        machine.abort_stream();
+        restore_narration_if_idle(state, &prepared.narration);
+        metrics.phase_end = TurnPhase::Stopped.to_string();
+        log_turn_metrics(&metrics);
+        emit_harness_metrics(app_handle, &metrics);
+        return false;
+    }
+
+    if let Err(e) = machine.begin_stream() {
+        tracing::warn!(target: "harness", error = %e, "begin_stream");
+        restore_narration_if_idle(state, &prepared.narration);
+        return false;
+    }
 
     let result = llm::stream_prepared(&prepared, app_handle, &cancel).await;
 
@@ -679,6 +717,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         Ok(outcome) => {
             if cancel.is_cancelled() {
                 machine.abort_stream();
+                restore_narration_if_idle(state, &prepared.narration);
                 metrics.phase_end = TurnPhase::Stopped.to_string();
                 metrics.ttft_ms = outcome.ttft_ms;
                 metrics.stream_duration_ms = Some(outcome.stream_duration_ms);
@@ -690,6 +729,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
             if let Err(e) = machine.begin_commit() {
                 tracing::warn!(target: "harness", error = %e, "begin_commit");
+                restore_narration_if_idle(state, &prepared.narration);
                 return false;
             }
 
@@ -713,7 +753,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             };
             let chat_id = prepared.chat_id.clone();
 
-            if let Ok(mut inner) = state.inner.lock() {
+            let committed = if let Ok(mut inner) = state.inner.lock() {
                 if !cancel.is_cancelled() {
                     if !chat_id.is_empty() {
                         let db_path = state
@@ -754,17 +794,32 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
 
                     let _ = machine.to_next();
                     metrics.phase_end = machine.phase().to_string();
+                    true
                 } else {
                     machine.abort_stream();
                     metrics.phase_end = TurnPhase::Stopped.to_string();
+                    false
                 }
+            } else {
+                machine.abort_stream();
+                metrics.phase_end = TurnPhase::Error.to_string();
+                false
+            };
+
+            if !committed {
+                restore_narration_if_idle(state, &prepared.narration);
             }
 
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
+
+            if !committed {
+                return false;
+            }
         }
         Err(e) if e == llm::STREAM_ABORTED => {
             machine.abort_stream();
+            restore_narration_if_idle(state, &prepared.narration);
             metrics.phase_end = TurnPhase::Stopped.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -782,6 +837,8 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
         }
         Err(e) => {
             machine.fail();
+            // Keep narration on API failure so the user can retry the same note.
+            restore_narration_if_idle(state, &prepared.narration);
             metrics.phase_end = TurnPhase::Error.to_string();
             log_turn_metrics(&metrics);
             emit_harness_metrics(app_handle, &metrics);
@@ -800,7 +857,7 @@ async fn run_one_turn(state: &Arc<AppState>, app_handle: &AppHandle) -> bool {
             if let Ok(mut inner) = state.inner.lock() {
                 inner.status = AppStatus::Paused;
             }
-            state.pause_flag.store(true, Ordering::Relaxed);
+            state.pause_flag.store(true, Ordering::Release);
             let _ = app_handle.emit(
                 "status-update",
                 serde_json::json!({ "status": "Paused", "turn": prepared.turn }),
@@ -844,7 +901,9 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Max turns is Auto-only — Step can keep going.
         {
-            let inner = state.inner.lock().unwrap();
+            let Ok(inner) = state.inner.lock() else {
+                break;
+            };
             if inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns {
                 break;
             }
@@ -854,7 +913,9 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
         }
 
         let step_mode = {
-            let inner = state.inner.lock().unwrap();
+            let Ok(inner) = state.inner.lock() else {
+                break;
+            };
             inner.mode == ConversationMode::Step || state.step_once.load(Ordering::Relaxed)
         };
 
@@ -877,7 +938,9 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
             }
             // Stay in loop waiting for next step, or exit if auto-maxed
             let done = {
-                let inner = state.inner.lock().unwrap();
+                let Ok(inner) = state.inner.lock() else {
+                    break;
+                };
                 inner.mode != ConversationMode::Step && inner.turn_count >= inner.max_turns
             };
             if done {
@@ -888,7 +951,9 @@ async fn run_conversation_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Auto delay
         let delay = {
-            let inner = state.inner.lock().unwrap();
+            let Ok(inner) = state.inner.lock() else {
+                break;
+            };
             inner.delay_ms
         };
         if delay > 0 {

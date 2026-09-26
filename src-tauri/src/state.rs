@@ -214,13 +214,14 @@ impl AppState {
     pub fn clear_reset_if_idle(&self) {
         if !self.loop_active.load(std::sync::atomic::Ordering::SeqCst) {
             self.reset_flag
-                .store(false, std::sync::atomic::Ordering::Relaxed);
+                .store(false, std::sync::atomic::Ordering::Release);
         }
     }
 
     pub fn bump_stream_epoch(&self) -> u64 {
+        // AcqRel: streaming tasks must observe the bump before commit races.
         self.stream_epoch
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
             + 1
     }
 }
