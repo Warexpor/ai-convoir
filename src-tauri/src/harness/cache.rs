@@ -184,6 +184,7 @@ mod tests {
             response_length: ResponseLength::Normal,
             color: String::new(),
             icon: String::new(),
+            provider: String::new(),
         }
     }
 

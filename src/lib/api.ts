@@ -22,6 +22,7 @@ import {
   setEngineSession,
 } from "./browserEngine";
 import { isTauriRuntime } from "./openaiCompat";
+import { withProviderKeys } from "./config";
 
 /** True when running inside the Tauri webview (vs Vite browser preview). */
 export function isTauri(): boolean {
@@ -62,7 +63,9 @@ export async function getConfig(): Promise<InnerState | null> {
   return tryInvoke<InnerState>("get_config");
 }
 
-export async function updateConfig(cfg: InnerState): Promise<void> {
+/** Sends the config to the engine with provider keys filled in at the last moment. */
+export async function updateConfig(config: InnerState): Promise<void> {
+  const cfg = withProviderKeys(config);
   if (!isTauri()) {
     setEngineConfig(cfg);
     return;

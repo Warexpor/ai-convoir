@@ -6,7 +6,9 @@ import {
   defaultConfig,
   loadPersistedConfig,
   mergePersisted,
+  legacyKeyOf,
   missingApiKeys,
+  missingProviderNames,
   normalizeConfig,
   persistConfig,
 } from "../lib/config";
@@ -36,6 +38,12 @@ import {
   type Cast,
 } from "../lib/casts";
 import { agentLabel } from "../types";
+import {
+  hasProviderKey,
+  loadProviderKeys,
+  onProviderKeysChanged,
+  setProviderKey,
+} from "../lib/secrets";
 import { useStreamBridge } from "./useStreamBridge";
 import { useToast } from "./useToast";
 
@@ -128,6 +136,18 @@ export function useConversationApp() {
   messagesRef.current = stream.messages;
   configRef.current = config;
   chatIdRef.current = activeChatId;
+
+  // Key edits change readiness and the engine's runtime keys, not the config.
+  const [, setKeysTick] = useState(0);
+  useEffect(
+    () =>
+      onProviderKeysChanged(() => {
+        setKeysTick((n) => n + 1);
+        const cfg = configRef.current;
+        if (cfg) void api.updateConfig(cfg).catch(() => {});
+      }),
+    [],
+  );
 
   const pushConfig = useCallback(async (cfg: InnerState) => {
     const n = normalizeConfig(cfg);
@@ -274,8 +294,16 @@ export function useConversationApp() {
           api.getMessages(),
           api.getStatus(),
           api.getConfig(),
+          loadProviderKeys(),
         ]);
         if (cancelled) return;
+
+        // One-time upgrade: the single per-voice key moves into the provider
+        // key store before normalizeConfig strips keys from config.
+        const legacy = legacyKeyOf(cfg) ?? legacyKeyOf(loadPersistedConfig());
+        if (legacy && !hasProviderKey(legacy.provider)) {
+          await setProviderKey(legacy.provider, legacy.key, { silent: true });
+        }
 
         // Capture after first await; hydrate may already have swapped SoT in.
         let resume = msgs.length > 0 ? undefined : bootResume.current;
@@ -313,6 +341,8 @@ export function useConversationApp() {
         else {
           setConfig(merged);
           await api.updateConfig(merged);
+          // Rewrites any legacy copy that still carried the key.
+          if (legacy) persistConfig(merged);
         }
         if (cancelled) return;
 
@@ -723,8 +753,9 @@ export function useConversationApp() {
         /* quota */
       }
       if (missingApiKeys(config)) {
+        const names = missingProviderNames(config);
         toast.show(
-          "Add your OpenCode Go key in Settings, then press Begin.",
+          `Connect ${names.join(" and ") || "a provider"} in Settings → Providers, then press Begin.`,
           6000,
         );
         return { needSettings: true as const };
