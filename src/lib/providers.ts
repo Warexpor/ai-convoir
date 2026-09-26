@@ -5,6 +5,8 @@
  * voice, so each voice only chooses a provider + model.
  */
 
+import type { ReasoningEffort } from "../types";
+
 export type ProviderId =
   | "opencode_go"
   | "opencode_zen"
@@ -43,7 +45,11 @@ export interface ProviderDef {
   signInLabel?: string;
   /** Shown under the provider in settings. */
   note?: string;
+  /** Thinking levels the API accepts; defaults to off/low/medium/high. */
+  efforts?: ReasoningEffort[];
 }
+
+const OPENAI_EFFORTS: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high", "xhigh"];
 
 export const PROVIDERS: ProviderDef[] = [
   {
@@ -69,6 +75,7 @@ export const PROVIDERS: ProviderDef[] = [
     keyUrl: "https://platform.openai.com/api-keys",
     keyHint: "sk-…",
     models: ["gpt-5", "gpt-5-mini", "gpt-4.1"],
+    efforts: OPENAI_EFFORTS,
   },
   {
     id: "anthropic",
@@ -85,6 +92,7 @@ export const PROVIDERS: ProviderDef[] = [
     keyUrl: "https://openrouter.ai/keys",
     keyHint: "sk-or-…",
     models: ["openrouter/auto"],
+    efforts: ["none", "minimal", "low", "medium", "high"],
     signIn: "key",
     signInLabel: "Sign in with OpenRouter",
   },
@@ -110,6 +118,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "ChatGPT (Codex sign-in)",
     baseUrl: "https://chatgpt.com/backend-api/codex",
     models: ["gpt-5.5", "gpt-5.4-mini", "gpt-5"],
+    efforts: OPENAI_EFFORTS,
     signIn: "tokens",
     signInLabel: "Sign in with ChatGPT",
     note: "Uses your ChatGPT Plus/Pro plan. Unofficial for third-party apps and may break.",
@@ -185,3 +194,19 @@ export function baseUrlFor(provider: string | undefined, ownBase: string): strin
   if (!p || p.id === "custom") return ownBase.trim();
   return p.baseUrl;
 }
+
+export const DEFAULT_EFFORTS: ReasoningEffort[] = ["none", "low", "medium", "high"];
+
+/** Thinking levels offered for a provider. */
+export function effortsFor(provider: string | undefined): ReasoningEffort[] {
+  return getProvider(provider)?.efforts ?? DEFAULT_EFFORTS;
+}
+
+export const EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  none: "Off",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Max",
+};

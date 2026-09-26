@@ -719,7 +719,11 @@ body,
   font-size: 12.5px;
   font-weight: 500;
   color: var(--mute);
+  cursor: pointer;
   transition: color var(--dur-med);
+}
+.cast-chip:hover {
+  color: var(--text);
 }
 .cast-avatar {
   width: 22px;
@@ -1714,6 +1718,212 @@ body,
   background: transparent;
 }
 
+/* ── dropdown ───────────────────────────────────────────────── */
+
+.dd-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: rgba(0, 0, 0, 0.35);
+  font-size: 13.5px;
+  color: var(--text);
+  text-align: left;
+  transition:
+    border-color var(--dur-fast),
+    background var(--dur-fast),
+    box-shadow var(--dur-fast);
+}
+.dd-trigger:hover {
+  border-color: var(--line-3);
+  background: rgba(255, 255, 255, 0.03);
+}
+.dd-trigger.is-open {
+  border-color: var(--line-3);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+}
+.dd-trigger.dd-sm {
+  width: auto;
+  height: 30px;
+  font-size: 12.5px;
+  padding: 0 8px 0 10px;
+}
+.dd-value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-value.is-placeholder {
+  color: var(--faint);
+}
+.dd-trigger > .icon {
+  color: var(--mute);
+  transition: transform var(--dur-med) var(--ease-out);
+}
+.dd-trigger.is-open > .icon {
+  transform: rotate(180deg);
+}
+
+.dd-pop,
+.app > .dd-pop {
+  position: fixed;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid;
+  border-color: var(--glass-edge);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02) 45%),
+    rgba(20, 20, 20, 0.86);
+  box-shadow: var(--glass-lip), 0 18px 48px -12px rgba(0, 0, 0, 0.8);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  transform-origin: top center;
+  animation: dd-in 0.22s var(--ease-out) both;
+}
+.dd-pop.is-up {
+  transform-origin: bottom center;
+  flex-direction: column-reverse;
+}
+.dd-pop.is-leaving {
+  animation: dd-out 0.16s var(--ease-soft) both;
+  pointer-events: none;
+}
+@keyframes dd-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.97);
+  }
+}
+@keyframes dd-out {
+  to {
+    opacity: 0;
+    transform: translate3d(0, -4px, 0) scale(0.97);
+  }
+}
+.dd-pop.is-up {
+  animation-name: dd-in-up;
+}
+.dd-pop.is-up.is-leaving {
+  animation-name: dd-out-up;
+}
+@keyframes dd-in-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.97);
+  }
+}
+@keyframes dd-out-up {
+  to {
+    opacity: 0;
+    transform: translate3d(0, 4px, 0) scale(0.97);
+  }
+}
+[data-fx="lite"] .dd-pop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: #171717;
+}
+.dd-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+.dd-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--dur-fast),
+    color var(--dur-fast);
+}
+.dd-opt.is-active {
+  background: var(--raise-2);
+  color: var(--text);
+}
+.dd-opt.is-on {
+  color: var(--text);
+}
+.dd-opt-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dd-opt-label em {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+.dd-opt.is-custom {
+  color: var(--mute);
+}
+.dd-opt-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--faint);
+}
+.dd-check {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  flex-shrink: 0;
+}
+.dd-empty {
+  padding: 12px 10px;
+  font-size: 12.5px;
+  color: var(--faint);
+}
+.dd-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  height: 36px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+}
+.dd-pop.is-up .dd-search {
+  margin: 4px 0 0;
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+.dd-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text);
+}
+.dd-search input::placeholder {
+  color: var(--faint);
+}
+
 /* ── empty state ────────────────────────────────────────────── */
 
 .empty {
@@ -1756,22 +1966,6 @@ body,
 .empty-hero > :nth-child(6) {
   animation-delay: 0.3s;
 }
-.kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  margin: 0 0 22px;
-  padding: 6px 12px 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--chip-fill);
-  box-shadow: var(--chip-lip);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--text-2);
-}
 .empty-title {
   margin: 0 0 30px;
   font-family: var(--serif);
@@ -1803,6 +1997,7 @@ body,
 }
 .lineup {
   width: 100%;
+  --i: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
@@ -1810,12 +2005,21 @@ body,
   padding: 0;
   list-style: none;
 }
+.lineup > li {
+  display: flex;
+  min-width: 0;
+}
 .lineup-card {
   position: relative;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 11px;
   padding: 13px 14px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   border-radius: var(--r-lg);
   border: 1px solid;
   border-color: var(--glass-edge);
@@ -1833,6 +2037,21 @@ body,
 }
 .lineup-card:hover {
   transform: translate3d(0, -3px, 0);
+}
+.lineup-card > .icon {
+  align-self: center;
+  margin-left: auto;
+  color: var(--faint);
+  opacity: 0;
+  transform: translate3d(-4px, 0, 0);
+  transition:
+    opacity var(--dur-med) var(--ease-out),
+    transform var(--dur-med) var(--ease-out);
+}
+.lineup-card:hover > .icon,
+.lineup-card:focus-visible > .icon {
+  opacity: 1;
+  transform: none;
 }
 .lineup-card:hover .lineup-avatar {
   transform: rotate(-8deg) scale(1.08);
@@ -1876,6 +2095,16 @@ body,
   font-weight: 600;
   color: var(--text);
 }
+.lineup-text .lineup-model {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .lineup-text span {
   font-size: 12px;
   line-height: 1.4;
@@ -1912,7 +2141,8 @@ body,
   min-height: 104px;
   max-height: 40vh;
   padding: 18px 20px 8px;
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
   background: none;
   border: none;
   outline: none;
@@ -2154,7 +2384,9 @@ body,
 }
 .field textarea {
   min-height: 84px;
-  resize: vertical;
+  max-height: 320px;
+  resize: none;
+  field-sizing: content;
   line-height: 1.5;
 }
 .field input:focus,
@@ -2313,8 +2545,55 @@ body,
   display: flex;
   flex-direction: column;
   padding: 4px 12px 14px;
-  transform-origin: top;
-  animation: unfold 0.5s var(--spring-soft) both;
+}
+.char-card .collapse-inner > .char-body {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+  transition:
+    opacity 0.22s var(--ease-soft),
+    transform 0.4s var(--ease-out);
+}
+.char-card.is-open .collapse-inner > .char-body {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.06s;
+}
+
+/* Height disclosure: animates grid rows 0fr → 1fr. */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.36s var(--ease-out);
+}
+.collapse.is-open {
+  grid-template-rows: 1fr;
+}
+.collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.disclose {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-size: 12.5px;
+  color: var(--mute);
+  transition: color var(--dur-fast);
+}
+.disclose:hover,
+.disclose.is-open {
+  color: var(--text);
+}
+.disclose .icon {
+  transition: transform var(--dur-med) var(--ease-out);
+}
+.disclose.is-open .icon {
+  transform: rotate(90deg);
 }
 .char-body .field {
   margin-bottom: 12px;

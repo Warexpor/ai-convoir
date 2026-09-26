@@ -1,4 +1,4 @@
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ResponseLength = "brief" | "small" | "normal" | "long" | "very_long";
 export type ConversationMode = "auto" | "step";
 export type AppStatus = "Idle" | "Running" | "Paused";

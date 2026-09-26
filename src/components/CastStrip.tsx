@@ -9,10 +9,12 @@ interface Props {
   /** Agent id whose turn is next (or in flight while running). */
   upNext: string | null;
   hasMessages: boolean;
+  /** Clicking a voice opens its editor. */
+  onEditVoice?: (id: string) => void;
 }
 
 /** The cast, on stage: who is in the room and whose line is next. */
-function CastStrip({ config, status, upNext, hasMessages }: Props) {
+function CastStrip({ config, status, upNext, hasMessages, onEditVoice }: Props) {
   const ids = activeAgentIds(config);
   const running = status === "Running";
   const listRef = useRef<HTMLOListElement>(null);
@@ -82,8 +84,9 @@ function CastStrip({ config, status, upNext, hasMessages }: Props) {
                 ? `${name} is writing`
                 : state === "next"
                   ? `${name} speaks next`
-                  : name
+                  : `Edit ${name}`
             }
+            onClick={() => onEditVoice?.(id)}
           >
             <VoiceAvatar
               className="cast-avatar"
