@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   AiConfig,
   AppStatus,
@@ -21,19 +20,19 @@ import {
   setEngineConfig,
   setEngineSession,
 } from "./browserEngine";
-import { isTauriRuntime } from "./openaiCompat";
+import { invoke, isDesktopRuntime } from "./ipc";
 import { withProviderKeys } from "./config";
 
-/** True when running inside the Tauri webview (vs Vite browser preview). */
-export function isTauri(): boolean {
-  return isTauriRuntime();
+/** True when running inside the Electron app (vs Vite browser preview). */
+export function isDesktop(): boolean {
+  return isDesktopRuntime();
 }
 
 async function tryInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<T | null> {
-  if (!isTauri()) return null;
+  if (!isDesktop()) return null;
   try {
     return await invoke<T>(cmd, args);
   } catch {
@@ -50,12 +49,12 @@ async function invokeCmd<T>(
 }
 
 export async function getMessages(): Promise<Message[]> {
-  if (!isTauri()) return getEngineMessages();
+  if (!isDesktop()) return getEngineMessages();
   return (await tryInvoke<Message[]>("get_messages")) ?? [];
 }
 
 export async function getStatus(): Promise<[AppStatus, number]> {
-  if (!isTauri()) return getEngineStatus();
+  if (!isDesktop()) return getEngineStatus();
   return (await tryInvoke<[AppStatus, number]>("get_status")) ?? ["Idle", 0];
 }
 
@@ -66,7 +65,7 @@ export async function getConfig(): Promise<InnerState | null> {
 /** Sends the config to the engine with provider keys filled in at the last moment. */
 export async function updateConfig(config: InnerState): Promise<void> {
   const cfg = withProviderKeys(config);
-  if (!isTauri()) {
+  if (!isDesktop()) {
     setEngineConfig(cfg);
     return;
   }
@@ -83,7 +82,7 @@ export async function updateConfig(config: InnerState): Promise<void> {
 }
 
 export async function startConversation(): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineStart();
     return;
   }
@@ -91,7 +90,7 @@ export async function startConversation(): Promise<void> {
 }
 
 export async function stepConversation(): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineStep();
     return;
   }
@@ -99,7 +98,7 @@ export async function stepConversation(): Promise<void> {
 }
 
 export async function pauseConversation(): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await enginePause();
     return;
   }
@@ -107,7 +106,7 @@ export async function pauseConversation(): Promise<void> {
 }
 
 export async function stopConversation(): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineStop();
     return;
   }
@@ -115,7 +114,7 @@ export async function stopConversation(): Promise<void> {
 }
 
 export async function resetConversation(): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineReset();
     return;
   }
@@ -127,7 +126,7 @@ export async function loadTranscript(args: {
   turnCount: number;
   chatId: string;
 }): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineLoadTranscript(args.messages, args.turnCount, args.chatId);
     return;
   }
@@ -139,7 +138,7 @@ export async function loadTranscript(args: {
 }
 
 export async function setActiveChat(chatId: string): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     setEngineSession(chatId);
     return;
   }
@@ -147,68 +146,22 @@ export async function setActiveChat(chatId: string): Promise<void> {
 }
 
 export async function setNarration(text: string): Promise<void> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     await engineSetNarration(text);
     return;
   }
   await invokeCmd("set_narration", { text });
 }
 
-/** How export finished — toast must not claim a filesystem path after Web Share. */
+/** How export finished: browser download (preview) or a file on disk (desktop). */
 export type ExportOutcome =
-  | { kind: "shared" }
-  | { kind: "share-dismissed" }
   | { kind: "downloaded"; name: string }
   | { kind: "saved"; path: string };
-
-/**
- * Mobile-first gate for Web Share. Desktop Chrome often exposes `navigator.share`
- * but Tauri/download is the better primary path there; share first on touch /
- * coarse pointer / narrow viewport / mobile UA.
- */
-export function prefersWebShare(): boolean {
-  if (typeof navigator === "undefined" || typeof navigator.share !== "function") {
-    return false;
-  }
-  const coarse =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(pointer: coarse)").matches;
-  const touch =
-    typeof navigator.maxTouchPoints === "number" && navigator.maxTouchPoints > 0;
-  const narrow =
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia("(max-width: 900px)").matches;
-  const uaMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
-  return coarse || touch || narrow || uaMobile;
-}
 
 export async function exportChat(content: string): Promise<ExportOutcome> {
   const name = `AI-ConvoIR-${new Date().toISOString().slice(0, 10)}.md`;
 
-  // Mobile / touch: Web Share first. Desktop keeps Tauri / download below.
-  if (prefersWebShare()) {
-    try {
-      const file = new File([content], name, { type: "text/markdown" });
-      const canFiles =
-        typeof navigator.canShare !== "function" || navigator.canShare({ files: [file] });
-      if (canFiles) {
-        await navigator.share({ files: [file], title: "AI ConvoIR chat" });
-        return { kind: "shared" };
-      }
-      await navigator.share({ text: content, title: "AI ConvoIR chat" });
-      return { kind: "shared" };
-    } catch (e) {
-      // User dismissed the sheet — not a filesystem export.
-      if (e instanceof Error && e.name === "AbortError") {
-        return { kind: "share-dismissed" };
-      }
-      // Share failed for another reason; fall through to download / Tauri.
-    }
-  }
-
-  if (!isTauri()) {
+  if (!isDesktop()) {
     const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -227,7 +180,7 @@ export async function deleteMessage(args: {
   turn: number;
   created_at: number;
 }): Promise<boolean> {
-  if (!isTauri()) {
+  if (!isDesktop()) {
     return engineDeleteMessage(args.agent, args.turn, args.created_at);
   }
   return invokeCmd<boolean>("delete_messages", {
@@ -241,18 +194,18 @@ export async function fetchModels(args: {
   baseUrl: string;
   apiKey: string;
 }): Promise<string[]> {
-  if (!isTauri()) return engineFetchModels(args.baseUrl, args.apiKey);
+  if (!isDesktop()) return engineFetchModels(args.baseUrl, args.apiKey);
   return invokeCmd<string[]>("fetch_models", args);
 }
 
 export async function upsertSavedChat(snapshot: unknown): Promise<void> {
-  if (!isTauri()) return;
+  if (!isDesktop()) return;
   await invokeCmd("upsert_saved_chat", { snapshot });
 }
 
 /** Meta-only (title/config) — does not replace the messages table. */
 export async function upsertSavedChatMeta(snapshot: unknown): Promise<void> {
-  if (!isTauri()) return;
+  if (!isDesktop()) return;
   await invokeCmd("upsert_saved_chat_meta", { snapshot });
 }
 
@@ -260,14 +213,40 @@ export async function listSavedChats(): Promise<unknown[] | null> {
   return tryInvoke<unknown[]>("list_saved_chats");
 }
 
-/** One chat hydrated from the messages table (SoT). Null outside Tauri / on miss. */
+/** One chat hydrated from the messages table (SoT). Null in the browser preview / on miss. */
 export async function getSavedChat(chatId: string): Promise<unknown | null> {
   return tryInvoke<unknown | null>("get_saved_chat", { chatId });
 }
 
 export async function deleteSavedChat(chatId: string): Promise<void> {
-  if (!isTauri()) return;
+  if (!isDesktop()) return;
   await invokeCmd("delete_saved_chat", { chatId });
 }
 
 export type { AiConfig, ConversationMode };
+
+/** Open an http(s) link in the user's browser. */
+export async function openExternal(url: string): Promise<void> {
+  if (isDesktop()) {
+    try {
+      await invoke("open_external", { url });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  window.open(url, "_blank", "noopener");
+}
+
+/** One-time import of the Tauri build's localStorage (desktop only). */
+export async function importLegacyLocalStorage(): Promise<void> {
+  if (!isDesktop()) return;
+  try {
+    const items = await invoke<Record<string, string>>("legacy_local_storage");
+    for (const [k, v] of Object.entries(items ?? {})) {
+      if (localStorage.getItem(k) === null) localStorage.setItem(k, v);
+    }
+  } catch {
+    /* nothing to import */
+  }
+}

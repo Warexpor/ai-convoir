@@ -1,10 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
-import { isTauriRuntime } from "./openaiCompat";
+import { invoke, isDesktopRuntime } from "./ipc";
 import { PROVIDERS, getProvider } from "./providers";
 
 /**
  * Provider API keys. Desktop keeps them in the OS keychain (via the
- * `secret_*` commands); the browser preview, Android, and desktops without a
+ * `secret_*` commands); the browser preview and desktops without a
  * keychain daemon fall back to localStorage. Everything else in the app reads
  * the in-memory cache, so configs, casts and saved chats never carry keys.
  */
@@ -17,7 +16,7 @@ const cache = new Map<string, string>();
 const signedIn = new Map<string, string>();
 let loaded: Promise<void> | null = null;
 /** Set once the keychain refuses a call; the rest of the session uses the fallback. */
-let keychainDown = !isTauriRuntime();
+let keychainDown = !isDesktopRuntime();
 
 function readFallback(): Record<string, string> {
   try {
@@ -86,7 +85,7 @@ export function hasProviderKey(id: string | undefined): boolean {
 
 /** Browser sign-in needs the desktop app (loopback callback + keychain). */
 export function signInAvailable(): boolean {
-  return isTauriRuntime() && !keychainDown;
+  return isDesktopRuntime() && !keychainDown;
 }
 
 export function signedInAs(id: string): string | null {
@@ -94,7 +93,7 @@ export function signedInAs(id: string): string | null {
 }
 
 async function refreshSignIn(id: string): Promise<void> {
-  if (!isTauriRuntime()) return;
+  if (!isDesktopRuntime()) return;
   try {
     const s = await invoke<{ signed_in: boolean; email: string }>("oauth_status", {
       provider: id,

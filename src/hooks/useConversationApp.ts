@@ -225,7 +225,7 @@ export function useConversationApp() {
       try {
         await pushConfig(configFromSavedChat({ ...base, status: "Idle" }, chat));
       } catch {
-        /* web / no tauri */
+        /* browser preview: no desktop backend */
       }
       if (cancelled) return;
       try {
@@ -235,7 +235,7 @@ export function useConversationApp() {
           chatId: chat.id,
         });
       } catch {
-        /* web / no tauri */
+        /* browser preview: no desktop backend */
       }
     })();
     return () => {
@@ -365,7 +365,7 @@ export function useConversationApp() {
                 configFromSavedChat({ ...merged, status: "Idle" }, seeded),
               );
             } catch {
-              /* web / no tauri */
+              /* browser preview: no desktop backend */
             }
           }
         } else {
@@ -384,7 +384,7 @@ export function useConversationApp() {
                   configFromSavedChat({ ...merged, status: "Idle" }, seeded),
                 );
               } catch {
-                /* web / no tauri */
+                /* browser preview: no desktop backend */
               }
             }
             return;
@@ -397,7 +397,7 @@ export function useConversationApp() {
               chatId: bootLoadId,
             });
           } catch {
-            /* web / no tauri */
+            /* browser preview: no desktop backend */
           }
           // After await: hydrate may have SoT-loaded meanwhile. Ignore stale
           // engine write by re-applying freshest SoT (also bumps BE save epoch).
@@ -411,7 +411,7 @@ export function useConversationApp() {
                   chatId: sot.id,
                 });
               } catch {
-                /* web / no tauri */
+                /* browser preview: no desktop backend */
               }
               stream.setMessages(sot.messages);
               stream.setTurnCount(sot.turn_count);
@@ -584,12 +584,6 @@ export function useConversationApp() {
     try {
       const outcome = await api.exportChat(md);
       switch (outcome.kind) {
-        case "shared":
-          toast.show("Shared chat", 4000);
-          break;
-        case "share-dismissed":
-          // User closed the share sheet — no false "Exported to …" toast.
-          break;
         case "downloaded":
           toast.show(`Downloaded ${outcome.name}`, 5000);
           break;
@@ -648,6 +642,9 @@ export function useConversationApp() {
       if (!chat) return;
       const current = messagesRef.current.filter((m) => !m.streaming);
       if (current.length > 0 && chatIdRef.current !== id) autoSave();
+      // Opening a thread is not an edit: without this the autosave effect
+      // re-saves it with updated_at = now and it jumps to Today.
+      skipAutosaveUntil.current = Date.now() + 2500;
       try {
         localStorage.removeItem(SKIP_RESUME_KEY);
         localStorage.removeItem(LEGACY_SKIP_RESUME_KEY);

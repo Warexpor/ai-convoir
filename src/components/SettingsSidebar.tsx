@@ -13,7 +13,6 @@ import {
 } from "../lib/providers";
 import { getProviderKey, hasProviderKey, onProviderKeysChanged } from "../lib/secrets";
 import { IconBack, IconChevron } from "./Marks";
-import { useBackClose } from "../hooks/useBackClose";
 import VoiceAvatar, { GLYPH_IDS, GLYPHS } from "./VoiceAvatar";
 import Seg from "./Seg";
 import Dropdown, { type DropOption } from "./Dropdown";
@@ -52,7 +51,7 @@ function LookEditor({
   return (
     <div className="look">
       <div className="field">
-        <label>Color</label>
+        <label>Tone</label>
         <div className="swatches" role="radiogroup" aria-label="Voice color">
           {VOICE_PALETTE.map((hex) => (
             <button
@@ -312,7 +311,7 @@ function CharCard({
 
   return (
     <div
-      className={`char-card${open ? " is-open" : ""}`}
+      className={`char-card card${open ? " is-open" : ""}`}
       style={{ ["--voice" as string]: accent }}
       data-slot={slot}
     >
@@ -380,7 +379,7 @@ function CharCard({
             aria-expanded={look}
           >
             <IconChevron />
-            Color &amp; avatar
+            Tone &amp; avatar
           </button>
           <Collapse open={look}>
             <LookEditor
@@ -469,11 +468,10 @@ export default function SettingsSidebar({
     }
     onClose();
   }
-  useBackClose(open, closeAndSave);
 
   return (
     <aside
-      className={`settings ${open ? "is-open" : ""}`}
+      className={`settings glass-sheet${open ? " is-open" : ""}`}
       ref={panelRef}
       aria-label="Settings"
       aria-labelledby="settings-title"
@@ -484,12 +482,7 @@ export default function SettingsSidebar({
     >
       <div className="settings-inner">
       <div className="settings-head">
-        <button
-          type="button"
-          className="btn btn-icon btn-bare sheet-back"
-          onClick={closeAndSave}
-          aria-label="Back"
-        >
+        <button type="button" className="gbtn" onClick={closeAndSave} aria-label="Close voices">
           <IconBack />
         </button>
         <div className="settings-brand">
@@ -498,12 +491,8 @@ export default function SettingsSidebar({
           </span>
           <span className="settings-sub">Who is on stage, and how they look</span>
         </div>
-        <button
-          type="button"
-          className="btn btn-chrome btn-sm sheet-close"
-          onClick={closeAndSave}
-        >
-          Close
+        <button type="button" className="pill" onClick={closeAndSave}>
+          Done
         </button>
       </div>
       <div className="settings-body">
@@ -511,7 +500,7 @@ export default function SettingsSidebar({
 
         <section className="set-section">
         <h3 className="set-h">
-          Cast
+          <span className="label">Cast</span>
           <Seg
             size="sm"
             label="How many voices"
@@ -579,7 +568,7 @@ export default function SettingsSidebar({
       <div className="settings-foot">
         <button
           type="button"
-          className="btn btn-go btn-block"
+          className="pill pill-primary pill-block"
           disabled={!dirty && !saved}
           onClick={() => {
             onSave({

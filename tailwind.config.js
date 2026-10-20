@@ -3,9 +3,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Geist Variable", "system-ui", "sans-serif"],
-        serif: ["Source Serif 4 Variable", "Georgia", "serif"],
-        mono: ["Geist Mono Variable", "ui-monospace", "monospace"],
+        sans: ["Plus Jakarta Sans Variable", "system-ui", "sans-serif"],
+        display: ["Iceland", "sans-serif"],
+        mono: ["Atkinson Hyperlegible Mono", "ui-monospace", "monospace"],
       },
       borderRadius: {
         pill: "9999px",

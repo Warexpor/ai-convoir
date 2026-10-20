@@ -70,7 +70,7 @@ export function listChats(): SavedChat[] {
   );
 }
 
-/** Prefer SQLite list when Tauri is available; keep localStorage as cache. */
+/** Prefer SQLite list in the desktop app; keep localStorage as cache. */
 export async function hydrateChats(): Promise<SavedChat[]> {
   const remote = await api.listSavedChats();
   if (!remote || remote.length === 0) return listChats();

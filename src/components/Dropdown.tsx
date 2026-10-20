@@ -10,9 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { useBackClose } from "../hooks/useBackClose";
 import { usePresence } from "../hooks/usePresence";
-import { PHONE_QUERY, useMedia } from "../hooks/useMedia";
 import { IconCheck, IconChevronDown, IconSearch } from "./Marks";
 
 export interface DropOption<T> {
@@ -59,8 +57,7 @@ function host(): HTMLElement {
 
 /**
  * Custom select. The list is portaled into the app root so scroll panes
- * don't clip it, drawn as a floating glass menu on desktop and as a bottom
- * sheet on phones. Focus stays on the trigger (or the search field); the
+ * don't clip it, drawn as a floating glass popover. Focus stays on the trigger (or the search field); the
  * highlighted row is announced via aria-activedescendant.
  */
 export default function Dropdown<T extends string | number>({
@@ -77,7 +74,6 @@ export default function Dropdown<T extends string | number>({
   className,
   size,
 }: Props<T>) {
-  const isPhone = useMedia(PHONE_QUERY);
   const [open, setOpen] = useState(false);
   const shown = usePresence(open, 180);
   const [query, setQuery] = useState("");
@@ -94,7 +90,6 @@ export default function Dropdown<T extends string | number>({
     setOpen(false);
     if (refocus) triggerRef.current?.focus({ preventScroll: true });
   }, []);
-  useBackClose(open, () => close());
 
   const q = query.trim().toLowerCase();
   type Row = DropOption<T> & { custom?: boolean };
@@ -140,7 +135,7 @@ export default function Dropdown<T extends string | number>({
 
   // Anchor under (or over) the trigger; keep it attached while panes scroll.
   useLayoutEffect(() => {
-    if (!open || isPhone) return;
+    if (!open) return;
     const measure = () => {
       const t = triggerRef.current;
       if (!t) return;
@@ -170,7 +165,7 @@ export default function Dropdown<T extends string | number>({
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [open, isPhone]);
+  }, [open]);
 
   // Outside press closes (without stealing focus back).
   useEffect(() => {
@@ -185,8 +180,8 @@ export default function Dropdown<T extends string | number>({
   }, [open, close]);
 
   useEffect(() => {
-    if (open && search && !isPhone) searchRef.current?.focus({ preventScroll: true });
-  }, [open, search, isPhone]);
+    if (open && search) searchRef.current?.focus({ preventScroll: true });
+  }, [open, search]);
 
   // Keep the highlighted row in view.
   useEffect(() => {
@@ -298,27 +293,8 @@ export default function Dropdown<T extends string | number>({
 
   let popover: ReactNode = null;
   if (shown) {
-    popover = isPhone
-      ? createPortal(
-          <div
-            className={`sheet-scrim dd-scrim${open ? "" : " is-leaving"}`}
-            onClick={() => close(false)}
-            role="presentation"
-          >
-            <div
-              ref={popRef}
-              className="action-sheet dd-sheet"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="sheet-grip" aria-hidden />
-              <div className="sheet-title">{label}</div>
-              {searchBox}
-              {list}
-            </div>
-          </div>,
-          document.body,
-        )
-      : place &&
+    popover =
+      place &&
         createPortal(
           <div
             ref={popRef}

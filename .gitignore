@@ -3,7 +3,8 @@ node_modules/
 
 # build outputs
 dist/
-src-tauri/target/
+dist-electron/
+release/
 *.local
 
 # env / secrets
@@ -24,9 +25,7 @@ Thumbs.db
 .vscode/
 *.code-workspace
 
-# tauri / OS
-src-tauri/gen/schemas/*.json.bak
-src-tauri/WixTools/
+# packaged builds
 *.msi
 *.nsis
 *.dmg

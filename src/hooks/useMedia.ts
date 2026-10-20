@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 
-/** Phone layout: one column, full-screen sheets, bottom bar. */
-export const PHONE_QUERY = "(max-width: 640px)";
-/** Rail becomes an overlay drawer below this width. */
-export const NARROW_QUERY = "(max-width: 900px)";
+/** The history panel floats over the transcript below this window width. */
+export const NARROW_QUERY = "(max-width: 1100px)";
 
 export function useMedia(query: string): boolean {
   const [match, setMatch] = useState(

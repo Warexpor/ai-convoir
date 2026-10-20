@@ -1,18 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { SavedChat } from "../lib/storage";
 import { renameChat } from "../lib/storage";
 import type { Cast } from "../lib/casts";
 import { agentAccent, agentConfig, type VoiceSource } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
-import RelativeTime from "./RelativeTime";
-import Collapse from "./Collapse";
 import {
-  SlashMark,
-  IconChevron,
-  IconKey,
+  IconGear,
   IconNew,
+  IconPlus,
   IconRailHide,
   IconSearch,
+  IconThreads,
   IconTrash,
 } from "./Marks";
 
@@ -30,31 +28,26 @@ interface Props {
   onCreateCast: (name: string) => void;
   onRenameCast: (id: string, name: string) => void;
   onDeleteCast: (id: string) => void;
+  onSettings: () => void;
   needsKey?: boolean;
 }
 
+const ALL = "__all";
 const UNSORTED = "__unsorted";
-
-function voiceNames(v: VoiceSource & { bot_count: number }): string[] {
-  const names =
-    v.bot_count >= 3
-      ? [v.ai1_config.name, v.ai2_config.name, v.ai3_config.name]
-      : [v.ai1_config.name, v.ai2_config.name];
-  return names.map((n) => n || "Voice");
-}
+const DAY = 86_400_000;
 
 /** The cast in miniature: overlapping avatars, same glyphs as on stage. */
 function VoiceStack({ src }: { src: VoiceSource & { bot_count: number } }) {
   const n = src.bot_count >= 3 ? 3 : 2;
   return (
-    <span className="voice-stack-mini" aria-hidden>
+    <span className="voice-stack" aria-hidden>
       {Array.from({ length: n }, (_, i) => {
         const id = `ai${i + 1}`;
         const cfg = agentConfig(id, src);
         return (
           <VoiceAvatar
             key={id}
-            className="mini-avatar"
+            className="stack-avatar"
             name={cfg?.name || "Voice"}
             icon={cfg?.icon}
             color={agentAccent(id, src)}
@@ -65,15 +58,46 @@ function VoiceStack({ src }: { src: VoiceSource & { bot_count: number } }) {
   );
 }
 
+function startOfDay(t: number) {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Today / Yesterday / This week / Earlier, like the History screen. */
+function bucketOf(t: number, today: number): string {
+  if (t >= today) return "Today";
+  if (t >= today - DAY) return "Yesterday";
+  if (t >= today - 6 * DAY) return "This week";
+  return "Earlier";
+}
+
+function stampOf(t: number, today: number): string {
+  const d = new Date(t);
+  if (t >= today) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (t >= today - 6 * DAY) return d.toLocaleDateString([], { weekday: "long" });
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function lastLine(chat: SavedChat): string {
+  for (let i = chat.messages.length - 1; i >= 0; i--) {
+    const t = chat.messages[i]?.content?.replace(/[#*_`>]/g, "").replace(/\s+/g, " ").trim();
+    if (t) return t;
+  }
+  return "";
+}
+
 function ChatRow({
   chat,
   active,
+  stamp,
   onSelect,
   onDelete,
   onRename,
 }: {
   chat: SavedChat;
   active: boolean;
+  stamp: string;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onRename?: () => void;
@@ -81,7 +105,10 @@ function ChatRow({
   const [confirming, setConfirming] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [text, setText] = useState("");
   const rowRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const line = lastLine(chat);
 
   // Fold the row away, then drop it for real.
   const remove = () => {
@@ -97,8 +124,6 @@ function ChatRow({
     });
     window.setTimeout(() => onDelete(chat.id), 280);
   };
-  const [text, setText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const commit = () => {
     const trimmed = text.trim();
@@ -112,29 +137,27 @@ function ChatRow({
   return (
     <div
       ref={rowRef}
-      className={`chat-row${active ? " active" : ""}${leaving ? " is-leaving" : ""}`}
+      className={`thread${active ? " on" : ""}${leaving ? " is-leaving" : ""}${confirming ? " is-confirming" : ""}`}
       inert={leaving}
     >
       {renaming ? (
-        <div className="chat-item is-renaming">
-          <input
-            ref={inputRef}
-            className="chat-rename-input"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              else if (e.key === "Escape") setRenaming(false);
-              e.stopPropagation();
-            }}
-            onBlur={commit}
-            aria-label="Rename thread"
-          />
-        </div>
+        <input
+          ref={inputRef}
+          className="thread-rename"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            else if (e.key === "Escape") setRenaming(false);
+            e.stopPropagation();
+          }}
+          onBlur={commit}
+          aria-label="Rename thread"
+        />
       ) : (
         <button
           type="button"
-          className="chat-item"
+          className="thread-main"
           onClick={() => onSelect(chat.id)}
           onDoubleClick={() => {
             setText(chat.title);
@@ -144,12 +167,8 @@ function ChatRow({
           aria-current={active ? "page" : undefined}
           title="Double-click to rename"
         >
-          <div className="chat-item-title">{chat.title}</div>
-          <div className="chat-item-meta">
-            <VoiceStack src={chat} />
-            <span>{voiceNames(chat).join(" · ")}</span>
-            <RelativeTime at={chat.updated_at} className="chat-item-time" />
-          </div>
+          <span className="thread-title">{chat.title}</span>
+          {line && <span className="thread-line">{line}</span>}
         </button>
       )}
 
@@ -158,39 +177,31 @@ function ChatRow({
           <button
             type="button"
             className="confirm-del"
-            onClick={(e) => {
-              e.stopPropagation();
+            onClick={() => {
               setConfirming(false);
               remove();
             }}
           >
             Delete
           </button>
-          <button
-            type="button"
-            className="confirm-cancel"
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-            }}
-          >
+          <button type="button" className="confirm-cancel" onClick={() => setConfirming(false)}>
             Keep
           </button>
         </div>
       ) : (
         !renaming && (
-          <button
-            type="button"
-            className="chat-item-del"
-            title="Delete thread"
-            aria-label={`Delete ${chat.title}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(true);
-            }}
-          >
-            <IconTrash />
-          </button>
+          <span className="thread-aside">
+            <span className="thread-time">{stamp}</span>
+            <button
+              type="button"
+              className="icon-btn thread-del"
+              title="Delete thread"
+              aria-label={`Delete ${chat.title}`}
+              onClick={() => setConfirming(true)}
+            >
+              <IconTrash />
+            </button>
+          </span>
         )
       )}
     </div>
@@ -211,10 +222,11 @@ export default function ChatRail({
   onCreateCast,
   onRenameCast,
   onDeleteCast,
+  onSettings,
   needsKey = false,
 }: Props) {
   const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState<string>(ALL);
   const [renamingCast, setRenamingCast] = useState<string | null>(null);
   const [castText, setCastText] = useState("");
   const [confirmCast, setConfirmCast] = useState<string | null>(null);
@@ -222,29 +234,34 @@ export default function ChatRail({
   const [newName, setNewName] = useState("");
   const castInputRef = useRef<HTMLInputElement>(null);
 
-  const q = query.trim().toLowerCase();
-
-  const groups = useMemo(() => {
-    const known = new Set(casts.map((c) => c.id));
-    const byCast = new Map<string, SavedChat[]>();
+  const known = useMemo(() => new Set(casts.map((c) => c.id)), [casts]);
+  const castOf = (c: SavedChat) => (c.cast_id && known.has(c.cast_id) ? c.cast_id : UNSORTED);
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
     for (const c of chats) {
-      if (q && !c.title.toLowerCase().includes(q)) continue;
-      const key = c.cast_id && known.has(c.cast_id) ? c.cast_id : UNSORTED;
-      const list = byCast.get(key) ?? [];
-      list.push(c);
-      byCast.set(key, list);
+      const k = c.cast_id && known.has(c.cast_id) ? c.cast_id : UNSORTED;
+      m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return byCast;
-  }, [chats, casts, q]);
+    return m;
+  }, [chats, known]);
+  // A filter on a cast that no longer exists falls back to everything.
+  const activeFilter = filter === ALL || filter === UNSORTED || known.has(filter) ? filter : ALL;
 
-  const toggle = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const q = query.trim().toLowerCase();
+  const today = startOfDay(Date.now());
+  const sections = useMemo(() => {
+    const out: { label: string; rows: SavedChat[] }[] = [];
+    for (const c of chats) {
+      if (activeFilter !== ALL && castOf(c) !== activeFilter) continue;
+      if (q && !c.title.toLowerCase().includes(q) && !lastLine(c).toLowerCase().includes(q)) continue;
+      const label = bucketOf(c.updated_at, today);
+      const sec = out.find((s) => s.label === label) ?? out[out.push({ label, rows: [] }) - 1];
+      sec.rows.push(c);
+    }
+    return out;
+    // castOf only depends on `known`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats, activeFilter, q, today, known]);
 
   const commitCastName = (id: string) => {
     if (castText.trim()) onRenameCast(id, castText);
@@ -258,261 +275,231 @@ export default function ChatRail({
     if (name) onCreateCast(name);
   };
 
-  const unsorted = groups.get(UNSORTED) ?? [];
-  const noResults = q && [...groups.values()].every((l) => l.length === 0);
-  const threadLabel =
-    chats.length === 1 ? "1 thread" : `${chats.length} threads`;
+  const unsorted = counts.get(UNSORTED) ?? 0;
 
   return (
-    <aside
-      className="rail"
-      aria-label="Casts and threads"
-      aria-hidden={!open}
-      inert={!open}
-    >
-      <div className="rail-inner">
-        <div className="rail-head">
-          <div className="rail-brand">
-            <SlashMark className="rail-logo" size={22} />
-            <span>
-              AI ConvoIR
-              <em>v2</em>
-            </span>
-          </div>
+    <aside className="rail glass-sheet" aria-label="History" aria-hidden={!open} inert={!open}>
+      <div className="rail-head">
+        <span className="wordmark">AI ConvoIR</span>
+        <button
+          type="button"
+          className="gbtn"
+          onClick={onClose}
+          title="Hide history (B)"
+          aria-label="Hide history"
+        >
+          <IconRailHide />
+        </button>
+      </div>
+
+      <div className="rail-scroll">
+        <div className="card nav">
           <button
             type="button"
-            className="btn btn-icon"
-            onClick={onClose}
-            title="Hide sidebar (B)"
-            aria-label="Hide sidebar"
+            className={`nav-row${activeFilter === ALL ? " on" : ""}`}
+            onClick={() => setFilter(ALL)}
           >
-            <IconRailHide />
+            <span className="nav-icon">
+              <IconThreads />
+            </span>
+            <span className="nav-name">All threads</span>
+            <span className="nav-count">{chats.length}</span>
           </button>
-        </div>
-
-        <div className="rail-tools">
-          <button type="button" className="rail-new" onClick={() => onNew()}>
-            <IconNew />
-            New thread
-            {activeCastId && (
-              <span className="rail-new-in">
-                in {casts.find((c) => c.id === activeCastId)?.name}
-              </span>
-            )}
-          </button>
-          <label className="rail-search">
-            <IconSearch />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search threads"
-              aria-label="Search threads"
-            />
-          </label>
-        </div>
-
-        <div className="rail-scroll">
-          {noResults && (
-            <div className="rail-empty">
-              <p>No matches.</p>
-              <span>Nothing titled like &ldquo;{query}&rdquo;.</span>
-            </div>
-          )}
 
           {casts.map((cast) => {
-            const list = groups.get(cast.id) ?? [];
-            if (q && list.length === 0) return null;
-            const isOpen = q ? true : !collapsed.has(cast.id);
-            const isActive = cast.id === activeCastId;
+            const isOn = activeFilter === cast.id;
             return (
-              <section
+              <div
                 key={cast.id}
-                className={`cast-group${isActive ? " is-active" : ""}`}
+                className={`nav-row nav-cast${isOn ? " on" : ""}${cast.id === activeCastId ? " is-current" : ""}`}
               >
-                <div className="cast-group-head">
-                  {renamingCast === cast.id ? (
-                    <input
-                      ref={castInputRef}
-                      className="chat-rename-input"
-                      value={castText}
-                      onChange={(e) => setCastText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitCastName(cast.id);
-                        else if (e.key === "Escape") setRenamingCast(null);
-                        e.stopPropagation();
-                      }}
-                      onBlur={() => commitCastName(cast.id)}
-                      aria-label="Rename cast"
-                    />
-                  ) : (
+                {renamingCast === cast.id ? (
+                  <input
+                    ref={castInputRef}
+                    className="thread-rename"
+                    value={castText}
+                    onChange={(e) => setCastText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitCastName(cast.id);
+                      else if (e.key === "Escape") setRenamingCast(null);
+                      e.stopPropagation();
+                    }}
+                    onBlur={() => commitCastName(cast.id)}
+                    aria-label="Rename cast"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="nav-hit"
+                    onClick={() => setFilter(isOn ? ALL : cast.id)}
+                    onDoubleClick={() => {
+                      setCastText(cast.name);
+                      setRenamingCast(cast.id);
+                      requestAnimationFrame(() => castInputRef.current?.select());
+                    }}
+                    aria-pressed={isOn}
+                    title="Show this cast's threads · double-click to rename"
+                  >
+                    <span className="nav-icon">
+                      <VoiceStack src={cast} />
+                    </span>
+                    <span className="nav-name">{cast.name}</span>
+                  </button>
+                )}
+
+                {confirmCast === cast.id ? (
+                  <div className="inline-confirm">
                     <button
                       type="button"
-                      className="cast-group-toggle"
-                      onClick={() => toggle(cast.id)}
-                      onDoubleClick={() => {
-                        setCastText(cast.name);
-                        setRenamingCast(cast.id);
-                        requestAnimationFrame(() =>
-                          castInputRef.current?.select(),
-                        );
+                      className="confirm-del"
+                      onClick={() => {
+                        setConfirmCast(null);
+                        onDeleteCast(cast.id);
                       }}
-                      aria-expanded={isOpen}
-                      title="Double-click to rename"
                     >
-                      <IconChevron />
-                      <VoiceStack src={cast} />
-                      <span className="cast-group-name">{cast.name}</span>
-                      <span className="cast-group-count">{list.length}</span>
+                      Delete
                     </button>
-                  )}
-
-                  {confirmCast === cast.id ? (
-                    <div className="inline-confirm">
-                      <button
-                        type="button"
-                        className="confirm-del"
-                        onClick={() => {
-                          setConfirmCast(null);
-                          onDeleteCast(cast.id);
-                        }}
-                      >
-                        Delete
-                      </button>
-                      <button
-                        type="button"
-                        className="confirm-cancel"
-                        onClick={() => setConfirmCast(null)}
-                      >
-                        Keep
-                      </button>
-                    </div>
-                  ) : (
-                    renamingCast !== cast.id && (
-                      <div className="cast-group-actions">
-                        <button
-                          type="button"
-                          className="cast-group-btn is-danger"
-                          onClick={() => setConfirmCast(cast.id)}
-                          title="Delete cast (threads move to Unsorted)"
-                          aria-label={`Delete cast ${cast.name}`}
-                        >
-                          <IconTrash />
-                        </button>
-                        <button
-                          type="button"
-                          className="cast-group-btn"
-                          onClick={() => onNew(cast.id)}
-                          title={`New thread with ${cast.name}`}
-                          aria-label={`New thread in ${cast.name}`}
-                        >
-                          <IconNew />
-                        </button>
-                      </div>
-                    )
-                  )}
-                </div>
-
-                <Collapse open={isOpen}>
-                  <div className="cast-group-list">
-                    {list.length === 0 ? (
-                      <button
-                        type="button"
-                        className="cast-group-empty"
-                        onClick={() => onNew(cast.id)}
-                      >
-                        Start the first thread
-                      </button>
-                    ) : (
-                      list.map((c) => (
-                        <ChatRow
-                          key={c.id}
-                          chat={c}
-                          active={activeId === c.id}
-                          onSelect={onSelect}
-                          onDelete={onDelete}
-                          onRename={onRename}
-                        />
-                      ))
-                    )}
+                    <button type="button" className="confirm-cancel" onClick={() => setConfirmCast(null)}>
+                      Keep
+                    </button>
                   </div>
-                </Collapse>
-              </section>
+                ) : (
+                  renamingCast !== cast.id && (
+                    <span className="nav-aside">
+                      <span className="nav-count">{counts.get(cast.id) ?? 0}</span>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => setConfirmCast(cast.id)}
+                        title="Delete cast (threads stay, unsorted)"
+                        aria-label={`Delete cast ${cast.name}`}
+                      >
+                        <IconTrash />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        onClick={() => onNew(cast.id)}
+                        title={`New thread with ${cast.name}`}
+                        aria-label={`New thread in ${cast.name}`}
+                      >
+                        <IconNew />
+                      </button>
+                    </span>
+                  )
+                )}
+              </div>
             );
           })}
 
-          {unsorted.length > 0 && (
-            <section className="cast-group is-unsorted">
-              <div className="cast-group-head">
-                <button
-                  type="button"
-                  className="cast-group-toggle"
-                  onClick={() => toggle(UNSORTED)}
-                  aria-expanded={q ? true : !collapsed.has(UNSORTED)}
-                >
-                  <IconChevron />
-                  <span className="cast-group-name">Unsorted</span>
-                  <span className="cast-group-count">{unsorted.length}</span>
-                </button>
-              </div>
-              <Collapse open={!!q || !collapsed.has(UNSORTED)}>
-                <div className="cast-group-list">
-                  {unsorted.map((c) => (
-                    <ChatRow
-                      key={c.id}
-                      chat={c}
-                      active={activeId === c.id}
-                      onSelect={onSelect}
-                      onDelete={onDelete}
-                      onRename={onRename}
-                    />
-                  ))}
-                </div>
-              </Collapse>
-            </section>
+          {unsorted > 0 && casts.length > 0 && (
+            <button
+              type="button"
+              className={`nav-row${activeFilter === UNSORTED ? " on" : ""}`}
+              onClick={() => setFilter(activeFilter === UNSORTED ? ALL : UNSORTED)}
+            >
+              <span className="nav-icon nav-icon-dim">
+                <IconThreads />
+              </span>
+              <span className="nav-name">Unsorted</span>
+              <span className="nav-count">{unsorted}</span>
+            </button>
           )}
 
-          {!q &&
-            (creating ? (
-              <div className="cast-create">
-                <input
-                  autoFocus
-                  className="chat-rename-input"
-                  value={newName}
-                  placeholder="Name the cast…"
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitNewCast();
-                    else if (e.key === "Escape") {
-                      setCreating(false);
-                      setNewName("");
-                    }
-                    e.stopPropagation();
-                  }}
-                  onBlur={commitNewCast}
-                  aria-label="New cast name"
-                />
-                <p>Starts as a copy of the current voices.</p>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="cast-add"
-                onClick={() => setCreating(true)}
-              >
-                <IconNew />
-                New cast
-              </button>
-            ))}
+          {creating ? (
+            <div className="nav-row nav-create">
+              <input
+                autoFocus
+                className="thread-rename"
+                value={newName}
+                placeholder="Name the cast…"
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitNewCast();
+                  else if (e.key === "Escape") {
+                    setCreating(false);
+                    setNewName("");
+                  }
+                  e.stopPropagation();
+                }}
+                onBlur={commitNewCast}
+                aria-label="New cast name"
+              />
+            </div>
+          ) : (
+            <button type="button" className="nav-row nav-add" onClick={() => setCreating(true)}>
+              <span className="nav-icon">
+                <IconPlus />
+              </span>
+              <span className="nav-name">New cast</span>
+              <span className="nav-hint">copies the current voices</span>
+            </button>
+          )}
         </div>
 
-        <div className="rail-foot">
-          <span className={`key-state ${needsKey ? "is-missing" : "is-ok"}`}>
-            <IconKey />
-            {needsKey ? "API key needed" : "Key connected"}
-          </span>
-          <span className="rail-foot-mute">{threadLabel}</span>
-        </div>
+        {sections.length === 0 && (
+          <div className="rail-empty">
+            {q ? (
+              <>
+                <p>No matches</p>
+                <span>Nothing like &ldquo;{query}&rdquo;.</span>
+              </>
+            ) : (
+              <>
+                <p>No threads yet</p>
+                <span>Set a scene and it lands here.</span>
+              </>
+            )}
+          </div>
+        )}
+
+        {sections.map((sec) => (
+          <section key={sec.label} className="threads">
+            <h3 className="label">{sec.label}</h3>
+            {sec.rows.map((c) => (
+              <ChatRow
+                key={c.id}
+                chat={c}
+                active={activeId === c.id}
+                stamp={stampOf(c.updated_at, today)}
+                onSelect={onSelect}
+                onDelete={onDelete}
+                onRename={onRename}
+              />
+            ))}
+          </section>
+        ))}
+      </div>
+
+      <div className="rail-foot">
+        <label className="search glass">
+          <IconSearch />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search"
+            aria-label="Search threads"
+          />
+        </label>
+        <button
+          type="button"
+          className={`gbtn${needsKey ? " needs-key" : ""}`}
+          onClick={onSettings}
+          title={needsKey ? "Settings · a key is missing (,)" : "Settings (,)"}
+          aria-label="Settings"
+        >
+          <IconGear />
+        </button>
+        <button
+          type="button"
+          className="gbtn"
+          onClick={() => onNew(activeFilter !== ALL && activeFilter !== UNSORTED ? activeFilter : undefined)}
+          title="New thread (Ctrl+Shift+R)"
+          aria-label="New thread"
+        >
+          <IconNew />
+        </button>
       </div>
     </aside>
   );

@@ -1,50 +1,37 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-const host = process.env.TAURI_DEV_HOST;
+// The opencode proxies only matter for the plain browser preview; the
+// Electron build calls providers from the main process.
+function opencodeProxy(path: string) {
+  return {
+    target: "https://opencode.ai",
+    changeOrigin: true,
+    rewrite: (p: string) => p.replace(/^\/[^/]+/, path),
+    configure: (proxy: {
+      on: (ev: string, fn: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void;
+    }) => {
+      proxy.on("proxyReq", (proxyReq) => {
+        proxyReq.setHeader("User-Agent", "ai-convoir/2.0");
+      });
+    },
+  };
+}
 
-export default defineConfig(async () => ({
+export default defineConfig({
+  // Relative so dist/index.html loads under file:// in Electron.
+  base: "./",
   plugins: [react()],
   clearScreen: false,
   server: {
     port: 1420,
     strictPort: true,
-    host: host || true,
-    hmr: host
-      ? {
-          protocol: "ws",
-          host,
-          port: 1421,
-        }
-      : undefined,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: ["**/electron/**", "**/dist-electron/**", "**/release/**"],
     },
     proxy: {
-      "/opencode-go": {
-        target: "https://opencode.ai",
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/opencode-go/, "/zen/go/v1"),
-        configure: (proxy: {
-          on: (ev: string, fn: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void;
-        }) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("User-Agent", "ai-convoir/2.0");
-          });
-        },
-      },
-      "/opencode-zen": {
-        target: "https://opencode.ai",
-        changeOrigin: true,
-        rewrite: (path: string) => path.replace(/^\/opencode-zen/, "/zen/v1"),
-        configure: (proxy: {
-          on: (ev: string, fn: (proxyReq: { setHeader: (k: string, v: string) => void }) => void) => void;
-        }) => {
-          proxy.on("proxyReq", (proxyReq) => {
-            proxyReq.setHeader("User-Agent", "ai-convoir/2.0");
-          });
-        },
-      },
+      "/opencode-go": opencodeProxy("/zen/go/v1"),
+      "/opencode-zen": opencodeProxy("/zen/v1"),
     },
   },
-}));
+});

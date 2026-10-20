@@ -170,8 +170,8 @@ void main() {
  *  and grain turn to mush below ~0.75. */
 const SCALE = 0.75;
 const MAX_DPR = 2;
-/** Frame budget for the "full" living loop (~30fps). */
-const FRAME_MS = 33;
+/** Frame budget for the "full" living loop: ambient backgrounds run at ~14fps. */
+const FRAME_MS = 70;
 /** Crossfade between lighting states in "balanced". */
 const FADE_MS = 1400;
 /** How far the smoke drifts on each speaker change. */
@@ -318,7 +318,7 @@ type Engine = {
  * - balanced: one draw per speaker change into the hidden canvas, then a
  *   CSS opacity crossfade — the compositor does the animation, the GPU draws
  *   a single frame. No per-frame shader work, even on software GL.
- * - full: a living ~30fps loop, paused while scrolling or hidden.
+ * - full: a living ~14fps loop, paused while scrolling or hidden.
  */
 function StageField({ colors, focus, fx, preset }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);

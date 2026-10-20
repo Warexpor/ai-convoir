@@ -5,9 +5,7 @@ import { agentAccent, agentConfig, agentLabel } from "../types";
 import VoiceAvatar from "./VoiceAvatar";
 import MarkdownBody from "./MarkdownBody";
 import RelativeTime from "./RelativeTime";
-import { IconCheck, IconChevron, IconCopy, IconTrash } from "./Marks";
-import ActionSheet, { type SheetAction } from "./ActionSheet";
-import { useLongPress } from "../hooks/useLongPress";
+import { IconCheck, IconChevronDown, IconCopy, IconTrash } from "./Marks";
 
 interface Props {
   message: Message;
@@ -29,8 +27,6 @@ function MessageBubble({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [thoughtsOpen, setThoughtsOpen] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const press = useLongPress(() => setSheetOpen(true));
   const label = agentLabel(message.agent, config);
   const isSeed = message.agent === "seed";
   const isNote = message.agent === "narrator";
@@ -106,26 +102,6 @@ function MessageBubble({
     </div>
   );
 
-  const sheetActions: SheetAction[] = [
-    { label: "Copy text", icon: <IconCopy />, run: handleCopy },
-  ];
-  if (!isStream && onDelete) {
-    sheetActions.push({
-      label: "Delete line",
-      icon: <IconTrash />,
-      danger: true,
-      run: () => onDelete(message.agent, message.turn, message.created_at),
-    });
-  }
-  const sheet = (
-    <ActionSheet
-      open={sheetOpen}
-      title={isNote ? "Direction" : isSeed ? "Opening line" : label}
-      actions={sheetActions}
-      onClose={() => setSheetOpen(false)}
-    />
-  );
-
   const cls = [
     "msg",
     `msg-${kind}`,
@@ -138,91 +114,80 @@ function MessageBubble({
 
   if (isNote) {
     return (
-      <article className={cls} {...press}>
+      <article className={cls}>
         <div className="note-line">
           <p>{message.content}</p>
           {actions}
         </div>
-        {sheet}
+      </article>
+    );
+  }
+
+  if (isSeed) {
+    return (
+      <article className={cls}>
+        <div className="seed-bubble">
+          <MarkdownBody content={message.content} />
+        </div>
+        <div className="msg-foot">{actions}</div>
       </article>
     );
   }
 
   return (
-    <article
-      className={cls}
-      style={{ ["--voice" as string]: accent }}
-      {...press}
-    >
-      <div className="msg-body">
-        <header className="msg-meta">
-          {!isSeed && (
-            <VoiceAvatar
-              className="msg-avatar"
-              name={label}
-              icon={agentConfig(message.agent, config)?.icon}
-              color={accent}
-            />
-          )}
-          <span className="msg-name">{isSeed ? "Opening line" : label}</span>
-          {isStream && (
-            <span className="msg-live">
-              <span className="eq eq-sm" aria-hidden>
-                <i />
-                <i />
-                <i />
-              </span>
-              {message.content || streamMode === "whole" ? "writing" : "thinking"}
-            </span>
-          )}
-          <span className="msg-aside">
-            {!isStream && <RelativeTime at={message.created_at || Date.now()} />}
-            {!isSeed && message.turn > 0 && (
-              <span className="msg-turn">#{message.turn}</span>
-            )}
-            {actions}
+    <article className={cls} style={{ ["--voice" as string]: accent }}>
+      <header className="speaker">
+        <VoiceAvatar
+          className="speaker-avatar"
+          name={label}
+          icon={agentConfig(message.agent, config)?.icon}
+          color={accent}
+        />
+        <span className="speaker-name">{label}</span>
+        {isStream && (
+          <span className="speaker-live">
+            {message.content || streamMode === "whole" ? "writing" : "thinking"}
           </span>
-        </header>
-
-        {hasThoughts && (
-          <div className={`thoughts ${thoughtsOpen ? "open" : ""}`}>
-            <button
-              type="button"
-              className="thoughts-toggle"
-              onClick={() => setThoughtsOpen((o) => !o)}
-              aria-expanded={thoughtsOpen}
-            >
-              <IconChevron />
-              <span>{thoughtsOpen ? "Hide thoughts" : "Thoughts"}</span>
-              {!thoughtsOpen && (
-                <span className="thoughts-peek">{reasoning.slice(0, 90)}</span>
-              )}
-            </button>
-            {thoughtsOpen && (
-              <div className="thoughts-body">
-                <MarkdownBody
-                  content={reasoning}
-                  streaming={isStream && !message.content}
-                />
-              </div>
-            )}
-          </div>
         )}
+      </header>
 
-        {(message.content || !hasThoughts) && (
-          <div
-            className={`msg-text${!isStream && revealRef.current ? " is-reveal" : ""}`}
-            key={isStream ? "s" : "d"}
+      {hasThoughts && (
+        <div className={`thoughts${thoughtsOpen ? " open" : ""}`}>
+          <button
+            type="button"
+            className="thoughts-toggle"
+            onClick={() => setThoughtsOpen((o) => !o)}
+            aria-expanded={thoughtsOpen}
           >
-            <MarkdownBody
-              content={message.content}
-              streaming={isStream}
-              mode={streamMode}
-            />
-          </div>
-        )}
-      </div>
-      {sheet}
+            <span>{isStream && !message.content ? "Thinking" : "Thoughts"}</span>
+            <IconChevronDown />
+          </button>
+          {thoughtsOpen && (
+            <div className="thoughts-body">
+              <MarkdownBody content={reasoning} streaming={isStream && !message.content} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {(message.content || !hasThoughts) && (
+        <div
+          className={`msg-text${!isStream && revealRef.current ? " is-reveal" : ""}`}
+          key={isStream ? "s" : "d"}
+        >
+          <MarkdownBody content={message.content} streaming={isStream} mode={streamMode} />
+        </div>
+      )}
+
+      {!isStream && (
+        <footer className="msg-foot">
+          {actions}
+          <span className="msg-stamp">
+            <RelativeTime at={message.created_at || Date.now()} />
+            {message.turn > 0 && <span>#{message.turn}</span>}
+          </span>
+        </footer>
+      )}
     </article>
   );
 }

@@ -14,7 +14,8 @@ export const SHADER_PRESETS: { id: ShaderPreset; label: string; hint: string }[]
 ];
 
 export interface BackgroundPrefs {
-  kind: "shader" | "image";
+  /** off = plain canvas, shader = a living field, image = the user's picture. */
+  kind: "off" | "shader" | "image";
   preset: ShaderPreset;
   /** Black overlay on the image, 0–0.9. */
   dim: number;
@@ -45,7 +46,7 @@ export function readBackground(): BackgroundPrefs {
       ? (v.preset as ShaderPreset)
       : DEFAULT_BACKGROUND.preset;
     return {
-      kind: v.kind === "image" ? "image" : "shader",
+      kind: v.kind === "image" || v.kind === "off" ? v.kind : "shader",
       preset,
       dim: clamp(Number(v.dim ?? DEFAULT_BACKGROUND.dim), 0, 0.9),
       blur: clamp(Number(v.blur ?? DEFAULT_BACKGROUND.blur), 0, 32),

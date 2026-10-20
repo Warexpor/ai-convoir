@@ -4,15 +4,15 @@ This is a private project. External contributions are not accepted unless arrang
 
 ## Local development
 
-1. Install Node 18+, Rust stable, and Tauri prerequisites.
+1. Install Node 22.13+.
 2. `npm install`
-3. `npm run tauri dev`
+3. `npm run dev`
 
 Before opening a PR (if invited):
 
 ```bash
 npm run typecheck
-npm run test:rust
+npm run build
 ```
 
-Do not commit `.env`, API keys, or anything under `src-tauri/target/`.
+Do not commit `.env`, API keys, or build output (`dist/`, `dist-electron/`, `release/`).

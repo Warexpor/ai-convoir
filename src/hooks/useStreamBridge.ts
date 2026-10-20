@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppStatus,
   Message,
@@ -7,7 +6,8 @@ import type {
   StreamChunk,
   StreamStart,
 } from "../types";
-import { isTauri } from "../lib/api";
+import { isDesktop } from "../lib/api";
+import { listen } from "../lib/ipc";
 import { on as onBus } from "../lib/bus";
 
 type FailedTurn = { agent: string; turn: number } | null;
@@ -21,7 +21,7 @@ interface StreamBridgeOptions {
 }
 
 /**
- * Owns Tauri event subscriptions and merges SSE into the message list.
+ * Owns backend event subscriptions and merges SSE into the message list.
  * Always unsubscribes on cleanup (StrictMode-safe).
  */
 export function useStreamBridge({
@@ -244,7 +244,7 @@ export function useStreamBridge({
       flushStreamBuf();
     };
 
-    if (!isTauri()) {
+    if (!isDesktop()) {
       const unsubs = [
         onBus("new-message", (payload) => applyNewMessage(payload as Message)),
         onBus("status-update", (payload) => {
@@ -274,39 +274,24 @@ export function useStreamBridge({
       };
     }
 
-    let cancelled = false;
-    const unsubs: UnlistenFn[] = [];
-
-    const bind = async () => {
-      const list = await Promise.all([
-        listen<Message>("new-message", (event) => applyNewMessage(event.payload)),
-        listen<StatusPayload>("status-update", (e) => {
-          setStatus(e.payload.status as AppStatus);
-          setTurnCount(e.payload.turn);
-        }),
-        listen<string>("error", (e) => applyError(e.payload)),
-        listen<StreamStart>("stream-start", (e) => applyStreamStart(e.payload)),
-        listen<StreamChunk>("stream-chunk", (e) => applyStreamChunk(e.payload)),
-        listen("stream-abort", () => applyAbort()),
-        listen("narration-cleared", () => onNarrationCleared()),
-        listen("stream-done", () => applyStreamDone()),
-        listen<{ agent: string; turn: number; created_at: number }>(
-          "message-deleted",
-          (e) => applyMessageDeleted(e.payload),
-        ),
-      ]);
-
-      if (cancelled) {
-        list.forEach((u) => u());
-        return;
-      }
-      unsubs.push(...list);
-    };
-
-    void bind();
+    const unsubs = [
+      listen<Message>("new-message", (m) => applyNewMessage(m)),
+      listen<StatusPayload>("status-update", (e) => {
+        setStatus(e.status as AppStatus);
+        setTurnCount(e.turn);
+      }),
+      listen<string>("error", (e) => applyError(e)),
+      listen<StreamStart>("stream-start", (e) => applyStreamStart(e)),
+      listen<StreamChunk>("stream-chunk", (e) => applyStreamChunk(e)),
+      listen("stream-abort", () => applyAbort()),
+      listen("narration-cleared", () => onNarrationCleared()),
+      listen("stream-done", () => applyStreamDone()),
+      listen<{ agent: string; turn: number; created_at: number }>("message-deleted", (e) =>
+        applyMessageDeleted(e),
+      ),
+    ];
 
     return () => {
-      cancelled = true;
       unsubs.forEach((u) => u());
       clearStreamSched();
     };

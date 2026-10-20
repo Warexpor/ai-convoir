@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { InnerState } from "../types";
-import { fetchModels, isTauri } from "../lib/api";
+import { fetchModels, openExternal } from "../lib/api";
 import { PROVIDERS, type ProviderDef } from "../lib/providers";
+import { IconChevronDown } from "./Marks";
 import {
   cancelSignIn,
   getProviderKey,
@@ -20,19 +21,6 @@ type CheckState =
   | { kind: "ok"; count: number }
   | { kind: "err"; msg: string };
 
-export async function openExternal(url: string) {
-  if (isTauri()) {
-    try {
-      const { open } = await import("@tauri-apps/plugin-shell");
-      await open(url);
-      return;
-    } catch {
-      /* fall through */
-    }
-  }
-  window.open(url, "_blank", "noopener");
-}
-
 /** Browser sign-in controls. Shared by token providers and OpenRouter. */
 function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
   const [state, setState] = useState<"idle" | "waiting" | { err: string }>("idle");
@@ -45,7 +33,7 @@ function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
     return (
       <div className="key-status">
         <span className="key-ok">Signed in{who ? ` as ${who}` : ""}</span>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => void signOut(p.id)}>
+        <button type="button" className="chip" onClick={() => void signOut(p.id)}>
           Sign out
         </button>
       </div>
@@ -68,7 +56,7 @@ function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
           <span className="key-ok">Finish in your browser…</span>
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="chip"
             onClick={() => {
               void cancelSignIn(p.id);
               setState("idle");
@@ -78,7 +66,7 @@ function SignIn({ p, onDone }: { p: ProviderDef; onDone?: () => void }) {
           </button>
         </>
       ) : (
-        <button type="button" className="btn btn-go btn-sm" onClick={() => void start()}>
+        <button type="button" className="pill pill-primary" onClick={() => void start()}>
           {p.signInLabel || "Sign in"}
         </button>
       )}
@@ -157,8 +145,10 @@ function ProviderRow({
         onClick={onToggle}
       >
         <span className="prov-name">{p.name}</span>
+        <span className="prov-spacer" />
         {inUse && <span className="prov-tag">in use</span>}
         <span className={`prov-state${saved || who !== null ? " is-set" : ""}`}>{status}</span>
+        <IconChevronDown />
       </button>
       {open && tokens && (
         <div className="prov-body">
@@ -173,7 +163,7 @@ function ProviderRow({
           )}
           <div className="key-line">
             <input
-              className="text-input"
+              className="field-input"
               type="password"
               autoComplete="new-password"
               data-1p-ignore="true"
@@ -190,7 +180,7 @@ function ProviderRow({
             />
             <button
               type="button"
-              className="btn btn-go btn-sm"
+              className="pill pill-primary"
               disabled={!dirty || busy}
               onClick={() => void save()}
             >
@@ -200,7 +190,7 @@ function ProviderRow({
           <div className="key-status">
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="chip"
               disabled={(!draft.trim() && !p.keyOptional) || check.kind === "checking"}
               onClick={() => void runCheck()}
             >
@@ -245,21 +235,24 @@ export default function ProviderKeys({ config }: { config: InnerState | null }) 
   );
 
   return (
-    <div className="prov-list">
-      <p className="set-row-hint prov-note">
-        Keys are stored in {keyStorageLabel()} and shared by every voice on that
-        provider. Pick each voice&rsquo;s provider and model in Voices.
+    <section className="set-section">
+      <h3 className="label">Providers</h3>
+      <div className="card prov-list">
+        {list.map((p) => (
+          <ProviderRow
+            key={p.id}
+            p={p}
+            inUse={used.has(p.id)}
+            open={openId === p.id}
+            onToggle={() => setOpenId(openId === p.id ? null : p.id)}
+            customBase={customBase}
+          />
+        ))}
+      </div>
+      <p className="set-foot">
+        Keys are stored in {keyStorageLabel()} and shared by every voice on that provider. Pick each
+        voice&rsquo;s provider and model in Voices.
       </p>
-      {list.map((p) => (
-        <ProviderRow
-          key={p.id}
-          p={p}
-          inUse={used.has(p.id)}
-          open={openId === p.id}
-          onToggle={() => setOpenId(openId === p.id ? null : p.id)}
-          customBase={customBase}
-        />
-      ))}
-    </div>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { IconChevron, IconChevronDown, IconKey, IconReturn } from "./Marks";
+import { IconArrowUp, IconChevron, IconChevronDown, IconKey, SlashMark } from "./Marks";
 import MessageBubble from "./MessageBubble";
 import { pulseScrollBusy } from "../lib/scrollBusy";
 import type { AiConfig, InnerState, Message } from "../types";
@@ -367,41 +367,35 @@ function ChatView({
     return (
       <div className="empty">
         <div className="empty-hero">
-          <h1 className="empty-title">
-            Set the scene.
-            <span>They&rsquo;ll take it from there.</span>
-          </h1>
+          <SlashMark className="empty-mark" size={52} />
+          <h1 className="empty-title">Set the scene</h1>
+          <p className="empty-sub">They&rsquo;ll take it from there.</p>
 
-          <ul className="lineup" aria-label="Cast">
-            {ids.map((id, i) => {
+          <span className="label">On stage</span>
+          <ul className="card lineup" aria-label="Cast">
+            {ids.map((id) => {
               const name = agentLabel(id, config);
               const cfg = agentConfig(id, config);
               const bio = cfg ? firstSentence(cfg.system_prompt) : "";
               return (
-                <li
-                  key={id}
-                  style={{
-                    ["--voice" as string]: agentAccent(id, config),
-                    ["--i" as string]: i,
-                  }}
-                >
+                <li key={id} style={{ ["--voice" as string]: agentAccent(id, config) }}>
                   <button
                     type="button"
-                    className="lineup-card"
+                    className="row"
                     onClick={() => onEditVoice?.(id)}
                     title={`Edit ${name}`}
                   >
                     <VoiceAvatar
-                      className="lineup-avatar"
+                      className="row-avatar"
                       name={name}
                       icon={cfg?.icon}
                       color={agentAccent(id, config)}
                     />
-                    <span className="lineup-text">
+                    <span className="row-text">
                       <strong>{name}</strong>
                       {bio && <span>{bio}</span>}
-                      <span className="lineup-model">{voiceModelLine(cfg)}</span>
                     </span>
+                    <span className="row-aside mono">{voiceModelLine(cfg)}</span>
                     <IconChevron />
                   </button>
                 </li>
@@ -409,56 +403,54 @@ function ChatView({
             })}
           </ul>
 
-          <div className="stage-box">
+          {hasSavedChats && (
+            <p className="empty-foot">
+              Older threads live in the history panel · <kbd>B</kbd>
+            </p>
+          )}
+        </div>
+
+        <div className="composer-wrap">
+          <div className="composer glass">
             <textarea
+              className="composer-input is-first"
               value={firstDraft}
               onChange={(e) => onFirstDraftChange?.(e.target.value)}
               placeholder="A question, a scene, an argument, a first line…"
               aria-label="First message"
-              rows={3}
+              rows={2}
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
                   e.preventDefault();
                   begin();
                 }
               }}
             />
-            <div className="stage-box-foot">
-              <span className="hint-kbd" aria-hidden>
-                <kbd>Ctrl</kbd>
-                <kbd>Enter</kbd>
-                <span>to begin</span>
+            <div className="composer-row">
+              <span className="composer-tag">
+                <kbd>Enter</kbd> to begin · <kbd>Shift</kbd>+<kbd>Enter</kbd> new line
               </span>
+              <span className="composer-spacer" />
               {needsKey ? (
-                <button
-                  type="button"
-                  className="btn btn-go"
-                  onClick={() => onOpenSettings?.()}
-                >
+                <button type="button" className="pill pill-primary" onClick={() => onOpenSettings?.()}>
                   <IconKey />
-                  Add your key
+                  <span>Add your key</span>
                 </button>
               ) : (
                 <button
                   type="button"
-                  className="btn btn-go"
+                  className={`send${firstDraft.trim() ? " is-ready" : ""}`}
                   disabled={!firstDraft.trim()}
                   onClick={begin}
+                  aria-label="Begin"
+                  title="Begin"
                 >
-                  Begin
-                  <IconReturn />
+                  <IconArrowUp />
                 </button>
               )}
             </div>
           </div>
-
-
-          {hasSavedChats && (
-            <p className="empty-foot">
-              Older threads live in the sidebar · <kbd>B</kbd>
-            </p>
-          )}
         </div>
       </div>
     );
@@ -514,16 +506,7 @@ function ChatView({
                     : undefined
                 }
               >
-                <span className="eq" aria-hidden>
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
-                <span>
-                  <strong>{thinkingAgent ?? "Someone"}</strong> is finding the
-                  words
-                </span>
+                <span className="shimmer">{thinkingAgent ?? "Someone"} is thinking</span>
               </div>
             )}
           </div>

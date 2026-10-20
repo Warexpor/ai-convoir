@@ -1,7 +1,6 @@
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import type { AppStatus, InnerState } from "../types";
-import { activeAgentIds, agentAccent, agentConfig, agentLabel } from "../types";
-import VoiceAvatar from "./VoiceAvatar";
+import { activeAgentIds, agentLabel } from "../types";
 
 interface Props {
   config: InnerState | null;
@@ -13,99 +12,67 @@ interface Props {
   onEditVoice?: (id: string) => void;
 }
 
-/** The cast, on stage: who is in the room and whose line is next. */
+/**
+ * The voices as the top bar's tabs: the one up next is ink, the rest are
+ * mute, and one springing underline hands the turn along.
+ */
 function CastStrip({ config, status, upNext, hasMessages, onEditVoice }: Props) {
   const ids = activeAgentIds(config);
   const running = status === "Running";
-  const listRef = useRef<HTMLOListElement>(null);
-  // While Running, show the speaking hand-off even before the first line lands.
-  const focusIdx =
-    upNext && (hasMessages || running) ? ids.indexOf(upNext) : -1;
-  const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const focusIdx = upNext && (hasMessages || running) ? ids.indexOf(upNext) : -1;
+  const [bar, setBar] = useState<{ x: number } | null>(null);
   const [live, setLive] = useState(false);
   const names = ids.map((id) => agentLabel(id, config)).join("|");
 
-  // The highlight is one element that glides between chips, so a turn
-  // change reads as a hand-off instead of two unrelated fades.
   useLayoutEffect(() => {
-    const ol = listRef.current;
-    if (!ol) return;
+    const el = listRef.current;
+    if (!el) return;
     const measure = () => {
-      const chip = ol.children[focusIdx + 1] as HTMLElement | undefined;
-      if (focusIdx < 0 || !chip) {
-        setPill(null);
+      const tab = el.querySelectorAll<HTMLElement>(".tab")[focusIdx];
+      if (focusIdx < 0 || !tab) {
+        setBar(null);
         return;
       }
-      const next = { x: chip.offsetLeft, w: chip.offsetWidth };
-      setPill((p) => (p && p.x === next.x && p.w === next.w ? p : next));
+      const x = tab.offsetLeft + tab.offsetWidth / 2;
+      setBar((b) => (b && b.x === x ? b : { x }));
     };
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(ol);
+    ro.observe(el);
     return () => ro.disconnect();
-  }, [focusIdx, running, names]);
+  }, [focusIdx, names]);
 
   useLayoutEffect(() => {
-    if (!pill || live) return;
+    if (!bar || live) return;
     const id = requestAnimationFrame(() => setLive(true));
     return () => cancelAnimationFrame(id);
-  }, [pill, live]);
-
-  const pillColor = focusIdx >= 0 ? agentAccent(ids[focusIdx], config) : undefined;
+  }, [bar, live]);
 
   return (
-    <ol
-      ref={listRef}
-      className={`cast${live ? " is-live" : ""}`}
-      aria-label="Voices"
-    >
-      <li
-        className={`cast-pill${pill ? " is-on" : ""}${running ? " is-speaking" : ""}`}
-        aria-hidden
-        style={
-          pill
-            ? {
-                width: pill.w,
-                transform: `translate3d(${pill.x}px, 0, 0)`,
-                ["--voice" as string]: pillColor,
-              }
-            : undefined
-        }
-      />
-      {ids.map((id) => {
+    <div ref={listRef} className={`tabs${live ? " is-live" : ""}`} role="list" aria-label="Voices">
+      {ids.map((id, i) => {
         const name = agentLabel(id, config);
-        const isNext = (hasMessages || running) && id === upNext;
-        const state = isNext ? (running ? "speaking" : "next") : "idle";
+        const on = i === focusIdx;
         return (
-          <li
+          <button
             key={id}
-            className={`cast-chip is-${state}`}
-            style={{ ["--voice" as string]: agentAccent(id, config) }}
-            title={
-              state === "speaking"
-                ? `${name} is writing`
-                : state === "next"
-                  ? `${name} speaks next`
-                  : `Edit ${name}`
-            }
+            type="button"
+            role="listitem"
+            className={`tab${on ? " on" : ""}`}
+            title={on ? (running ? `${name} is writing` : `${name} speaks next`) : `Edit ${name}`}
             onClick={() => onEditVoice?.(id)}
           >
-            <VoiceAvatar
-              className="cast-avatar"
-              name={name}
-              icon={agentConfig(id, config)?.icon}
-              color={agentAccent(id, config)}
-            />
-            <span className="cast-name">{name}</span>
-            {state !== "idle" && (
-              <span className="cast-tag">
-                {state === "speaking" ? "live" : "next"}
-              </span>
-            )}
-          </li>
+            {name}
+          </button>
         );
       })}
-    </ol>
+      <span
+        className={`tabs-bar${bar ? " is-on" : ""}${running ? " is-speaking" : ""}`}
+        aria-hidden
+        style={bar ? { transform: `translate3d(${bar.x}px, 0, 0)` } : undefined}
+      />
+    </div>
   );
 }
 

@@ -1,5 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
-import { isTauriRuntime } from "./openaiCompat";
+import { invoke, isDesktopRuntime } from "./ipc";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
@@ -23,9 +22,9 @@ function emitConsole(level: LogLevel, source: string, message: string) {
 
 function forward(level: LogLevel, message: string, source: string) {
   emitConsole(level, source, message);
-  if (!isTauriRuntime()) return;
+  if (!isDesktopRuntime()) return;
   void invoke("frontend_log", { level, message, source }).catch(() => {
-    /* logger not ready / non-tauri */
+    /* logger not ready / browser preview */
   });
 }
 
@@ -39,7 +38,7 @@ export const log = {
 
 /** Path to ~/.local/share/.../ai-convoir.log (platform app data). */
 export async function getLogPath(): Promise<string | null> {
-  if (!isTauriRuntime()) return null;
+  if (!isDesktopRuntime()) return null;
   try {
     return await invoke<string | null>("get_log_path");
   } catch {

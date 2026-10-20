@@ -15,6 +15,13 @@ import {
   readFx,
   readStreamMode,
   readZoom,
+  readTheme,
+  readChatText,
+  writeTheme,
+  writeChatText,
+  CHAT_TEXT_SCALE,
+  type ThemePref,
+  type ChatText,
   writeBoolPref,
   writeFx,
   writeStreamMode,
@@ -22,17 +29,8 @@ import {
   type FxLevel,
   type StreamMode,
 } from "./lib/config";
-import {
-  IconMenu,
-  IconRail,
-  IconSliders,
-  IconVoices,
-  SlashMark,
-} from "./components/Marks";
-import PhoneOverflow from "./components/PhoneOverflow";
-import { NARROW_QUERY, PHONE_QUERY, useMedia } from "./hooks/useMedia";
-import { useBackClose } from "./hooks/useBackClose";
-import { useEdgeSwipe } from "./hooks/useEdgeSwipe";
+import { IconMenu, IconNew, IconVoices } from "./components/Marks";
+import { NARROW_QUERY, useMedia } from "./hooks/useMedia";
 import StageField from "./components/StageField";
 import StageImage from "./components/StageImage";
 import {
@@ -119,6 +117,15 @@ function App() {
     showBlob(null);
     setBg((v) => ({ ...v, kind: "shader" }));
   }, [showBlob]);
+  const [theme, setTheme] = useState<ThemePref>(readTheme);
+  useEffect(() => writeTheme(theme), [theme]);
+  const systemDark = useMedia("(prefers-color-scheme: dark)");
+  const resolvedTheme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme;
+  }, [resolvedTheme]);
+  const [chatText, setChatText] = useState<ChatText>(readChatText);
+  useEffect(() => writeChatText(chatText), [chatText]);
   const [zoomMsg, setZoomMsg] = useState("");
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -129,18 +136,11 @@ function App() {
   );
   useEffect(() => writeZoom(zoom), [zoom]);
 
-  const isPhone = useMedia(PHONE_QUERY);
+  // Small windows: the history panel floats over the transcript instead.
   const isNarrow = useMedia(NARROW_QUERY);
   useEffect(() => {
-    if (window.matchMedia(NARROW_QUERY).matches) {
-      setRailOpen(false);
-    }
+    if (window.matchMedia(NARROW_QUERY).matches) setRailOpen(false);
   }, []);
-  // On narrow screens the rail is an overlay drawer: Back closes it and a
-  // swipe from the left edge opens it, like any Android navigation drawer.
-  useBackClose(isNarrow && railOpen, () => setRailOpen(false));
-  useBackClose(helpOpen, () => setHelpOpen(false));
-  useEdgeSwipe(isNarrow, railOpen, setRailOpen);
 
   const showZoomMsg = useCallback((val: number) => {
     if (zoomTimer.current) clearTimeout(zoomTimer.current);
@@ -226,6 +226,9 @@ function App() {
   const activeTitle =
     (hasMessages && chats.find((c) => c.id === activeChatId)?.title) ||
     (hasMessages ? "Untitled thread" : "New thread");
+  useEffect(() => {
+    document.title = `${activeTitle}${activeCast ? ` · ${activeCast.name}` : ""} — AI ConvoIR`;
+  }, [activeTitle, activeCast]);
 
   return (
     <div
@@ -233,16 +236,15 @@ function App() {
         "app",
         settingsOpen ? "settings-open" : "",
         railOpen ? "" : "rail-closed",
-        railOpen ? "rail-open-mobile" : "",
-        isPhone ? "is-phone" : "",
+        isNarrow ? "is-narrow" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       data-fx={fx}
       data-running={stream.status === "Running" ? "" : undefined}
-      style={{ zoom }}
+      style={{ zoom, ["--chat-scale" as string]: CHAT_TEXT_SCALE[chatText] }}
     >
-      {bg.kind === "image" && bgUrl ? (
+      {bg.kind === "off" ? null : bg.kind === "image" && bgUrl ? (
         <StageImage url={bgUrl} prefs={bg} />
       ) : (
         <StageField
@@ -285,48 +287,24 @@ function App() {
         onDelete={app.handleDeleteChat}
         onClose={() => setRailOpen(false)}
         onRename={refreshChats}
+        onSettings={() => (prefsOpen ? setPrefsOpen(false) : openPrefs(needsKey ? "access" : undefined))}
         needsKey={needsKey}
       />
 
       <div className="main" id="main" tabIndex={-1} role="main">
         <header className="topbar">
-          <div className="topbar-lead">
-            {isPhone ? (
+          <div className="topbar-side">
+            {!railOpen && (
               <button
                 type="button"
-                className="btn btn-icon btn-bare"
+                className="gbtn gbtn-lg"
                 onClick={() => setRailOpen(true)}
-                aria-label="Show threads"
+                title="History (B)"
+                aria-label="Show history"
               >
                 <IconMenu />
               </button>
-            ) : (
-              !railOpen && (
-                <button
-                  type="button"
-                  className="btn btn-icon"
-                  onClick={() => setRailOpen(true)}
-                  title="Show sidebar (B)"
-                  aria-label="Show sidebar"
-                >
-                  <IconRail />
-                </button>
-              )
             )}
-            {!railOpen && !isPhone && (
-              <SlashMark className="topbar-logo" size={20} />
-            )}
-            <div className="topbar-title">
-              <span className="topbar-name">{activeTitle}</span>
-              <span className="topbar-sub">
-                {activeCast && (
-                  <span className="topbar-cast">{activeCast.name}</span>
-                )}
-                {hasMessages
-                  ? `${stream.messages.length} lines · ${config?.mode === "auto" ? "Auto" : "Step"}`
-                  : "Nothing said yet"}
-              </span>
-            </div>
           </div>
 
           <CastStrip
@@ -337,77 +315,47 @@ function App() {
             onEditVoice={editVoice}
           />
 
-          {isPhone ? (
-          <div className="topbar-actions">
+          <div className="topbar-side is-end">
             <button
               type="button"
-              className="btn btn-icon btn-bare"
-              onClick={() => {
-                setPrefsOpen(false);
-                setSettingsOpen(true);
-              }}
-              aria-label="Voices"
-            >
-              <IconVoices />
-            </button>
-            <PhoneOverflow
-              needsKey={needsKey}
-              hasMessages={hasMessages}
-              onSettings={() => openPrefs(needsKey ? "access" : undefined)}
-              onNew={() => void app.handleReset()}
-              onSave={app.handleSaveChat}
-              onExport={app.handleExport}
-            />
-          </div>
-          ) : (
-          <div className="topbar-actions">
-            <button
-              type="button"
-              className={`btn btn-icon${needsKey ? " needs-key" : ""}`}
-              onClick={() => (prefsOpen ? setPrefsOpen(false) : openPrefs(needsKey ? "access" : undefined))}
-              title="Settings (,)"
-              aria-label="Settings"
-              aria-pressed={prefsOpen}
-            >
-              <IconSliders />
-            </button>
-            <button
-              type="button"
-              className="btn btn-chrome"
+              className={`gbtn gbtn-lg${settingsOpen ? " on" : ""}`}
               onClick={() => {
                 setPrefsOpen(false);
                 setSettingsOpen((p) => !p);
               }}
               title="Voices (S)"
+              aria-label="Voices"
               aria-pressed={settingsOpen}
             >
               <IconVoices />
-              <span className="btn-label">Voices</span>
+            </button>
+            <button
+              type="button"
+              className="gbtn gbtn-lg"
+              onClick={() => void app.handleReset()}
+              title="New thread (Ctrl+Shift+R)"
+              aria-label="New thread"
+            >
+              <IconNew />
             </button>
           </div>
-          )}
         </header>
 
         {toast.message !== null && (
-          <div
-            className={`toast ${toast.leaving ? "leaving" : ""}`}
+          <button
+            type="button"
+            className={`notice glass${toast.leaving ? " leaving" : ""}`}
             role="status"
             aria-live="polite"
+            onClick={toast.clear}
+            title="Dismiss"
           >
-            <span className="toast-text">{toast.message}</span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={toast.clear}
-              aria-label="Dismiss"
-            >
-              Dismiss
-            </button>
-          </div>
+            {toast.message}
+          </button>
         )}
 
         {zoomMsg && (
-          <div className="zoom-badge" role="status" aria-live="polite">
+          <div className="notice glass is-small" role="status" aria-live="polite">
             {zoomMsg}
           </div>
         )}
@@ -449,12 +397,17 @@ function App() {
             tokenCapacity={tokenCapacity}
             retryTarget={stream.lastFailed.current}
             onRetry={app.handleRetry}
-            hasMessages
+            config={config}
+            nextId={upNextId}
             nextName={nextName}
             nextAccent={upNextId ? agentAccent(upNextId, config) : undefined}
+            onEditVoice={editVoice}
             needsKey={needsKey}
             onOpenSettings={() => openPrefs("access")}
-            compact={isPhone}
+            showThoughts={showThoughtsUi}
+            onShowThoughts={setShowThoughtsUi}
+            streamMode={streamMode}
+            onStreamMode={setStreamMode}
             hint={narration}
             onHintChange={setNarration}
             onHintCommit={app.handleNarrationCommit}
@@ -495,6 +448,10 @@ function App() {
         bgUrl={bgUrl}
         onPickBgImage={pickBgImage}
         onRemoveBgImage={removeBgImage}
+        theme={theme}
+        onTheme={setTheme}
+        chatText={chatText}
+        onChatText={setChatText}
         zoom={zoom}
         onZoom={(z) => {
           setZoom(z);

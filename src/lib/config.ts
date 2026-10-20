@@ -21,6 +21,8 @@ export const PREF_KEYS = {
   zoom: "ai-convoir-zoom",
   fx: "ai-convoir-fx",
   streamMode: "ai-convoir-stream-mode",
+  theme: "ai-convoir-theme",
+  chatText: "ai-convoir-chat-text",
 } as const;
 
 const LEGACY_PREF_KEYS: Record<keyof typeof PREF_KEYS, string> = {
@@ -29,6 +31,8 @@ const LEGACY_PREF_KEYS: Record<keyof typeof PREF_KEYS, string> = {
   zoom: "ai-conversation-zoom",
   fx: "ai-conversation-fx",
   streamMode: "ai-conversation-stream-mode",
+  theme: "ai-conversation-theme",
+  chatText: "ai-conversation-chat-text",
 };
 
 /**
@@ -63,7 +67,7 @@ export function writeStreamMode(v: StreamMode): void {
  * Visual effects budget.
  * - full: living background + glass everywhere
  * - balanced: background breathes on speaker changes, then rests
- * - lite: static background, no backdrop blur (weak GPUs / WebKitGTK)
+ * - lite: static background, no backdrop blur (weak GPUs)
  */
 export type FxLevel = "full" | "balanced" | "lite";
 
@@ -82,6 +86,48 @@ export function readFx(): FxLevel {
 export function writeFx(v: FxLevel): void {
   try {
     localStorage.setItem(PREF_KEYS.fx, v);
+  } catch {
+    /* */
+  }
+}
+
+export type ThemePref = "system" | "light" | "dark";
+
+export function readTheme(): ThemePref {
+  try {
+    const v = localStorage.getItem(PREF_KEYS.theme);
+    if (v === "system" || v === "light" || v === "dark") return v;
+  } catch {
+    /* */
+  }
+  return "dark";
+}
+
+export function writeTheme(v: ThemePref): void {
+  try {
+    localStorage.setItem(PREF_KEYS.theme, v);
+  } catch {
+    /* */
+  }
+}
+
+/** Transcript text size: 90 / 100 / 115 / 130 %. */
+export type ChatText = "s" | "m" | "l" | "xl";
+export const CHAT_TEXT_SCALE: Record<ChatText, number> = { s: 0.9, m: 1, l: 1.15, xl: 1.3 };
+
+export function readChatText(): ChatText {
+  try {
+    const v = localStorage.getItem(PREF_KEYS.chatText);
+    if (v === "s" || v === "m" || v === "l" || v === "xl") return v;
+  } catch {
+    /* */
+  }
+  return "m";
+}
+
+export function writeChatText(v: ChatText): void {
+  try {
+    localStorage.setItem(PREF_KEYS.chatText, v);
   } catch {
     /* */
   }

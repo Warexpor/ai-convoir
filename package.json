@@ -5,36 +5,76 @@
   "description": "AI ConvoIR \u2014 desktop multi-agent chat for 2\u20133 voices on one thread",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "vite",
+    "build:electron": "tsc -p electron/tsconfig.json",
+    "build": "tsc && vite build && npm run build:electron",
+    "start": "electron .",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "typecheck": "tsc --noEmit",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "typecheck": "tsc --noEmit && tsc -p electron/tsconfig.json --noEmit",
     "icons": "python scripts/make_icons.py",
-    "release:build": "npm run build && npm run tauri build",
-    "linux:build": "npm run build && npm run tauri build -- --bundles deb,appimage",
-    "windows:build": "npm run build && npm run tauri build -- --bundles nsis,msi"
-  },
-  "dependencies": {
-    "@fontsource-variable/geist": "^5.3.0",
-    "@fontsource-variable/geist-mono": "^5.3.0",
-    "@fontsource-variable/source-serif-4": "^5.3.0",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-shell": "^2.3.6",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "dist": "npm run build && electron-builder",
+    "linux:build": "npm run build && electron-builder --linux deb AppImage",
+    "windows:build": "npm run build && electron-builder --win nsis"
   },
   "devDependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
+    "@fontsource/iceland": "^5.3.0",
     "@tailwindcss/postcss": "^4.3.3",
-    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
+  },
+  "main": "dist-electron/main.js",
+  "author": "Warexpor",
+  "build": {
+    "appId": "com.aiconvoir.app",
+    "productName": "AI ConvoIR",
+    "executableName": "ai-convoir",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png",
+      "maintainer": "Warexpor"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
